@@ -157,8 +157,13 @@
                     assetsFound.pt = true;
                 }
                 
+                const setManifest = (manifest) => {
+                    const manifestString = JSON.stringify(manifest);
+                    installButton.manifest = `data:application/json,${encodeURIComponent(manifestString)}`;
+                };
+
                 // Set default manifest (standard update)
-                installButton.manifest = updateManifest;
+                setManifest(updateManifest);
                 statusEl.textContent += " | Ready to flash update.";
 
                 // Add event listener for the erase checkbox
@@ -167,7 +172,7 @@
                         // User wants to erase (initial flash)
                         if (assetsFound.bl && assetsFound.pt) {
                             installButton.setAttribute('erase-first', '');
-                            installButton.manifest = factoryResetManifest;
+                            setManifest(factoryResetManifest);
                             statusEl.textContent = `Ready for FULL ERASE & Initial Install (${version}).`;
                         } else {
                             // Required files for full erase are missing
@@ -177,7 +182,7 @@
                     } else {
                         // User wants a standard update
                         installButton.removeAttribute('erase-first');
-                        installButton.manifest = updateManifest;
+                        setManifest(updateManifest);
                         statusEl.textContent = `Ready to flash update (${version}).`;
                     }
                 });
