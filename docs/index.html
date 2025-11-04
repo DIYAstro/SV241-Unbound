@@ -132,6 +132,7 @@
                              parts: [
                                  // It's safer to always include the partition table in an update.
                                  // This does not erase user data but ensures compatibility if partitions change.
+                                 { path: `https://api.cors.lol/?url=${blAsset.browser_download_url}`, offset: 0x1000 },
                                  { path: `https://api.cors.lol/?url=${ptAsset.browser_download_url}`, offset: 0x8000 },
                                  { path: `https://api.cors.lol/?url=${fwAsset.browser_download_url}`, offset: 0x10000 },
                              ],
