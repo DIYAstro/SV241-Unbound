@@ -113,9 +113,9 @@
                 statusEl.textContent = `Latest release found: ${version}`;
 
                 // Find all required assets in the release
-                const fwAsset = release.assets.find(asset => asset.name === FIRMWARE_ASSET_NAME);
-                const blAsset = release.assets.find(asset => asset.name === BOOTLOADER_ASSET_NAME);
-                const ptAsset = release.assets.find(asset => asset.name === PARTITIONS_ASSET_NAME);
+                const fwAsset = release.assets.find(asset => asset.name.endsWith(FIRMWARE_ASSET_NAME));
+                const blAsset = release.assets.find(asset => asset.name.endsWith(BOOTLOADER_ASSET_NAME));
+                const ptAsset = release.assets.find(asset => asset.name.endsWith(PARTITIONS_ASSET_NAME));
 
                 if (!fwAsset) {
                     throw new Error(`Could not find "${FIRMWARE_ASSET_NAME}" in the latest release.`);
