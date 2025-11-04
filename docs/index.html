@@ -83,15 +83,18 @@
             const statusEl = document.getElementById('status');
             const installButton = document.querySelector("esp-web-install-button");
 
+            // Construct the base URL from the current page's location
+            const baseUrl = window.location.href.substring(0, window.location.href.lastIndexOf('/') + 1);
+
             const manifest = {
                 name: "SV241-Unbound",
                 builds: [
                     {
                         chipFamily: "ESP32",
                         parts: [
-                            { path: "firmware/bootloader.bin", offset: 0x1000 },
-                            { path: "firmware/partitions.bin", offset: 0x8000 },
-                            { path: "firmware/firmware.bin", offset: 0x10000 },
+                            { path: `${baseUrl}firmware/bootloader.bin`, offset: 0x1000 },
+                            { path: `${baseUrl}firmware/partitions.bin`, offset: 0x8000 },
+                            { path: `${baseUrl}firmware/firmware.bin`, offset: 0x10000 },
                         ],
                     },
                 ],
