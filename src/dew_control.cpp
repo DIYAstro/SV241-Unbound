@@ -190,6 +190,25 @@ void dew_control_task(void *pvParameters) {
                     ledcWrite(HEATER_LEDC_CHANNELS[i], duty_cycle);
                     break;
                 }
+
+                case 3: { // PID-Sync Mode
+                    int leader_index = 1 - i; // Der andere Heizer ist der Leader
+                    
+                    // Sicherstellen, dass der Leader tatsächlich im PID-Modus ist
+                    if (config.dew_heaters[leader_index].mode == 1) {
+                        float leader_power = (float)heater_power[leader_index];
+                        float follower_power = leader_power * heater_config.pid_sync_factor;
+                        
+                        heater_power[i] = constrain((int)round(follower_power), 0, 100);
+                    } else {
+                        // Wenn der Leader nicht im PID-Modus ist, schalten wir sicherheitshalber ab.
+                        heater_power[i] = 0;
+                    }
+
+                    uint32_t duty_cycle = get_corrected_duty_cycle(heater_power[i]);
+                    ledcWrite(HEATER_LEDC_CHANNELS[i], duty_cycle);
+                    break;
+                }
             }
         }
 

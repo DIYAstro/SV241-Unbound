@@ -61,6 +61,9 @@ struct DewHeaterConfig {
     float start_delta;     // Heating starts when T_ambient - T_dewpoint < start_delta
     float end_delta;       // Full power when T_ambient - T_dewpoint <= end_delta
     int max_power;         // Max power in % for this mode
+
+    // PID Sync settings (for mode 3)
+    float pid_sync_factor;
 };
 
 

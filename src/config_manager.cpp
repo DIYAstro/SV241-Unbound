@@ -107,6 +107,7 @@ void createDefaultDewHeaterConfig(int index) {
         config.dew_heaters[index].start_delta = 5.0f;
         config.dew_heaters[index].end_delta = 1.0f;
         config.dew_heaters[index].max_power = 80;
+        config.dew_heaters[index].pid_sync_factor = 1.0f;
     } else { // PWM2 defaults to Ambient Tracking
         config.dew_heaters[index].mode = 2;
         config.dew_heaters[index].target_offset = 3.0f;
@@ -116,6 +117,7 @@ void createDefaultDewHeaterConfig(int index) {
         config.dew_heaters[index].start_delta = 5.0f;
         config.dew_heaters[index].end_delta = 1.0f;
         config.dew_heaters[index].max_power = 80;
+        config.dew_heaters[index].pid_sync_factor = 1.0f;
     }
 }
 
@@ -175,6 +177,7 @@ void serializeConfig(JsonDocument& doc) {
         heater_obj["sd"] = config.dew_heaters[i].start_delta;
         heater_obj["ed"] = config.dew_heaters[i].end_delta;
         heater_obj["xp"] = config.dew_heaters[i].max_power;
+        heater_obj["psf"] = config.dew_heaters[i].pid_sync_factor;
     }
 }
 
@@ -253,6 +256,7 @@ void updateConfig(const JsonObject& doc) {
                 if (!heater_obj["sd"].isNull()) config.dew_heaters[i].start_delta = heater_obj["sd"];
                 if (!heater_obj["ed"].isNull()) config.dew_heaters[i].end_delta = heater_obj["ed"];
                 if (!heater_obj["xp"].isNull()) config.dew_heaters[i].max_power = heater_obj["xp"];
+                if (!heater_obj["psf"].isNull()) config.dew_heaters[i].pid_sync_factor = heater_obj["psf"];
             }
         }
     }

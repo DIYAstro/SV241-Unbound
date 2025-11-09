@@ -616,6 +616,7 @@
                                     <option value="0">Manual</option>
                                     <option value="1">PID (Lens Sensor)</option>
                                     <option value="2">Ambient Tracking</option>
+                                    <option value="3">PID-Sync (Follower)</option>
                                 </select>
                             </div>
                             <!-- Settings for Manual Mode -->
@@ -636,6 +637,13 @@
                                 <div class="form-group"><label for="heater-0-end-delta">End Delta (°C)</label><input type="number" id="heater-0-end-delta" step="0.1"></div>
                                 <div class="form-group"><label for="heater-0-max-power">Max Power (%)</label><input type="number" id="heater-0-max-power" min="0" max="100"></div>
                             </div>
+                            <!-- Settings for PID-Sync Mode -->
+                            <div id="heater-0-mode-3" class="mode-settings">
+                                <div class="form-group">
+                                    <label for="heater-0-pid-sync-factor">Sync Factor</label><input type="number" id="heater-0-pid-sync-factor" step="0.1" min="0" max="2.0">
+                                    <small>Multiplies the power of the other PID heater. E.g., 0.8 = 80% of leader's power.</small>
+                                </div>
+                            </div>
                         </div>
 
                         <div id="heater-1">
@@ -649,6 +657,7 @@
                                     <option value="0">Manual</option>
                                     <option value="1">PID (Lens Sensor)</option>
                                     <option value="2">Ambient Tracking</option>
+                                    <option value="3">PID-Sync (Follower)</option>
                                 </select>
                             </div>
                             <div id="heater-1-mode-0" class="form-group mode-settings"><label for="heater-1-manual-power">Manual Power (%)</label><input type="number" id="heater-1-manual-power" min="0" max="100"></div>
@@ -662,6 +671,13 @@
                                 <div class="form-group"><label for="heater-1-start-delta">Start Delta (°C)</label><input type="number" id="heater-1-start-delta" step="0.1"></div>
                                 <div class="form-group"><label for="heater-1-end-delta">End Delta (°C)</label><input type="number" id="heater-1-end-delta" step="0.1"></div>
                                 <div class="form-group"><label for="heater-1-max-power">Max Power (%)</label><input type="number" id="heater-1-max-power" min="0" max="100"></div>
+                            </div>
+                            <!-- Settings for PID-Sync Mode -->
+                            <div id="heater-1-mode-3" class="mode-settings">
+                                <div class="form-group">
+                                    <label for="heater-1-pid-sync-factor">Sync Factor</label><input type="number" id="heater-1-pid-sync-factor" step="0.1" min="0" max="2.0">
+                                    <small>Multiplies the power of the other PID heater. E.g., 0.8 = 80% of leader's power.</small>
+                                </div>
                             </div>
                         </div>
                         <button class="save-config-button">Save Heater Settings</button>
@@ -860,11 +876,29 @@
 
             // --- Heater Mode UI ---
             function updateHeaterModeView(heaterIndex) {
-                const modeSelect = document.getElementById(`heater-${heaterIndex}-mode`);
-                const selectedMode = modeSelect.value;
+                const currentHeaterModeSelect = document.getElementById(`heater-${heaterIndex}-mode`);
+                const selectedMode = currentHeaterModeSelect.value;
+
+                // Hide/show settings blocks for the current heater
                 document.querySelectorAll(`#heater-${heaterIndex} .mode-settings`).forEach(el => el.classList.remove('active'));
                 const activeSettings = document.getElementById(`heater-${heaterIndex}-mode-${selectedMode}`);
                 if (activeSettings) activeSettings.classList.add('active');
+
+                // --- New logic to control the other heater's options ---
+                const otherHeaterIndex = 1 - heaterIndex;
+                const otherHeaterModeSelect = document.getElementById(`heater-${otherHeaterIndex}-mode`);
+                const otherHeaterSyncOption = otherHeaterModeSelect.querySelector('option[value="3"]');
+
+                // If the current heater is in PID mode, the other can be a follower. Otherwise, it cannot.
+                const isLeaderInPidMode = (currentHeaterModeSelect.value === '1');
+                otherHeaterSyncOption.disabled = !isLeaderInPidMode;
+
+                // If the other heater was a follower but its leader is no longer in PID mode, reset it to manual.
+                if (!isLeaderInPidMode && otherHeaterModeSelect.value === '3') {
+                    otherHeaterModeSelect.value = '0'; // Reset to Manual
+                    // Trigger an update for the other heater as well to reflect the change
+                    updateHeaterModeView(otherHeaterIndex); 
+                }
             }
 
             // --- Data Fetching and Population ---
@@ -917,6 +951,7 @@
                         document.getElementById(`heater-${i}-start-delta`).value = heaterConf.sd;
                         document.getElementById(`heater-${i}-end-delta`).value = heaterConf.ed;
                         document.getElementById(`heater-${i}-max-power`).value = heaterConf.xp;
+                        document.getElementById(`heater-${i}-pid-sync-factor`).value = heaterConf.psf;
                         updateHeaterModeView(i);
                     });
                     
@@ -1054,7 +1089,8 @@
                     kd: parseFloat(document.getElementById(`heater-${i}-pid-kd`).value.replace(',', '.')), // pid_kd
                     sd: parseFloat(document.getElementById(`heater-${i}-start-delta`).value.replace(',', '.')), // start_delta
                     ed: parseFloat(document.getElementById(`heater-${i}-end-delta`).value.replace(',', '.')), // end_delta
-                    xp: parseInt(document.getElementById(`heater-${i}-max-power`).value, 10) || 0 // max_power
+                    xp: parseInt(document.getElementById(`heater-${i}-max-power`).value, 10) || 0, // max_power
+                    psf: parseFloat(document.getElementById(`heater-${i}-pid-sync-factor`).value.replace(',', '.')) // pid_sync_factor
                 }));
 
                 const newConfig = {
@@ -1475,6 +1511,26 @@
             initialLoad();
             
             masterPowerSwitch.addEventListener('change', (e) => setAllPower(e.target.checked));
+            document.getElementById('heater-0-mode').addEventListener('change', () => updateHeaterModeView(0));
+            document.getElementById('heater-1-mode').addEventListener('change', () => updateHeaterModeView(1));
+            
+            document.querySelector('#power-startup-states + .save-config-button').addEventListener('click', savePowerStartupStates);
+            document.getElementById('adj-voltage').closest('.collapsible-content').querySelector('.save-config-button').addEventListener('click', saveAdjustableVoltagePreset);
+            document.querySelector('#dew-heater-settings .collapsible-content > .save-config-button').addEventListener('click', saveDewHeaterSettings);
+            document.querySelector('#sensor-settings-group .collapsible-content > .save-config-button').addEventListener('click', saveSensorSettings);
+
+            document.getElementById('save-proxy-config-button').addEventListener('click', saveProxyConfig);
+            document.getElementById('save-switch-names-button').addEventListener('click', saveProxyConfig);
+            if (rebootButton) rebootButton.addEventListener('click', rebootDevice);
+            if (factoryResetButton) factoryResetButton.addEventListener('click', factoryResetDevice);
+            if (backupButton) backupButton.addEventListener('click', createBackup);
+            if (restoreButton) restoreButton.addEventListener('click', triggerRestore);
+            if (restoreFileInput) restoreFileInput.addEventListener('change', handleRestoreFile);
+        });
+    </script>
+
+</body>
+</html>     masterPowerSwitch.addEventListener('change', (e) => setAllPower(e.target.checked));
             document.getElementById('heater-0-mode').addEventListener('change', () => updateHeaterModeView(0));
             document.getElementById('heater-1-mode').addEventListener('change', () => updateHeaterModeView(1));
             
