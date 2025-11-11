@@ -1,6 +1,2 @@
+// This file is intentionally left empty. Its contents have been moved to internal/icon/icon.go
 package main
-
-import _ "embed"
-
-//go:embed icon.ico
-var iconData []byte

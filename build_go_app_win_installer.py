@@ -10,11 +10,23 @@ def build_go_proxy(source, target, env):
     go_bin_path = os.path.join(os.path.expanduser("~"), "go", "bin")
     goversioninfo_path = os.path.join(go_bin_path, "goversioninfo")
     resource_path = os.path.join(proxy_dir, "resource.syso")
+    version_info_path = os.path.join(proxy_dir, "versioninfo.json")
+
+    # 1. Read version from versioninfo.json to inject into the binary
+    try:
+        with open(version_info_path, "r") as f:
+            version_info = json.load(f)
+        product_version = version_info["StringFileInfo"]["ProductVersion"]
+        print(f"--> Found ProductVersion for Go build: {product_version}")
+    except Exception as e:
+        print(f"Error reading version info for Go build: {e}")
+        env.Exit(1)
 
     # Commands
     install_cmd = "go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest"
-    versioninfo_cmd = f'"{goversioninfo_path}" -o {resource_path} {os.path.join(proxy_dir, "versioninfo.json")}'
-    build_cmd = 'go build -ldflags "-H=windowsgui" -o build/AscomAlpacaProxy.exe .'
+    versioninfo_cmd = f'"{goversioninfo_path}" -o {resource_path} {version_info_path}'
+    ldflags = f'-ldflags="-H=windowsgui -X main.AppVersion={product_version}"'
+    build_cmd = f'go build {ldflags} -o build/AscomAlpacaProxy.exe .'
 
     try:
         # Install goversioninfo
@@ -122,13 +134,15 @@ def create_installer(source, target, env):
 
     print("--- Installer created successfully! ---")
 
+def build_and_create_installer(source, target, env):
+    """A single function to run both build steps in order."""
+    build_go_proxy(source, target, env)
+    create_installer(source, target, env)
+
 env.AddCustomTarget(
     "buildgoproxywininstaller",
     None,
-    [
-        env.Execute(build_go_proxy),
-        env.Execute(create_installer)
-    ],
-    "Build Go Proxy Windows Installer",
+    build_and_create_installer,
+    "Build Go Proxy + Windows Installer",
     "Builds the Go proxy and creates a Windows installer"
 )

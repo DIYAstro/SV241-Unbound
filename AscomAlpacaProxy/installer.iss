@@ -36,7 +36,6 @@ Name: "autostart"; Description: "Start &automatically with Windows"; GroupDescri
 
 [Files]
 Source: "build\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "setup.html"; DestDir: "{app}"; Flags: ignoreversion
 Source: "icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 

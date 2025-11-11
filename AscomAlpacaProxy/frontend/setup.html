@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SV241 Alpaca Driver Setup</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+    <div class="container">
+        <h1>SV241 Alpaca Driver Setup</h1>
+        
+        <div id="connection-status" class="card">
+            <h2>Device Status <span id="connection-indicator"></span></h2>
+            <div class="status-grid">
+                <div class="status-item">
+                    <span class="label">COM Port</span>
+                    <span id="com-port" class="value" style="font-size: 1.2rem; font-weight: normal;">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="label">Firmware Version</span>
+                    <span id="firmware-version" class="value" style="font-size: 1.2rem; font-weight: normal;">-</span>
+                </div>
+                <div class="status-item" style="grid-column: span 2;">
+                    <span class="label">Firmware Response</span>
+                    <code id="device-response" style="font-size: 1rem; display: block; margin-top: 0.25rem; word-break: break-all;">-</code>
+                </div>
+            </div>
+        </div>
+
+        <div id="live-status" class="card">
+            <h2>Live Status</h2>
+            <div class="status-grid">
+                <div class="status-item"><span class="label">Voltage (V)</span><span id="status-v" class="value">-</span></div>
+                <div class="status-item"><span class="label">Current (A)</span><span id="status-i" class="value">-</span></div>
+                <div class="status-item"><span class="label">Power (W)</span><span id="status-p" class="value">-</span></div>
+                <div class="status-item"><span class="label">Amb. Temp (°C)</span><span id="status-t_amb" class="value">-</span></div>
+                <div class="status-item"><span class="label">Amb. Humidity (%)</span><span id="status-h_amb" class="value">-</span></div>
+                <div class="status-item"><span class="label">Dew Point (°C)</span><span id="status-d" class="value">-</span></div>
+                <div class="status-item"><span class="label">Lens Temp (°C)</span><span id="status-t_lens" class="value">-</span></div>
+                <div class="status-item"><span class="label">PWM 1 (%)</span><span id="status-pwm1" class="value">-</span></div>
+                <div class="status-item"><span class="label">PWM 2 (%)</span><span id="status-pwm2" class="value">-</span></div>
+            </div>
+        </div>
+
+        <div id="live-power-control" class="card">
+            <h2>Live Power Control</h2>
+            <div id="master-switch-container" class="switch-control">
+                <span class="name">Master Switch</span>
+                <label class="switch-toggle">
+                    <input type="checkbox" id="master-power-switch">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div id="power-grid" class="power-grid">
+                <!-- Switches will be dynamically inserted here -->
+            </div>
+        </div>
+
+        <div id="live-log-viewer" class="card">
+            <div class="collapsible-header">
+                <h2>Live Log</h2>
+                <span class="toggle-icon"></span>
+            </div>
+            <div class="collapsible-content">
+                <pre id="log-container"></pre>
+            </div>
+        </div>
+
+        <div id="config-form" class="card">
+            <div class="collapsible-header">
+                <h2>Configuration</h2>
+                <span id="config-toggle-icon" class="toggle-icon"></span>
+            </div>
+
+            <div id="config-collapsible-content" class="collapsible-content">
+
+               <div class="config-group">
+                    <div class="collapsible-header">
+                        <h3>Custom Switch Names</h3>
+                        <span class="toggle-icon"></span>
+                    </div>
+                    <div class="collapsible-content">
+                        <div class="form-group">
+                            <div id="proxy-switch-names-grid" class="startup-grid" style="grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));">
+                                <!-- Switch name inputs will be dynamically inserted here -->
+                            </div>
+                        </div>
+                        <button id="save-switch-names-button">Save Custom Names</button>
+                    </div>
+                </div>
+
+                <div class="config-group">
+                    <div class="collapsible-header">
+                        <h3>Power On Startup States</h3>
+                        <span class="toggle-icon"></span>
+                    </div>
+                    <div class="collapsible-content">
+                        <div class="form-group startup-grid" id="power-startup-states">
+                            <!-- Startup state checkboxes will be dynamically inserted here -->
+                        </div>
+                        <button class="save-config-button">Save Startup States</button>
+                    </div>
+                </div>
+
+                <div class="config-group">
+                    <div class="collapsible-header">
+                        <h3>Adjustable Voltage Preset</h3>
+                        <span class="toggle-icon"></span>
+                    </div>
+                    <div class="collapsible-content">
+                        <div class="form-group">
+                            <label for="adj-voltage">Adjustable Voltage Preset (V)</label>
+                            <input type="number" id="adj-voltage" name="adj_conv_preset_v" step="0.1">
+                        </div>
+                        <button class="save-config-button">Save Voltage Preset</button>
+                    </div>
+                </div>                
+
+                <!-- Dew Heater Settings -->
+                <div class="config-group" id="dew-heater-settings">
+                    <div class="collapsible-header">
+                        <h3>Dew Heater Settings</h3>
+                        <span class="toggle-icon"></span>
+                    </div>
+                    <div class="collapsible-content">
+                        <div id="heater-0">
+                            <h4>Dew Heater 1 (PWM1)</h4>
+                            <div class="form-group">
+                                <label><input type="checkbox" id="heater-0-startup-enabled"> Enable on Startup</label>
+                            </div>
+                            <div class="form-group">
+                                <label for="heater-0-mode">Mode</label>
+                                <select id="heater-0-mode">
+                                    <option value="0">Manual</option>
+                                    <option value="1">PID (Lens Sensor)</option>
+                                    <option value="2">Ambient Tracking</option>
+                                    <option value="3">PID-Sync (Follower)</option>
+                                </select>
+                            </div>
+                            <!-- Settings for Manual Mode -->
+                            <div id="heater-0-mode-0" class="form-group mode-settings">
+                                <label for="heater-0-manual-power">Manual Power (%)</label>
+                                <input type="number" id="heater-0-manual-power" min="0" max="100">
+                            </div>
+                            <!-- Settings for PID Mode -->
+                            <div id="heater-0-mode-1" class="mode-settings">
+                                <div class="form-group"><label for="heater-0-target-offset">Target Offset (°C above Dew Point)</label><input type="number" id="heater-0-target-offset" step="0.1"></div>
+                                <div class="form-group"><label for="heater-0-pid-kp">PID Kp</label><input type="number" id="heater-0-pid-kp" step="0.1"></div>
+                                <div class="form-group"><label for="heater-0-pid-ki">PID Ki</label><input type="number" id="heater-0-pid-ki" step="0.1"></div>
+                                <div class="form-group"><label for="heater-0-pid-kd">PID Kd</label><input type="number" id="heater-0-pid-kd" step="0.1"></div>
+                            </div>
+                            <!-- Settings for Ambient Tracking Mode -->
+                            <div id="heater-0-mode-2" class="mode-settings">
+                                <div class="form-group"><label for="heater-0-start-delta">Start Delta (°C)</label><input type="number" id="heater-0-start-delta" step="0.1"></div>
+                                <div class="form-group"><label for="heater-0-end-delta">End Delta (°C)</label><input type="number" id="heater-0-end-delta" step="0.1"></div>
+                                <div class="form-group"><label for="heater-0-max-power">Max Power (%)</label><input type="number" id="heater-0-max-power" min="0" max="100"></div>
+                            </div>
+                            <!-- Settings for PID-Sync Mode -->
+                            <div id="heater-0-mode-3" class="mode-settings">
+                                <div class="form-group">
+                                    <label for="heater-0-pid-sync-factor">Sync Factor</label><input type="number" id="heater-0-pid-sync-factor" step="0.1" min="0" max="2.0">
+                                    <small>Multiplies the power of the other PID heater. E.g., 0.8 = 80% of leader's power.</small>
+                                </div>
+                                <div class="form-group">
+                                    <label><input type="checkbox" id="heater-0-auto-enable-leader"> Auto-enable PID Leader</label>
+                                    <small>If this heater is activated, automatically turn on its PID Leader (Heater 2) as well.</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="heater-1">
+                            <h4>Dew Heater 2 (PWM2)</h4>
+                            <div class="form-group">
+                                <label><input type="checkbox" id="heater-1-startup-enabled"> Enable on Startup</label>
+                            </div>
+                            <div class="form-group">
+                                <label for="heater-1-mode">Mode</label>
+                                <select id="heater-1-mode">
+                                    <option value="0">Manual</option>
+                                    <option value="1">PID (Lens Sensor)</option>
+                                    <option value="2">Ambient Tracking</option>
+                                    <option value="3">PID-Sync (Follower)</option>
+                                </select>
+                            </div>
+                            <div id="heater-1-mode-0" class="form-group mode-settings"><label for="heater-1-manual-power">Manual Power (%)</label><input type="number" id="heater-1-manual-power" min="0" max="100"></div>
+                            <div id="heater-1-mode-1" class="mode-settings">
+                                <div class="form-group"><label for="heater-1-target-offset">Target Offset (°C above Dew Point)</label><input type="number" id="heater-1-target-offset" step="0.1"></div>
+                                <div class="form-group"><label for="heater-1-pid-kp">PID Kp</label><input type="number" id="heater-1-pid-kp" step="0.1"></div>
+                                <div class="form-group"><label for="heater-1-pid-ki">PID Ki</label><input type="number" id="heater-1-pid-ki" step="0.1"></div>
+                                <div class="form-group"><label for="heater-1-pid-kd">PID Kd</label><input type="number" id="heater-1-pid-kd" step="0.1"></div>
+                            </div>
+                            <div id="heater-1-mode-2" class="mode-settings">
+                                <div class="form-group"><label for="heater-1-start-delta">Start Delta (°C)</label><input type="number" id="heater-1-start-delta" step="0.1"></div>
+                                <div class="form-group"><label for="heater-1-end-delta">End Delta (°C)</label><input type="number" id="heater-1-end-delta" step="0.1"></div>
+                                <div class="form-group"><label for="heater-1-max-power">Max Power (%)</label><input type="number" id="heater-1-max-power" min="0" max="100"></div>
+                            </div>
+                            <!-- Settings for PID-Sync Mode -->
+                            <div id="heater-1-mode-3" class="mode-settings">
+                                <div class="form-group">
+                                    <label for="heater-1-pid-sync-factor">Sync Factor</label><input type="number" id="heater-1-pid-sync-factor" step="0.1" min="0" max="2.0">
+                                    <small>Multiplies the power of the other PID heater. E.g., 0.8 = 80% of leader's power.</small>
+                                </div>
+                                <div class="form-group">
+                                    <label><input type="checkbox" id="heater-1-auto-enable-leader"> Auto-enable PID Leader</label>
+                                    <small>If this heater is activated, automatically turn on its PID Leader (Heater 1) as well.</small>
+                                </div>
+                            </div>
+                        </div>
+                        <button class="save-config-button">Save Heater Settings</button>
+                    </div>
+                </div>
+
+                <div class="config-group" id="sensor-settings-group">
+                    <div class="collapsible-header">
+                        <h3>Sensor Settings</h3>
+                        <span class="toggle-icon"></span>
+                    </div>
+                    <div class="collapsible-content">
+                        <h4>Offsets</h4>
+                        <div class="form-group">
+                            <label for="offset-sht40-temp">SHT40 Temperature Offset (°C)</label>
+                            <input type="number" id="offset-sht40-temp" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label for="offset-sht40-humidity">SHT40 Humidity Offset (%)</label>
+                            <input type="number" id="offset-sht40-humidity" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label for="offset-ds18b20-temp">DS18B20 Temperature Offset (°C)</label>
+                            <input type="number" id="offset-ds18b20-temp" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label for="offset-ina219-voltage">INA219 Voltage Offset (V)</label>
+                            <input type="number" id="offset-ina219-voltage" step="0.01">
+                        </div>
+                        <div class="form-group">
+                            <label for="offset-ina219-current">INA219 Current Offset (mA)</label>
+                            <input type="number" id="offset-ina219-current" step="0.1">
+                        </div>
+
+                        <h4>Update Intervals (ms)</h4>
+                        <div class="form-group">
+                            <label for="interval-ina219">INA219 (Power Sensor)</label>
+                            <input type="number" id="interval-ina219" step="100">
+                        </div>
+                        <div class="form-group">
+                            <label for="interval-sht40">SHT40 (Ambient Sensor)</label>
+                            <input type="number" id="interval-sht40" step="100">
+                        </div>
+                        <div class="form-group">
+                            <label for="interval-ds18b20">DS18B20 (Lens Sensor)</label>
+                            <input type="number" id="interval-ds18b20" step="100">
+                        </div>
+
+                        <h4>Averaging Counts</h4>
+                        <small>Number of measurements for the rolling median filter. 1 disables the filtering.</small>
+                        <div class="form-group"><label for="avg-sht40-temp">SHT40 Temperature</label><input type="number" id="avg-sht40-temp" min="1" max="20"></div>
+                        <div class="form-group"><label for="avg-sht40-humidity">SHT40 Humidity</label><input type="number" id="avg-sht40-humidity" min="1" max="20"></div>
+                        <div class="form-group"><label for="avg-ds18b20-temp">DS18B20 Temperature</label><input type="number" id="avg-ds18b20-temp" min="1" max="20"></div>
+                        <div class="form-group"><label for="avg-ina219-voltage">INA219 Voltage</label><input type="number" id="avg-ina219-voltage" min="1" max="20"></div>
+                        <div class="form-group"><label for="avg-ina219-current">INA219 Current</label><input type="number" id="avg-ina219-current" min="1" max="20"></div>
+                        <button class="save-config-button">Save Sensor Settings</button>
+                    </div>
+                </div>
+
+                <!-- Proxy Connection Settings -->
+                <div class="config-group">
+                    <div class="collapsible-header">
+                        <h3>Proxy Connection Settings</h3>
+                        <span class="toggle-icon"></span>
+                    </div>
+                    <div class="collapsible-content">
+                        <div class="form-group">
+                            <label for="proxy-serial-port">Serial Port Name (e.g., COM3, /dev/ttyUSB0)</label>
+                            <input type="text" id="proxy-serial-port">
+                            <small>Leave empty for auto-detection. Changing this will attempt to reconnect the proxy.</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="proxy-network-port">Network Port</label>
+                            <input type="number" id="proxy-network-port" min="1024" max="65535">
+                            <small>The port the Alpaca server listens on. <b>Requires an application restart to take effect.</b> Default is 8080.</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="proxy-log-level">Log Level</label>
+                            <select id="proxy-log-level">
+                                <option value="DEBUG">Debug</option>
+                                <option value="INFO">Info</option>
+                                <option value="WARN">Warning</option>
+                                <option value="ERROR">Error</option>
+                            </select>
+                            <small>Controls the verbosity of the log file. 'Debug' is very verbose, 'Info' is standard.</small>
+                        </div>
+                        <button id="save-proxy-config-button">Save Proxy Connection</button>
+                    </div>
+                </div>
+
+                <div class="config-group">
+                    <div class="collapsible-header">
+                        <h3>Backup & Restore</h3>
+                        <span class="toggle-icon"></span>
+                    </div>
+                    <div class="collapsible-content">
+                        <p>Create a full backup of both the proxy and device settings, or restore them from a previously saved file.</p>
+                        <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+                            <button id="backup-button">Create Backup</button>
+                            <button id="restore-button">Restore from Backup</button>
+                            <input type="file" id="restore-file-input" accept=".json" style="display: none;">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="main-actions config-group">
+                    <button id="reboot-button">Reboot Device</button>
+                    <button id="factory-reset-button">Factory Reset</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js" defer></script>
+
+</body>
+</html>
