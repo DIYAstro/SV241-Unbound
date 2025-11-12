@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sv241pro-alpaca-proxy/internal/config"
 	"sv241pro-alpaca-proxy/internal/logger"
-	"strings"
 	"sync"
 	"time"
 
@@ -207,27 +207,35 @@ func ManageConnection(initDone chan struct{}) {
 			logger.Info("Connection Manager: Device is disconnected. Attempting to connect...")
 			conf := config.Get()
 			targetPort := conf.SerialPortName
+			autoDetect := conf.AutoDetectPort
 
-			if targetPort != "" {
+			// Wenn Auto-Detect AUS ist, versuchen wir NUR den konfigurierten Port.
+			if !autoDetect && targetPort != "" {
 				logger.Info("Connection Manager: Trying configured port '%s' for reconnection.", targetPort)
 				reconnect(targetPort)
-				if sv241Port != nil {
-					logger.Info("Connection Manager: Successfully reconnected to port '%s'.", targetPort)
-					portMutex.Unlock()
-					continue
-				}
-				logger.Warn("Connection Manager: Configured port '%s' failed. Falling back to auto-detection.", targetPort)
-				conf.SerialPortName = ""
-				config.Save()
-			}
-
-			logger.Info("Connection Manager: Starting auto-detection...")
-			foundPort, err := FindPort()
-			if err != nil {
-				logger.Warn("Connection Manager: Auto-detection failed: %v", err)
 			} else {
-				logger.Info("Connection Manager: Auto-detection found device on port %s. Connecting...", foundPort)
-				reconnect(foundPort)
+				// Wenn Auto-Detect AN ist (oder kein Port konfiguriert ist), verhalten wir uns wie bisher.
+				if targetPort != "" {
+					logger.Info("Connection Manager: Trying configured port '%s' for reconnection.", targetPort)
+					reconnect(targetPort)
+					if sv241Port == nil {
+						logger.Warn("Connection Manager: Configured port '%s' failed. Falling back to auto-detection.", targetPort)
+						conf.SerialPortName = "" // Leeren, damit der nächste Versuch den Autoscan nutzt
+						config.Save()
+					}
+				}
+
+				// Wenn immer noch nicht verbunden, starte den Autoscan.
+				if sv241Port == nil {
+					logger.Info("Connection Manager: Starting auto-detection...")
+					foundPort, err := FindPort()
+					if err != nil {
+						logger.Warn("Connection Manager: Auto-detection failed: %v", err)
+					} else {
+						logger.Info("Connection Manager: Auto-detection found device on port %s. Connecting...", foundPort)
+						reconnect(foundPort)
+					}
+				}
 			}
 		} else {
 			logger.Debug("Connection Manager: Device is connected.")

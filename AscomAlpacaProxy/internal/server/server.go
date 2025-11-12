@@ -272,6 +272,7 @@ func handleSetProxyConfig(w http.ResponseWriter, r *http.Request) {
 	// Update the global config by getting a pointer to it
 	conf := config.Get()
 	conf.SerialPortName = newProxyConfig.SerialPortName
+	conf.AutoDetectPort = newProxyConfig.AutoDetectPort
 	conf.NetworkPort = newProxyConfig.NetworkPort
 	conf.SwitchNames = newProxyConfig.SwitchNames
 	conf.LogLevel = newProxyConfig.LogLevel

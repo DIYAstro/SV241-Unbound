@@ -200,6 +200,11 @@
                 // It's separated so it can be called after the device config is also loaded.
                 function applyProxyConfig(proxyConf) {
                     document.getElementById('proxy-serial-port').value = proxyConf.serialPortName || '';
+                    document.getElementById('proxy-auto-detect-port').checked = proxyConf.autoDetectPort;
+
+                    // Disable serial port input if auto-detect is on
+                    document.getElementById('proxy-serial-port').disabled = proxyConf.autoDetectPort;
+
                     document.getElementById('proxy-network-port').value = proxyConf.networkPort || 8080;
                     document.getElementById('proxy-log-level').value = proxyConf.logLevel || 'INFO';
 
@@ -413,6 +418,7 @@
             async function saveProxyConfig(showAlert = true) {
                 const newProxyConfig = { 
                     serialPortName: document.getElementById('proxy-serial-port').value.trim(),
+                    autoDetectPort: document.getElementById('proxy-auto-detect-port').checked,
                     networkPort: parseInt(document.getElementById('proxy-network-port').value, 10) || 8080,
                     logLevel: document.getElementById('proxy-log-level').value,
                     switchNames: {},
@@ -752,6 +758,11 @@
             masterPowerSwitch.addEventListener('change', (e) => setAllPower(e.target.checked));
             document.getElementById('heater-0-mode').addEventListener('change', () => updateHeaterModeView(0));
             document.getElementById('heater-1-mode').addEventListener('change', () => updateHeaterModeView(1));
+
+            document.getElementById('proxy-auto-detect-port').addEventListener('change', (e) => {
+                const serialPortInput = document.getElementById('proxy-serial-port');
+                serialPortInput.disabled = e.target.checked;
+            });
 
             document.getElementById('save-proxy-config-button').addEventListener('click', () => saveProxyConfig(true));
             document.getElementById('save-switch-names-button').addEventListener('click', saveProxyConfig);

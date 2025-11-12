@@ -274,8 +274,12 @@
                     <div class="collapsible-content">
                         <div class="form-group">
                             <label for="proxy-serial-port">Serial Port Name (e.g., COM3, /dev/ttyUSB0)</label>
-                            <input type="text" id="proxy-serial-port">
-                            <small>Leave empty for auto-detection. Changing this will attempt to reconnect the proxy.</small>
+                            <input type="text" id="proxy-serial-port" placeholder="Leave empty if auto-detect is enabled">
+                            <small>Changing this will attempt to reconnect the proxy.</small>
+                        </div>
+                        <div class="form-group">
+                            <label class="inline-label"><input type="checkbox" id="proxy-auto-detect-port"> Auto-detect Port</label>
+                            <small>If checked, the proxy will scan all USB ports to find the device. If unchecked, it will only try to connect to the port name specified above.</small>
                         </div>
                         <div class="form-group">
                             <label for="proxy-network-port">Network Port</label>

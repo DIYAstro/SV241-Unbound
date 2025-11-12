@@ -117,6 +117,11 @@
             font-weight: 600;
         }
 
+        label.inline-label {
+            display: flex;
+            align-items: center;
+        }
+
         input[type="text"],
         input[type="number"],
         select {

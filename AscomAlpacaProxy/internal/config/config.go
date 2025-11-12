@@ -11,6 +11,7 @@ import (
 // ProxyConfig stores configuration specific to the Go proxy itself.
 type ProxyConfig struct {
 	SerialPortName         string            `json:"serialPortName"`
+	AutoDetectPort         bool              `json:"autoDetectPort"`
 	NetworkPort            int               `json:"networkPort"`
 	LogLevel               string            `json:"logLevel"`
 	SwitchNames            map[string]string `json:"switchNames"`
@@ -67,9 +68,10 @@ func Load() error {
 			logger.Info("Proxy config file '%s' not found. Using default settings.", proxyConfigFile)
 			// Initialize with default values
 			proxyConfig = &ProxyConfig{
-				NetworkPort: 8080,
-				LogLevel:    "INFO",
-				SwitchNames: make(map[string]string),
+				AutoDetectPort: true, // Standardmäßig ist der Autoscan an
+				NetworkPort:    8080,
+				LogLevel:       "INFO",
+				SwitchNames:    make(map[string]string),
 				HeaterAutoEnableLeader: map[string]bool{
 					"pwm1": true,
 					"pwm2": true,
@@ -119,6 +121,12 @@ func Load() error {
 	if _, exists := proxyConfig.HeaterAutoEnableLeader["pwm2"]; !exists {
 		logger.Warn("Missing auto-enable setting for 'pwm2', adding with default 'true'.")
 		proxyConfig.HeaterAutoEnableLeader["pwm2"] = true
+	}
+
+	// Wenn das Feld in einer alten Konfigurationsdatei fehlt, setzen wir es auf true,
+	// um das bisherige Verhalten beizubehalten.
+	if !proxyConfig.AutoDetectPort && proxyConfig.SerialPortName == "" {
+		proxyConfig.AutoDetectPort = true
 	}
 
 	// Apply the loaded log level immediately.
