@@ -1,7 +1,7 @@
 {
     "FixedFileInfo": {
-        "FileVersion": { "Major": 0, "Minor": 9, "Patch": 2, "Build": 0 },
-        "ProductVersion": { "Major": 0, "Minor": 9, "Patch": 2, "Build": 0 },
+        "FileVersion": { "Major": 0, "Minor": 9, "Patch": 3, "Build": 0 },
+        "ProductVersion": { "Major": 0, "Minor": 9, "Patch": 3, "Build": 0 },
         "FileFlagsMask": "3f",
         "FileFlags": "00",
         "FileOS": "040004",
@@ -12,13 +12,13 @@
         "Comments": "",
         "CompanyName": "DIYAstro",
         "FileDescription": "",
-        "FileVersion": "0.9.2",
+        "FileVersion": "0.9.3",
         "InternalName": "SV241 AscomAlpaca Proxy",
         "LegalCopyright": "GNU General Public License v3.0",
         "LegalTrademarks": "",
         "OriginalFilename": "AscomAlpacaProxy.exe",
         "ProductName": "SV241 AscomAlpaca Proxy",
-        "ProductVersion": "0.9.2",
+        "ProductVersion": "0.9.3",
         "PrivateBuild": "",
         "SpecialBuild": ""
     },
