@@ -4,6 +4,21 @@ The project also includes a standalone ASCOM Alpaca proxy driver written in Go. 
 
 > **Note:** While the proxy is written in Go and designed to be cross-platform (Windows, macOS, Linux), it has currently only been tested on Windows.
 
+## Table of Contents
+
+- [Features](#features)
+- [Important Security Notice](#important-security-notice)
+  - [Manually Creating a Firewall Rule](#manually-creating-a-firewall-rule)
+  - [ASCOM Switch Device Actions](#ascom-switch-device-actions)
+- [Accessing the Setup Page](#accessing-the-setup-page)
+- [Driver Installation](#driver-installation)
+  - [Easy Driver Creation (Recommended)](#easy-driver-creation-recommended)
+  - [Manual Driver Creation (Fallback)](#manual-driver-creation-fallback)
+- [Configuration](#configuration)
+  - [Manual Configuration (`proxy_config.json`)](#manual-configuration-proxy_configjson)
+  - Log Level Configuration
+  - Log Rotation
+
 ## Features
 
 *   Auto-detection of the SV241 serial port.
