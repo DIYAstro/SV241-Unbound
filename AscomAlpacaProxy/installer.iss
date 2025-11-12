@@ -16,7 +16,7 @@ AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
-DisableProgramGroupPage=yes
+DefaultGroupName=SV241-Unbound
 OutputBaseFilename=SV241-AscomAlpacaProxy-Setup-{#MyAppVersion}
 OutputDir=./install
 Compression=lzma
@@ -34,17 +34,24 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkablealone
 Name: "autostart"; Description: "Start &automatically with Windows"; GroupDescription: "Other:"; Flags: checkablealone
 
+[Dirs]
+; Creates the Helper directory in the installation folder
+Name: "{app}\Helper"
+
 [Files]
 Source: "build\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "icon.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "Helper\Create-Driver.bat"; DestDir: "{app}\Helper"; Flags: ignoreversion
+Source: "Helper\Create-AscomDriver.ps1"; DestDir: "{app}\Helper"; Flags: ignoreversion
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{group}\Create SV241 Ascom Driver"; Filename: "{app}\Helper\Create-Driver.bat"; WorkingDir: "{app}\Helper"
 
 [Registry]
-; Autostart via Registry - wird durch die Task gesteuert
+; Autostart via Registry - controlled by the 'autostart' task
 Root: HKCU; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; \
     ValueType: string; ValueName: "{#MyAppName}"; \
     ValueData: """{app}\{#MyAppExeName}"""; \

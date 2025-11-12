@@ -93,13 +93,46 @@ The primary way to configure the SV241 Alpaca Proxy is through its built-in web 
     *   You would then use that port in the URL: `http://localhost:8081/setup`
 
 
-## Manual Connection Setup
+## Driver Installation
 
-While most modern ASCOM client software (like NINA) can automatically discover Alpaca devices on the network, sometimes it's necessary to add a device manually. This might be because auto-discovery is not working, is disabled, or you are using a client that does not support it.
+To connect your astronomy software to this proxy, a driver must be registered within the ASCOM system. This step is necessary if your software cannot connect to the Alpaca device directly, which can happen for two main reasons:
 
-The following guide explains how to use the "ASCOM Diagnostics" application to create a manual Alpaca driver, which will then be available system-wide (including in NINA).
+1.  The software does not have a built-in Alpaca client and relies on the classic ASCOM Chooser.
+2.  The software has an Alpaca client, but the automatic network discovery process is not working (e.g., due to firewall settings or network configuration).
 
-### Guide: Manually Adding an Alpaca Device in ASCOM
+Registering a driver solves this by creating a permanent entry in the ASCOM Chooser. This entry acts as a bridge, telling the system exactly how to find and communicate with the proxy.
+
+We provide two methods for this registration: an easy, automated script and a manual method.
+
+### Easy Driver Creation (Recommended)
+
+The installer includes a helper script that automates the entire driver creation process. This is the recommended method as it is fast, easy, and avoids common configuration errors.
+
+1.  **Open the Start Menu**
+    *   Navigate to the program folder (usually named `SV241-Unbound`).
+
+2.  **Run the Helper Script**
+    *   Click on **"Create SV241 Ascom Driver"**.
+    *   This will open a new window and launch an interactive script.
+
+3.  **Follow the On-Screen Instructions**
+    *   The script will ask you to select the driver type (`Switch` or `ObservingConditions`). The default is `Switch`.
+    *   It will ask you to provide a name for the driver. A default name will be suggested.
+    *   It will automatically detect the correct network port from your proxy configuration and suggest it as the default.
+    *   Simply press **Enter** at each prompt to accept the defaults, which is sufficient in most cases.
+
+4.  **Done**
+    *   After a few moments, the script will confirm that the driver has been successfully created.
+
+**Result:** The driver is now registered system-wide. You can now open your astronomy software and select the driver you just created (e.g., "SV241 Power Switch") directly from the device list.
+
+> **Note:** You can run this script multiple times to create drivers with different names or to create both a `Switch` and an `ObservingConditions` driver.
+
+---
+
+### Manual Driver Creation (Fallback)
+
+If you prefer to set up the driver manually, or if the helper script fails for any reason, you can use the "ASCOM Diagnostics" application that comes with the ASCOM Platform.
 
 1.  **Start ASCOM Diagnostics**
 
