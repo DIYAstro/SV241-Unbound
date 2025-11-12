@@ -21,6 +21,20 @@ The project also includes a standalone ASCOM Alpaca proxy driver written in Go. 
 > *   It is strongly recommended to restrict access to the proxy port (default `8080`) using **firewall rules** on your computer. Only allow access from the computer running your control software (usually `localhost` or `127.0.0.1`).
 > *   Do not use this driver on unsecured networks (e.g., public Wi-Fi).
 
+### Manually Creating a Firewall Rule
+
+If you accidentally clicked "Cancel" or denied access when the Windows Defender Firewall prompt appeared on the first run, you will need to create a rule manually to allow your astronomy software to connect to the proxy.
+
+1.  Open **Command Prompt** or **PowerShell** as an **Administrator**.
+2.  Copy and paste the following command, then press Enter:
+
+```bash
+netsh advfirewall firewall add rule name="SV241 Alpaca Proxy" dir=in action=allow program="%ProgramFiles(x86)%\SV241 Ascom Alpaca Proxy\AscomAlpacaProxy.exe" enable=yes
+```
+
+This command adds an inbound rule specifically for the `AscomAlpacaProxy.exe` application, allowing it to receive connections from your astronomy software.
+
+
 ### ASCOM Switch Device Actions
 
 To provide functionality beyond the standard ASCOM `Switch` specification, the driver implements several custom **Actions**. These can be triggered by ASCOM client software that supports them, or manually via API calls.
@@ -77,6 +91,62 @@ The primary way to configure the SV241 Alpaca Proxy is through its built-in web 
         [INFO] Starting Alpaca API server on port 8081...
         ```
     *   You would then use that port in the URL: `http://localhost:8081/setup`
+
+
+## Manual Connection Setup
+
+While most modern ASCOM client software (like NINA) can automatically discover Alpaca devices on the network, sometimes it's necessary to add a device manually. This might be because auto-discovery is not working, is disabled, or you are using a client that does not support it.
+
+The following guide explains how to use the "ASCOM Diagnostics" application to create a manual Alpaca driver, which will then be available system-wide (including in NINA).
+
+### Guide: Manually Adding an Alpaca Device in ASCOM
+
+1.  **Start ASCOM Diagnostics**
+
+    Open the "ASCOM Diagnostics" application.
+    *   You can find it in the Windows Start Menu under the "ASCOM Platform" folder.
+
+2.  **Open the "Switch Chooser"**
+
+    *   In the main window of ASCOM Diagnostics, select the device type `Switch` from the "Select Device Type" dropdown list.
+    *   Click the `Choose Device...` button next to it.
+
+3.  **Create a New Alpaca Driver**
+
+    The "ASCOM Switch Chooser" window will open.
+    *   In the menu bar of this window, click on `Alpaca`.
+    *   Select `Create Alpaca Driver (Admin)` from the dropdown menu.
+    *   Windows (UAC) may ask for administrative rights. Please confirm this.
+
+4.  **Name the Driver**
+
+    A small dialog box will ask for a name.
+    *   Enter a descriptive name, e.g., `My Manual SV241 Switch`
+    *   Click `OK`.
+
+5.  **Configure the Alpaca Connection (Most Important Step)**
+
+    You are now back in the "ASCOM Switch Chooser". Your new driver (e.g., `Switch.My_Manual_SV241_Switch`) is now highlighted in the list.
+    *   Click the `Properties...` button.
+    *   A setup window will open. Enter the exact connection details here:
+        *   **Remote Device Host Name or IP Address:** `localhost`
+        *   **Alpaca Port:** `8080` (or the port your proxy is running on)
+        *   **Remote Device Number:** `0` (default for the first device)
+    *   Click `OK` in the setup window.
+
+6.  **Finalize Selection**
+
+    *   Click `OK` in the "ASCOM Switch Chooser" window as well.
+
+7.  **Test (Optional, but Recommended)**
+
+    *   You are now back in the main window of ASCOM Diagnostics. The name of your new driver is now in the text field.
+    *   Click `Connect`.
+    *   If everything is configured correctly, the connection should be established successfully (the fields in the "Capabilities" section will be populated).
+
+**Result:** Your manually configured driver "My Manual SV241 Switch" is now permanently registered in the ASCOM system. When you now start NINA (or other software), you can select it directly from the device list without having to enter the IP address again.
+
+> **Note:** Repeat this process for the `ObservingConditions` device to also add the environmental sensors manually.
 
 
 ## Configuration
