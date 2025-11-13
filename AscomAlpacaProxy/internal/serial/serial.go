@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"sv241pro-alpaca-proxy/internal/config"
+	"sv241pro-alpaca-proxy/internal/events"
 	"sv241pro-alpaca-proxy/internal/logger"
 	"sync"
 	"time"
@@ -51,6 +52,9 @@ var (
 	lastLoggedHeapMaxAlloc float64
 	lastLoggedHeapSize     float64
 	lastMemoryLogTime      time.Time
+
+	// lastSentStatus tracks the last connection status event sent to avoid duplicate notifications.
+	lastSentStatus events.ComPortStatus = events.Disconnected
 )
 
 // StartManager initializes all background tasks for serial communication.
@@ -94,7 +98,6 @@ func StartManager() {
 	logger.Info("Signaling background tasks to start main loops.")
 	close(initDone)
 
-	go fetchFirmwareVersion()
 }
 
 // IsConnected returns the current connection status of the serial port.
@@ -315,6 +318,17 @@ func reconnect(newPortName string) {
 				logger.Warn("Failed to save newly connected serial port to config: %v", err)
 			}
 			logger.Info("Successfully opened serial port: %s", newPortName)
+
+			// Send a connected event if the status changed from disconnected.
+			if lastSentStatus == events.Disconnected {
+				// Use a non-blocking send. If the channel is full or no one is listening,
+				// this will not block the serial manager. This is important at startup.
+				select {
+				case events.ComPortStatusChan <- events.Connected:
+					lastSentStatus = events.Connected
+				default: // Do nothing if the channel is not ready.
+				}
+			}
 		}
 	} else {
 		logger.Info("reconnect called with empty port name. Connection remains closed.")
@@ -324,8 +338,19 @@ func reconnect(newPortName string) {
 // handleDisconnect closes the port and sets it to nil. MUST be called within a portMutex lock.
 func handleDisconnect() {
 	if sv241Port != nil {
+		// Send a disconnected event if the status changed from connected.
+		if lastSentStatus == events.Connected {
+			// Use a non-blocking send.
+			select {
+			case events.ComPortStatusChan <- events.Disconnected:
+				lastSentStatus = events.Disconnected
+			default: // Do nothing if the channel is not ready.
+			}
+		}
 		sv241Port.Close()
 		sv241Port = nil
+	} else {
+		lastSentStatus = events.Disconnected
 	}
 }
 
@@ -376,8 +401,11 @@ func performCacheUpdate() {
 	}
 }
 
-func fetchFirmwareVersion() {
-	time.Sleep(3 * time.Second) // Wait for port to be ready
+func FetchFirmwareVersion() {
+	// This function is now called as a goroutine after the main loops have started.
+	// We wait a moment to ensure the connection is stable and other tasks are running.
+	time.Sleep(3 * time.Second)
+
 	logger.Info("Requesting firmware version from device...")
 	resp, err := SendCommand(`{"get":"version"}`, false, 0)
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"sv241pro-alpaca-proxy/internal/alpaca"
 	"sv241pro-alpaca-proxy/internal/config"
+	"sv241pro-alpaca-proxy/internal/events"
 	"sv241pro-alpaca-proxy/internal/logger"
 	"sv241pro-alpaca-proxy/internal/logstream"
 	"sv241pro-alpaca-proxy/internal/serial"
@@ -61,8 +62,14 @@ func startApp() {
 	// This will perform the initial connection attempt.
 	serial.StartManager()
 
+	// Ensure the systray listener is ready. This call is safe to make here.
+	events.StartListener(func() {}) // This just ensures the 'once.Do' is triggered if it hasn't been already.
+
 	// 5. Start the Alpaca discovery responder.
 	go alpaca.RespondToDiscovery()
+
+	// Fetch firmware version in the background after initialization is complete.
+	go serial.FetchFirmwareVersion()
 
 	// 6. Start the web server. This is a blocking call and will run for the
 	// lifetime of the application, so it must be last.

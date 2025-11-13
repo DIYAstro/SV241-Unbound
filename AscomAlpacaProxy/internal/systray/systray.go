@@ -6,11 +6,13 @@ import (
 	"os/exec"
 	"runtime"
 	"sv241pro-alpaca-proxy/internal/config"
+	"sv241pro-alpaca-proxy/internal/events"
 	"sv241pro-alpaca-proxy/internal/logger"
 	"syscall"
 	"unsafe"
 
 	"fyne.io/systray"
+	"github.com/go-toast/toast"
 	"golang.org/x/sys/windows"
 )
 
@@ -34,8 +36,12 @@ func OnReady(onStart func(), iconData []byte) {
 	systray.AddSeparator()
 	mQuit := systray.AddMenuItem("Exit", "Quit the application")
 
+	// Show a notification that the app is running.
+	go ShowNotification("SV241 Alpaca Proxy is active", "The program is running in the background. You can find the icon in the System Tray.")
+
 	// Start the main application logic in a goroutine.
 	go onStart()
+	events.StartListener(listenForComPortEvents)
 
 	// Handle menu clicks.
 	go func() {
@@ -116,4 +122,36 @@ func ShowMessageBox(title, message string, style uint) {
 	lpText := syscall.StringToUTF16Ptr(message)
 	lpCaption := syscall.StringToUTF16Ptr(title)
 	messageBoxW.Call(0, uintptr(unsafe.Pointer(lpText)), uintptr(unsafe.Pointer(lpCaption)), uintptr(style))
+}
+
+// ShowNotification displays a toast notification.
+func ShowNotification(title, message string) {
+	notification := toast.Notification{
+		AppID:   "SV241 Alpaca Proxy",
+		Title:   title,
+		Message: message,
+		// Duration can be set to toast.Short or toast.Long.
+		Duration: toast.Short,
+	}
+	err := notification.Push()
+	if err != nil {
+		logger.Warn("Failed to show notification: %v", err)
+	}
+}
+
+// listenForComPortEvents waits for status updates from the serial manager
+// and shows notifications accordingly.
+func listenForComPortEvents() {
+	logger.Info("Systray is now listening for COM port connection events.")
+	go func() {
+		for status := range events.ComPortStatusChan {
+			switch status {
+			case events.Connected:
+				go ShowNotification("SV241 Reconnected", "Connection to the COM port has been restored.")
+			case events.Disconnected:
+				go ShowNotification("SV241 Connection Lost", "Connection to the COM port was interrupted. Please check the device and cable.")
+			}
+		}
+		logger.Info("Systray stopped listening for COM port events.")
+	}()
 }

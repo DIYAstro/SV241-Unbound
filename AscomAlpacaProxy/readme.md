@@ -3,6 +3,7 @@
 The project also includes a standalone ASCOM Alpaca proxy driver written in Go. This application connects to the SV241 device via its serial port and exposes it to the ASCOM ecosystem as standard `Switch` and `ObservingConditions` devices.
 
 > **Note:** While the proxy is written in Go and designed to be cross-platform (Windows, macOS, Linux), it has currently only been tested on Windows.
+> **Note:** This proxy driver is designed for Windows.
 
 ## Table of Contents
 
@@ -26,7 +27,6 @@ The project also includes a standalone ASCOM Alpaca proxy driver written in Go. 
 *   Exposes environmental sensors as an ASCOM `ObservingConditions` device.
 *   Provides a web-based setup page for configuration.
 *   Manages the connection to the device automatically.
-*   Cross-platform (Windows, macOS, Linux).
 
 ## Important Security Notice
 
@@ -199,10 +199,8 @@ If you prefer to set up the driver manually, or if the helper script fails for a
 
 ## Configuration
 
-The proxy creates its configuration files in the standard user config directory:
+The proxy creates its configuration files in the following directory on Windows:
 *   **Windows:** `%APPDATA%\SV241AlpacaProxy\`
-*   **Linux:** `~/.config/SV241AlpacaProxy/`
-*   **macOS:** `~/Library/Application Support/SV241AlpacaProxy/`
 
 ### Manual Configuration (`proxy_config.json`)
 
@@ -232,7 +230,7 @@ Here is an example of the `proxy_config.json` file structure:
 
 **Parameter Explanation:**
 
-*   `serialPortName` (string): The name of the serial port for the SV241 device (e.g., `"COM9"` on Windows, `"/dev/ttyUSB0"` on Linux). If this string is empty (`""`), the proxy will attempt to auto-detect the port on startup.
+*   `serialPortName` (string): The name of the serial port for the SV241 device (e.g., `"COM9"`). If this string is empty (`""`), the proxy will attempt to auto-detect the port on startup.
 *   `networkPort` (integer): The TCP port on which the Alpaca API server will listen for connections from client applications. The default is `8080`. A restart of the proxy is required for changes to this value to take effect.
 *   `logLevel` (string): Controls the verbosity of the log file. Valid values are `"ERROR"`, `"WARN"`, `"INFO"`, and `"DEBUG"`. This setting is applied live when changed.
 *   `switchNames` (object): A map that allows you to assign custom, user-friendly names to the internal switch identifiers. The `key` is the internal name (e.g., `"dc1"`) and the `value` is the custom name you want to see in ASCOM clients and the web interface.
