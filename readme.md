@@ -22,7 +22,8 @@ This project consists of two main components:
 ### Firmware Features
 *   Control for 5 DC outputs, 2 USB groups, and 1 adjustable voltage output.
 *   Advanced dew heater control with three modes: Manual, PID-based, and sensorless Ambient Tracking.
-*   On-board sensor suite for monitoring power, ambient temperature/humidity, and lens temperature.
+*   On-board sensor suite for monitoring power, ambient temperature/humidity, and lens temperature. The firmware is resilient to sensor failures.
+*   Experimental automatic drying cycle for the SHT40 humidity sensor.
 *   Configuration persistence across reboots.
 *   A powerful JSON-based serial command interface for direct control and integration.
 
@@ -194,10 +195,10 @@ This is an array that can contain up to two heater configuration objects. To upd
 *   **Mode 1: PID (Lens Sensor)**
     | Key | Description | Value Type |
     |:----|:------------------------------------------------------------------------------------------------|:-----------|
-    | `to` | **T**arget **O**ffset: Desired temperature above dew point (e.g., `3.0` for 3°C warmer). | `float` |
-    | `kp` | **P**roportional gain: Reacts to the current temperature error. | `double` |
-    | `ki` | **I**ntegral gain: Corrects small, constant errors over time. | `double` |
-    | `kd` | **D**erivative gain: Counteracts overshoot by reacting to the rate of temperature change. | `double` |
+    | `to` | **T**arget **O**ffset: Desired temperature difference above the dew point (e.g., `3.0` for 3°C warmer). | `float` |
+    | `kp` | **P**roportional gain: Reacts proportionally to the current temperature error. Higher values lead to a stronger, faster reaction. | `double` |
+    | `ki` | **I**ntegral gain: Accumulates past errors to correct small, constant offsets over time. Helps eliminate steady-state errors. | `double` |
+    | `kd` | **D**erivative gain: Reacts to the rate of temperature change. Helps to dampen overshoot and oscillations. | `double` |
 
 *   **Mode 2: Ambient Tracking (Sensorless)**
     | Key | Description | Value Type |
@@ -205,6 +206,13 @@ This is an array that can contain up to two heater configuration objects. To upd
     | `sd` | **S**tart **D**elta: Temp difference (Ambient - Dew Point) at which heating begins. | `float` |
     | `ed` | **E**nd **D**elta: Temp difference at which the heater reaches its maximum configured power. | `float` |
     | `xp` | Ma**x** **P**ower (0-100%): The maximum power the heater is allowed to use in this mode. | `int` (0-100) |
+
+*   **Mode 3: PID-Sync (Follower)**
+    This mode allows a heater (the "follower") to mirror the power output of another heater running in PID mode (the "leader"). It is ideal for a guidescope heater that should follow the main scope's heater without needing its own sensor.
+    | Key | Description | Value Type |
+    |:----|:------------------------------------------------------------------------------------------------|:-----------|
+    | `sf` | **S**ync **F**actor: A multiplier for the leader's power (e.g., `0.8` means the follower runs at 80% of the leader's power). | `float` |
+
 
 *   **Examples:**
 

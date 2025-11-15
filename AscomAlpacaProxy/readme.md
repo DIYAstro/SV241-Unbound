@@ -25,15 +25,17 @@ The project also includes a standalone ASCOM Alpaca proxy driver written in Go. 
 *   Auto-detection of the SV241 serial port.
 *   Exposes all power outputs as a single ASCOM `Switch` device.
 *   Exposes environmental sensors as an ASCOM `ObservingConditions` device.
-*   Provides a web-based setup page for configuration.
+*   Provides a web-based setup page for configuration, including network settings.
 *   Manages the connection to the device automatically.
+*   Desktop notifications for device connection and disconnection events.
+*   Helper scripts for easy, automated ASCOM driver creation.
 
 ## Important Security Notice
 
 > **Warning:** All traffic between the astronomy software (client) and this Alpaca proxy driver is transmitted **unencrypted** over the network (HTTP).
 >
 > *   This means that **anyone on the same network** can potentially access the driver and control your device.
-> *   It is strongly recommended to restrict access to the proxy port (default `8080`) using **firewall rules** on your computer. Only allow access from the computer running your control software (usually `localhost` or `127.0.0.1`).
+> *   By default, the proxy now listens only on `127.0.0.1` (localhost) for enhanced security. If you configure it to be accessible over the network, it is strongly recommended to restrict access to the proxy port (default `8080`) using **firewall rules**.
 > *   Do not use this driver on unsecured networks (e.g., public Wi-Fi).
 
 ### Manually Creating a Firewall Rule
