@@ -13,8 +13,6 @@ SemaphoreHandle_t config_mutex;
 // Global variable for the serial port mutex
 SemaphoreHandle_t serial_mutex;
 
-// Function declarations from the user
-int myFunction(int, int);
 
 // Task function to handle sensor updates
 void sensor_update_task(void *pvParameters) {
@@ -56,14 +54,26 @@ void serial_command_task(void *pvParameters) {
   xSemaphoreTake(serial_mutex, portMAX_DELAY);
   Serial.println("Serial command task started.");
   xSemaphoreGive(serial_mutex);
-  String input_string;
+
+  // Use a static buffer to avoid heap fragmentation
+  const size_t MAX_INPUT_SIZE = 4096;
+  static char input_buffer[MAX_INPUT_SIZE];
+  static size_t input_pos = 0;
+
   for (;;) {
-    if (Serial.available() > 0) {
+    while (Serial.available() > 0) {
       char incoming_char = Serial.read();
+
       if (incoming_char == '\n') {
+        // Null-terminate the string
+        input_buffer[input_pos] = '\0';
+
+        // reset position for next command
+        input_pos = 0;
+
         // Try to parse the input string as JSON
         JsonDocument doc;
-        DeserializationError error = deserializeJson(doc, input_string);
+        DeserializationError error = deserializeJson(doc, input_buffer);
 
         if (!error) {
           if (doc["command"].is<const char*>() && strcmp(doc["command"], "reboot") == 0) {
@@ -172,26 +182,33 @@ void serial_command_task(void *pvParameters) {
           }
         } else {
           // If not valid JSON, check for simple commands
-          input_string.trim();
+          // Note: trim() is not available on char arrays easily, but since we just parsed JSON and failed,
+          // and we don't have other simple text commands besides JSON ones in the original code (except implicit logic),
+          // we just report error.
+          // The orig logic called `input_string.trim()`. 
+          // Since we are moving to pure JSON, we can likely skip the complex trimming or just ignore whitespace.
+          
           xSemaphoreTake(serial_mutex, portMAX_DELAY);
           Serial.println("{\"error\":\"invalid command\"}");
           xSemaphoreGive(serial_mutex);
-          // "j" command removed
         }
-        input_string = ""; // Clear the string for the next command
       } else {
-        input_string += incoming_char;
+        if (input_pos < MAX_INPUT_SIZE - 1) {
+          input_buffer[input_pos++] = incoming_char;
+        } else {
+          // Buffer overflow - discard characters until newline or just reset?
+          // For safety, let's reset and ignore the rest of this line until newline.
+          // But implementing "ignore until newline" is complex inside this simple loop without state.
+          // Simplest approach: Just stop adding, effectively truncating.
+          // When newline comes, it will try to parse a truncated string, likely fail JSON, and error out.
+          // This is a safe failure mode.
+        }
       }
     }
     // Yield to other tasks
     esp_task_wdt_reset(); // Feed the watchdog
     vTaskDelay(10 / portTICK_PERIOD_MS);
   }
-}
-
-// Function definitions from the user
-int myFunction(int x, int y) {
-  return x + y;
 }
 
 void setup() {
