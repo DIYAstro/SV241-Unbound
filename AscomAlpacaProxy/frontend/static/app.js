@@ -1075,12 +1075,26 @@ document.addEventListener('DOMContentLoaded', () => {
     const closeModalBtn = document.getElementById('close-telemetry-modal');
     const dateSelect = document.getElementById('telemetry-date-select');
 
-    // Click handler for Voltage (only one enabled for now)
-    const statusV = document.getElementById('status-v');
-    if (statusV) {
-        statusV.classList.add('clickable-sensor');
-        statusV.addEventListener('click', () => openTelemetryModal('v', 'Voltage'));
-    }
+    // Sensor Configuration for Telemetry
+    const sensorMap = [
+        { id: 'status-v', metric: 'v', label: 'Voltage (V)' },
+        { id: 'status-i', metric: 'c', label: 'Current (A)' },
+        { id: 'status-p', metric: 'p', label: 'Power (W)' },
+        { id: 'status-t_amb', metric: 'temp', label: 'Ambient Temp (°C)' },
+        { id: 'status-h_amb', metric: 'hum', label: 'Humidity (%)' },
+        { id: 'status-d', metric: 'dew', label: 'Dew Point (°C)' },
+        { id: 'status-t_lens', metric: 'lens', label: 'Lens Temp (°C)' },
+        { id: 'status-pwm1', metric: 'pwm1', label: 'PWM 1 (%)' },
+        { id: 'status-pwm2', metric: 'pwm2', label: 'PWM 2 (%)' },
+    ];
+
+    sensorMap.forEach(sensor => {
+        const el = document.getElementById(sensor.id);
+        if (el) {
+            el.classList.add('clickable-sensor');
+            el.addEventListener('click', () => openTelemetryModal(sensor.metric, sensor.label));
+        }
+    });
 
     // Modal Controls
     if (closeModalBtn) {
@@ -1168,10 +1182,16 @@ document.addEventListener('DOMContentLoaded', () => {
         // Prepare data
         // API returns timestamp in seconds (Unix). Chart.js needs millis or ISO string.
         // Assuming DataPoint.Timestamp is int64 Unix seconds.
-        const chartData = data.map(dp => ({
-            x: dp.t * 1000,
-            y: dp[currentMetric]
-        })).filter(pt => !isNaN(pt.y)); // Filter out nulls/NaNs
+        const chartData = data.map(dp => {
+            let val = dp[currentMetric];
+            if (currentMetric === 'c') {
+                val = val / 1000.0;
+            }
+            return {
+                x: dp.t * 1000,
+                y: val
+            };
+        }).filter(pt => !isNaN(pt.y)); // Filter out nulls/NaNs
 
         telemetryChart = new Chart(ctx, {
             type: 'line',
