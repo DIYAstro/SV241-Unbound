@@ -254,6 +254,7 @@ Here is an example of the `proxy_config.json` file structure:
 **Parameter Explanation:**
 
 *   `serialPortName` (string): The name of the serial port for the SV241 device (e.g., `"COM9"`). If this string is empty (`""`), the proxy will attempt to auto-detect the port on startup.
+    > **Note:** When `Auto-Detect Port` is enabled (or `serialPortName` is empty), the proxy probes all available USB serial ports to find the SV241. This "safe-but-aggressive" probing can potentially interfere with other sensitive devices (e.g., Mounts, Weather Stations). **Solution:** To prevent conflicts, connect the SV241 once to let it auto-detect, then **disable "Auto-Detect Port"** (or uncheck the box in the web UI). The proxy will then strictly only open the configured port.
 *   `networkPort` (integer): The TCP port on which the Alpaca API server will listen for connections from client applications. The default is `8080`. A restart of the proxy is required for changes to this value to take effect.
 *   `logLevel` (string): Controls the verbosity of the log file. Valid values are `"ERROR"`, `"WARN"`, `"INFO"`, and `"DEBUG"`. This setting is applied live when changed.
 *   `historyRetentionNights` (integer): The number of days/nights to retain CSV telemetry logs. Older files are automatically deleted at startup. Default is `10`.
