@@ -4,72 +4,92 @@
 <head>
     <meta charset="utf-8">
     <title>SV241-Unbound Web Flasher</title>
+    <!-- Google Fonts: Outfit -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+
     <style>
+        :root {
+            color-scheme: dark;
+            --bg-color-start: #0f0c29;
+            --bg-color-mid: #302b63;
+            --bg-color-end: #24243e;
+            --surface-color: rgba(255, 255, 255, 0.05);
+            --surface-border: rgba(255, 255, 255, 0.1);
+            --primary-color: #00d2ff;
+            --primary-glow: rgba(0, 210, 255, 0.4);
+            --text-primary: #ffffff;
+            --text-secondary: #b0b0b0;
+            --danger-color: #ff4b4b;
+            --warning-bg: rgba(255, 75, 75, 0.1);
+            --font-main: 'Outfit', sans-serif;
+            --radius-lg: 16px;
+            --shadow-soft: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-family: var(--font-main);
+            background: linear-gradient(135deg, var(--bg-color-start), var(--bg-color-mid), var(--bg-color-end));
+            background-attachment: fixed;
             display: flex;
             justify-content: center;
             align-items: center;
             height: 100vh;
             margin: 0;
-            background-color: #282c34;
-            color: white;
+            color: var(--text-primary);
             text-align: center;
         }
 
         .container {
-            padding: 2rem;
-            border-radius: 10px;
-            background-color: #3c4049;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            padding: 2.5rem;
+            border-radius: var(--radius-lg);
+            background: var(--surface-color);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--surface-border);
+            box-shadow: var(--shadow-soft);
+            max-width: 500px;
+            width: 90%;
         }
 
         h1 {
             margin-top: 0;
-            color: #61dafb;
+            font-weight: 600;
+            background: linear-gradient(90deg, #fff, var(--primary-color));
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
         }
 
         p {
             margin-bottom: 1.5rem;
+            line-height: 1.5;
+            color: var(--text-secondary);
         }
 
         .warning {
-            background-color: #4e342e;
-            /* A reddish, dark background */
-            color: #ffccbc;
-            /* A light text color */
+            background-color: var(--warning-bg);
+            color: var(--danger-color);
             padding: 1rem;
-            border-radius: 5px;
+            border-radius: 8px;
             margin: 1.5rem 0;
-            border: 1px solid #ff8a65;
-        }
-
-        .options {
-            margin-bottom: 2rem;
+            border: 1px solid var(--danger-color);
+            font-size: 0.9rem;
             text-align: left;
-            display: inline-block;
-        }
-
-        .options label {
-            cursor: pointer;
-        }
-
-        .options p {
-            font-size: 0.8rem;
-            color: #aaa;
-            margin-top: 0.5rem;
-            margin-bottom: 0;
         }
 
         esp-web-install-button {
-            --esp-web-install-button-fill-color: #61dafb;
-            --esp-web-install-button-text-color: #282c34;
+            --esp-web-install-button-fill-color: var(--primary-color);
+            --esp-web-install-button-text-color: #0f0c29;
+            --esp-web-install-button-border-radius: 8px;
         }
 
         #status {
             margin-top: 1.5rem;
             font-style: italic;
-            color: #aaa;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
         }
     </style>
     <script type="module" src="https://unpkg.com/esp-web-tools@9/dist/web/install-button.js?module"></script>
