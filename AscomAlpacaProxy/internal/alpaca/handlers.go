@@ -756,8 +756,29 @@ func handleHeaterInteractions(id int, state bool) {
 			leaderAscomId := leaderHeaterIndex + 8
 			logger.Info("Activating PID Leader (ID %d) for Follower (ID %d).", leaderAscomId, id)
 			leaderShortKey := config.ShortSwitchKeyByID[leaderAscomId]
-			leaderCommand := fmt.Sprintf(`{"set":{"%s":1}}`, leaderShortKey)
-			serial.SendCommand(leaderCommand, true, 0)
+			leaderCommand := fmt.Sprintf(`{"set":{"%s":true}}`, leaderShortKey)
+			responseJSON, err := serial.SendCommand(leaderCommand, true, 0)
+			if err != nil {
+				logger.Error("HeaterInteraction: Failed to send enable command to Leader (ID %d): %v", leaderAscomId, err)
+			} else {
+				// Update Cache
+				var rootData map[string]interface{}
+				if json.Unmarshal([]byte(responseJSON), &rootData) == nil {
+					if statusMap, ok := rootData["status"].(map[string]interface{}); ok {
+						serial.Status.Lock()
+						if dmVal, found := rootData["dm"]; found {
+							statusMap["dm"] = dmVal
+						} else {
+							if existingDM, exists := serial.Status.Data["dm"]; exists {
+								statusMap["dm"] = existingDM
+							}
+						}
+						serial.Status.Data = statusMap
+						serial.Status.Unlock()
+						logger.Info("HeaterInteraction: Successfully activated Leader (ID %d).", leaderAscomId)
+					}
+				}
+			}
 		}
 	} else { // Logic for turning a heater OFF
 		leaderHeaterIndex := id - 8
@@ -768,8 +789,30 @@ func handleHeaterInteractions(id int, state bool) {
 			followerAscomId := followerHeaterIndex + 8
 			logger.Info("Deactivating PID Follower (ID %d) because Leader (ID %d) was turned off.", followerAscomId, id)
 			followerShortKey := config.ShortSwitchKeyByID[followerAscomId]
-			followerCommand := fmt.Sprintf(`{"set":{"%s":0}}`, followerShortKey)
-			serial.SendCommand(followerCommand, true, 0)
+			followerCommand := fmt.Sprintf(`{"set":{"%s":false}}`, followerShortKey)
+			responseJSON, err := serial.SendCommand(followerCommand, true, 0)
+			if err != nil {
+				logger.Error("HeaterInteraction: Failed to send disable command to Follower (ID %d): %v", followerAscomId, err)
+			} else {
+				// Update Cache with response to ensure UI reflects the change immediately
+				var rootData map[string]interface{}
+				if json.Unmarshal([]byte(responseJSON), &rootData) == nil {
+					if statusMap, ok := rootData["status"].(map[string]interface{}); ok {
+						serial.Status.Lock()
+						if dmVal, found := rootData["dm"]; found {
+							statusMap["dm"] = dmVal
+						} else {
+							// Preserve existing DM
+							if existingDM, exists := serial.Status.Data["dm"]; exists {
+								statusMap["dm"] = existingDM
+							}
+						}
+						serial.Status.Data = statusMap
+						serial.Status.Unlock()
+						logger.Info("HeaterInteraction: Successfully deactivated Follower (ID %d).", followerAscomId)
+					}
+				}
+			}
 		}
 	}
 }
