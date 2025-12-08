@@ -139,6 +139,7 @@ func setupAlpacaDeviceRoutes(api *alpaca.API) {
 		"dewpoint":            api.HandleObsCondDewPoint,
 		"name":                api.HandleDeviceName("SV241 Environment"),
 		"supportedactions":    api.HandleSupportedActions,
+		"action":              api.HandleObsCondAction,
 		"averageperiod":       api.HandleObsCondAveragePeriod,
 		"sensordescription":   api.HandleObsCondSensorDescription,
 		"timesincelastupdate": api.HandleObsCondTimeSinceLastUpdate,

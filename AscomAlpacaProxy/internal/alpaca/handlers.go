@@ -130,7 +130,28 @@ func (a *API) HandleDeviceName(name string) http.HandlerFunc {
 }
 
 func (a *API) HandleSupportedActions(w http.ResponseWriter, r *http.Request) {
-	StringListResponse(w, r, []string{}) // Generic handler returns empty list
+	StringListResponse(w, r, []string{"getlenstemperature"})
+}
+
+func (a *API) HandleObsCondAction(w http.ResponseWriter, r *http.Request) {
+	action, ok := GetFormValueIgnoreCase(r, "Action")
+	if !ok {
+		ErrorResponse(w, r, http.StatusOK, 0x400, "Missing Action parameter")
+		return
+	}
+
+	if strings.ToLower(action) == "getlenstemperature" {
+		serial.Conditions.RLock()
+		defer serial.Conditions.RUnlock()
+		if val, ok := serial.Conditions.Data["t_lens"]; ok && val != nil {
+			StringResponse(w, r, fmt.Sprintf("%v", val))
+		} else {
+			ErrorResponse(w, r, http.StatusOK, 0x401, "Sensor not available or failed to read.")
+		}
+		return
+	}
+
+	ErrorResponse(w, r, http.StatusOK, 0x400, fmt.Sprintf("Action '%s' is not supported.", action))
 }
 
 // --- Switch Handlers ---
@@ -360,7 +381,7 @@ func (a *API) HandleSwitchAction(w http.ResponseWriter, r *http.Request) {
 	case "masterswitchon", "masterswitchoff":
 		state := strings.ToLower(action) == "masterswitchon"
 		logger.Info("Executing ASCOM Action: %s", action)
-		EmptyResponse(w, r) // Respond immediately
+		StringResponse(w, r, "") // Respond immediately with empty string value per ASCOM spec
 		go func() {
 			stateInt := 0
 			if state {
