@@ -56,6 +56,11 @@ var (
 
 	// lastSentStatus tracks the last connection status event sent to avoid duplicate notifications.
 	lastSentStatus events.ComPortStatus = events.Disconnected
+
+	// ActiveVoltageTarget tracks the last set voltage for the "adj" output (RAM target).
+	// Initialized to -1.0 to indicate "unknown/unset" (use config default).
+	ActiveVoltageTarget = -1.0
+	VoltageMutex        sync.RWMutex
 )
 
 // StartManager initializes all background tasks for serial communication.
@@ -431,6 +436,15 @@ func performCacheUpdate() {
 			logger.Debug("Successfully unmarshaled status cache data.")
 			Status.Lock()
 			Status.Data = statusData["status"]
+
+			// Sync ActiveVoltageTarget from firmware report if available
+			if adjVal, ok := Status.Data["adj"]; ok {
+				if adjFloat, ok := adjVal.(float64); ok && adjFloat > 0 {
+					VoltageMutex.Lock()
+					ActiveVoltageTarget = adjFloat
+					VoltageMutex.Unlock()
+				}
+			}
 			Status.Unlock()
 		} else {
 			logger.Warn("Failed to unmarshal status JSON from device. Raw data: %s", statusJSON)

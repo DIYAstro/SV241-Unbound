@@ -49,6 +49,9 @@ float get_calibrated_setpoint(float desired_voltage) {
 }
 
 
+// RAM-only target voltage override. -1.0 means "use config".
+static float ram_voltage_target = -1.0f;
+
 void setup_voltage_control() {
   // Configure the LEDC peripheral
   ledcSetup(LEDC_CHANNEL, LEDC_FREQUENCY, LEDC_RESOLUTION);
@@ -58,6 +61,8 @@ void setup_voltage_control() {
 
   xSemaphoreTake(config_mutex, portMAX_DELAY);
   bool startup_state = config.power_startup_states.adj_conv;
+  // On startup, we always respect the config preset, so ensure RAM override is cleared.
+  ram_voltage_target = -1.0f;
   xSemaphoreGive(config_mutex);
 
   // Set the initial state based on config
@@ -66,11 +71,19 @@ void setup_voltage_control() {
 
 void set_adjustable_converter_state(bool on) {
   if (on) {
-    xSemaphoreTake(config_mutex, portMAX_DELAY);
-    float preset_v = config.adj_conv_preset_v;
-    xSemaphoreGive(config_mutex);
-    // Get the user's desired target voltage
-    float desired_target_voltage = min(preset_v, (float)ADJUSTABLE_CONVERTER_MAX_VOLTAGE);
+    float target_v = 0.0f;
+    
+    // Check for RAM override first
+    if (ram_voltage_target >= 0.0f) {
+        target_v = ram_voltage_target;
+    } else {
+        xSemaphoreTake(config_mutex, portMAX_DELAY);
+        target_v = config.adj_conv_preset_v;
+        xSemaphoreGive(config_mutex);
+    }
+    
+    // Clamp to max voltage safety limit
+    float desired_target_voltage = min(target_v, (float)ADJUSTABLE_CONVERTER_MAX_VOLTAGE);
 
     // Get the calibrated internal setpoint required to achieve the desired voltage
     float calibrated_setpoint = get_calibrated_setpoint(desired_target_voltage);
@@ -84,4 +97,31 @@ void set_adjustable_converter_state(bool on) {
     // Set duty cycle to 0 to turn the output off
     ledcWrite(LEDC_CHANNEL, 0);
   }
+}
+
+void set_adjustable_voltage_ram(float voltage) {
+    if (voltage < 0.0f) voltage = 0.0f;
+    if (voltage > ADJUSTABLE_CONVERTER_MAX_VOLTAGE) voltage = ADJUSTABLE_CONVERTER_MAX_VOLTAGE;
+    
+    ram_voltage_target = voltage;
+    
+    // If currently on, apply immediately
+    // We need to know if it's currently on? 
+    // Usually power_control tracks state. We can just re-apply 'true' if we assume it might be on,
+    // or we can let the caller handle it. 
+    // Better: The caller (power_control) knows the state. But for convenience, let's just trigger update if ON?
+    // voltage_control doesn't track ON/OFF state explicitly (stateless function).
+    // So the caller must call set_adjustable_converter_state(true) to apply.
+}
+
+float get_adjustable_voltage_target() {
+    float v = 0.0f;
+    if (ram_voltage_target >= 0.0f) {
+        v = ram_voltage_target;
+    } else {
+        xSemaphoreTake(config_mutex, portMAX_DELAY);
+        v = config.adj_conv_preset_v;
+        xSemaphoreGive(config_mutex);
+    }
+    return v;
 }

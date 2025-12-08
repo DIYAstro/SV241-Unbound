@@ -10,15 +10,16 @@ import (
 
 // ProxyConfig stores configuration specific to the Go proxy itself.
 type ProxyConfig struct {
-	SerialPortName         string            `json:"serialPortName"`
-	AutoDetectPort         bool              `json:"autoDetectPort"`
-	NetworkPort            int               `json:"networkPort"`
-	ListenAddress          string            `json:"listenAddress"`
-	LogLevel               string            `json:"logLevel"`
-	SwitchNames            map[string]string `json:"switchNames"`
-	HeaterAutoEnableLeader map[string]bool   `json:"heaterAutoEnableLeader"`
-	HistoryRetentionNights int               `json:"historyRetentionNights"`
-	TelemetryInterval      int               `json:"telemetryInterval"` // Seconds
+	SerialPortName             string            `json:"serialPortName"`
+	AutoDetectPort             bool              `json:"autoDetectPort"`
+	NetworkPort                int               `json:"networkPort"`
+	ListenAddress              string            `json:"listenAddress"`
+	LogLevel                   string            `json:"logLevel"`
+	SwitchNames                map[string]string `json:"switchNames"`
+	HeaterAutoEnableLeader     map[string]bool   `json:"heaterAutoEnableLeader"`
+	HistoryRetentionNights     int               `json:"historyRetentionNights"`
+	TelemetryInterval          int               `json:"telemetryInterval"`          // Seconds
+	EnableAlpacaVoltageControl bool              `json:"enableAlpacaVoltageControl"` // Allow voltage control via Alpaca
 }
 
 // CombinedConfig defines the structure for a full backup file.

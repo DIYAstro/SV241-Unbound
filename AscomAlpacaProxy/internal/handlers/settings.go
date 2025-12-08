@@ -67,6 +67,7 @@ func HandlePostSettings(w http.ResponseWriter, r *http.Request) {
 	conf.HeaterAutoEnableLeader = newConfig.HeaterAutoEnableLeader
 	conf.HistoryRetentionNights = newConfig.HistoryRetentionNights
 	conf.TelemetryInterval = newConfig.TelemetryInterval
+	conf.EnableAlpacaVoltageControl = newConfig.EnableAlpacaVoltageControl
 
 	// Apply log level immediately
 	logger.SetLevelFromString(conf.LogLevel)

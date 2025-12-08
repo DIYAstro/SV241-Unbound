@@ -93,7 +93,18 @@ const char* get_power_output_name(PowerOutput output) {
 void get_power_status_json(JsonDocument& doc) {
   JsonObject status = doc["status"].to<JsonObject>();
   for (int i = 0; i < POWER_OUTPUT_COUNT; i++) {
-    status[get_power_output_name((PowerOutput)i)] = (int)power_output_states[i];
+    const char* name = get_power_output_name((PowerOutput)i);
+    if ((PowerOutput)i == POWER_ADJ_CONV) {
+        // Special report for Adjustable Converter: Return target voltage if ON, else 0
+        if (power_output_states[i]) {
+             status[name] = get_adjustable_voltage_target();
+        } else {
+             status[name] = 0;
+        }
+    } else {
+        // Standard On/Off
+        status[name] = (int)power_output_states[i];
+    }
   }
 }
 
@@ -113,6 +124,34 @@ void handle_set_power_command(JsonVariant set_command) {
     // If "all" key is not present, proceed with individual keys
     for (int i = 0; i < POWER_OUTPUT_COUNT; i++) {
       const char* name = get_power_output_name((PowerOutput)i);
+      
+      // Check if the key exists in the object (using ArduinoJson v7 compatible check)
+      if (set_obj[name].isNull()) continue;
+
+      // Special handling for Adjustable Converter (0-15V RAM override)
+      if ((PowerOutput)i == POWER_ADJ_CONV) {
+         if (set_obj[name].is<bool>()) {
+             bool state = set_obj[name].as<bool>();
+             set_power_output((PowerOutput)i, state);
+         } else if (set_obj[name].is<int>() || set_obj[name].is<float>()) {
+             float v = set_obj[name].as<float>();
+             set_adjustable_voltage_ram(v);
+             set_power_output((PowerOutput)i, true);
+         }
+         continue;
+      }
+
+      // Special handling for PWM channels
+      if ((PowerOutput)i == POWER_PWM1 || (PowerOutput)i == POWER_PWM2) {
+          // ... (existing PWM logic, which was reverted by user but might exist in file if I messed up revert?)
+          // Wait, user reverted PWM logic. I should just treat PWM as binary here unless I am restoring PWM too?
+          // User said "Alpaca Override" for Voltage, he didn't say restore PWM.
+          // BUT, I should check if my previous edits left power_control.cpp in a mixed state.
+          // Re-reading power_control.cpp showed standard logic.
+          // I will stick to standard binary for PWM as agreed.
+      } 
+      
+      // Standard handling for all (including PWM if not special)
       if (set_obj[name].is<bool>() || set_obj[name].is<int>()) {
         bool state = set_obj[name].as<bool>();
         set_power_output((PowerOutput)i, state);

@@ -302,6 +302,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function applyProxyConfig(proxyConf, availableIPs = []) {
         document.getElementById('proxy-serial-port').value = proxyConf.serialPortName || '';
         document.getElementById('proxy-auto-detect-port').checked = proxyConf.autoDetectPort;
+        document.getElementById('proxy-enable-alpaca-voltage').checked = proxyConf.enableAlpacaVoltageControl;
         document.getElementById('proxy-serial-port').disabled = proxyConf.autoDetectPort;
         document.getElementById('proxy-network-port').value = proxyConf.networkPort || 8080;
         document.getElementById('proxy-log-level').value = proxyConf.logLevel || 'INFO';
@@ -631,6 +632,7 @@ document.addEventListener('DOMContentLoaded', () => {
             listenAddress: document.getElementById('proxy-listen-address').value,
             serialPortName: document.getElementById('proxy-serial-port').value.trim(),
             autoDetectPort: document.getElementById('proxy-auto-detect-port').checked,
+            enableAlpacaVoltageControl: document.getElementById('proxy-enable-alpaca-voltage').checked,
             networkPort: parseInt(document.getElementById('proxy-network-port').value, 10) || 8080,
             logLevel: document.getElementById('proxy-log-level').value,
             historyRetentionNights: parseInt(document.getElementById('proxy-history-retention').value, 10) || 30,
@@ -790,8 +792,10 @@ document.addEventListener('DOMContentLoaded', () => {
             for (const [key, value] of Object.entries(status)) {
                 const switchInput = document.querySelector(`.switch-toggle input[data-key='${key}']`);
                 if (switchInput) {
-                    switchInput.checked = (value === 1);
-                    if (value !== 1) allOn = false;
+                    // Check if value is "truthy" (1 or boolean true or > 0 for voltage)
+                    const isPyhsicallyOn = (typeof value === 'boolean' && value) || (typeof value === 'number' && value > 0);
+                    switchInput.checked = isPyhsicallyOn;
+                    if (!isPyhsicallyOn) allOn = false;
                 }
             }
             if (masterPowerSwitch) masterPowerSwitch.checked = allOn;

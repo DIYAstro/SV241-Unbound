@@ -253,8 +253,29 @@ func (a *API) HandleSwitchGetSwitchValue(w http.ResponseWriter, r *http.Request)
 
 	if val, ok := serial.Status.Data[shortKey]; ok {
 		var switchValue float64
-		if val.(float64) >= 1.0 {
-			switchValue = 1.0
+		// Special handling for Adjustable Voltage (ID 7) if enabled
+		if id == 7 && config.Get().EnableAlpacaVoltageControl {
+			// Check if the device reports the output is actually OFF
+			statusVal, ok := val.(float64)
+			if ok && statusVal < 1.0 {
+				switchValue = 0.0 // Device is OFF
+			} else {
+				// Device is ON. Return cached target to reflect intended voltage.
+				serial.VoltageMutex.RLock()
+				target := serial.ActiveVoltageTarget
+				serial.VoltageMutex.RUnlock()
+
+				if target >= 0 {
+					switchValue = target
+				} else {
+					// Fallback: trust the reported status value if target is unknown
+					switchValue = statusVal
+				}
+			}
+		} else {
+			if val.(float64) >= 1.0 {
+				switchValue = 1.0
+			}
 		}
 		FloatResponse(w, r, switchValue)
 	} else {
@@ -290,15 +311,37 @@ func (a *API) HandleSwitchSetSwitchValue(w http.ResponseWriter, r *http.Request)
 
 	longKey := config.SwitchIDMap[id]
 	shortKey := config.ShortSwitchIDMap[longKey]
-	stateInt := 0
-	if state {
-		stateInt = 1
+
+	// Special handling for Adjustable Voltage (ID 7) if enabled
+	var command string
+	var newVoltageTarget float64 = -1.0
+
+	if id == 7 && config.Get().EnableAlpacaVoltageControl {
+		if valueStr, ok := GetFormValueIgnoreCase(r, "Value"); ok {
+			// If Value is provided, set specific voltage
+			value, _ := strconv.ParseFloat(valueStr, 64)
+			command = fmt.Sprintf(`{"set":{"%s":%.2f}}`, shortKey, value)
+			newVoltageTarget = value
+		} else {
+			// Use "true"/"false" for bool to avoid ambiguity with "1"=1V in firmware
+			command = fmt.Sprintf(`{"set":{"%s":%t}}`, shortKey, state)
+		}
+	} else {
+		// Use "true"/"false" for bool to avoid ambiguity with "1"=1V in firmware
+		command = fmt.Sprintf(`{"set":{"%s":%t}}`, shortKey, state)
 	}
-	command := fmt.Sprintf(`{"set":{"%s":%d}}`, shortKey, stateInt)
+
 	responseJSON, err := serial.SendCommand(command, true, 0)
 	if err != nil {
 		ErrorResponse(w, r, http.StatusInternalServerError, http.StatusInternalServerError, fmt.Sprintf("Failed to send command: %v", err))
 		return
+	}
+
+	// Update the Voltage Target Cache if this was a voltage change command
+	if newVoltageTarget >= 0 {
+		serial.VoltageMutex.Lock()
+		serial.ActiveVoltageTarget = newVoltageTarget
+		serial.VoltageMutex.Unlock()
 	}
 
 	var statusData map[string]map[string]interface{}
@@ -347,7 +390,11 @@ func (a *API) HandleSwitchCanWrite(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) HandleSwitchMaxSwitchValue(w http.ResponseWriter, r *http.Request) {
-	if _, ok := ParseSwitchID(w, r); ok {
+	if id, ok := ParseSwitchID(w, r); ok {
+		if id == 7 && config.Get().EnableAlpacaVoltageControl {
+			FloatResponse(w, r, 15.0)
+			return
+		}
 		FloatResponse(w, r, 1.0)
 	}
 }
@@ -359,7 +406,11 @@ func (a *API) HandleSwitchMinSwitchValue(w http.ResponseWriter, r *http.Request)
 }
 
 func (a *API) HandleSwitchSwitchStep(w http.ResponseWriter, r *http.Request) {
-	if _, ok := ParseSwitchID(w, r); ok {
+	if id, ok := ParseSwitchID(w, r); ok {
+		if id == 7 && config.Get().EnableAlpacaVoltageControl {
+			FloatResponse(w, r, 0.1)
+			return
+		}
 		FloatResponse(w, r, 1.0)
 	}
 }
