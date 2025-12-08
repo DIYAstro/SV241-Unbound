@@ -3,6 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- DOM Elements ---
     const comPortElement = document.querySelector('#com-port-badge .value');
     const firmwareVersionElement = document.querySelector('#firmware-badge .value');
+    const proxyVersionDisplay = document.getElementById('proxy-version-display');
     // const deviceResponseElement = document.getElementById('device-response'); // Removed
     const connectionIndicator = document.getElementById('connection-indicator');
     const connectionText = document.getElementById('connection-text');
@@ -93,6 +94,20 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (e) {
             console.error("Failed to fetch firmware version", e);
+        }
+    }
+
+    async function fetchProxyVersion() {
+        try {
+            const response = await fetch('/api/v1/proxy/version');
+            if (response.ok) {
+                const data = await response.json();
+                if (proxyVersionDisplay && data.version) {
+                    proxyVersionDisplay.textContent = `(${data.version})`;
+                }
+            }
+        } catch (e) {
+            console.error("Failed to fetch proxy version", e);
         }
     }
 
@@ -981,6 +996,7 @@ document.addEventListener('DOMContentLoaded', () => {
         await fetchProxyConfig();
         await fetchConfig();
         await fetchFirmwareVersion();
+        await fetchProxyVersion();
 
         // Setup specific event listeners
         setupChangeDetection();

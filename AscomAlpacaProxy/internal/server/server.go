@@ -70,6 +70,7 @@ func setupRoutes(frontendFS fs.FS, appVersion string) {
 	http.HandleFunc("/api/v1/power/all", handleSetAllPower)
 	http.HandleFunc("/api/v1/command", handleDeviceCommand)
 	http.HandleFunc("/api/v1/firmware/version", handleGetFirmwareVersion)
+	http.HandleFunc("/api/v1/proxy/version", handleGetProxyVersion(appVersion))
 	http.HandleFunc("/api/v1/backup/create", handleCreateBackup)
 	http.HandleFunc("/api/v1/backup/restore", handleRestoreBackup)
 	http.HandleFunc("/api/v1/telemetry/dates", telemetry.HandleGetLogDates)
