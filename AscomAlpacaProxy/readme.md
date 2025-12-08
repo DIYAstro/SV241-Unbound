@@ -74,6 +74,11 @@ These actions allow reading the main power metrics directly from the `Switch` de
 *   `getcurrent`: Returns the total current draw (in Amps).
 *   `getpower`: Returns the total power consumption (in Watts).
 
+#### Objective Temperature Action
+
+*   `getlenstemperature`: Returns the current objective temperature (in °C) from the `ObservingConditions` device. Helpful for scripts that need this specific metric.
+
+
 #### Using Actions via API (e.g., with `curl`)
 
 You can trigger these actions from the command line using a tool like `curl`. The endpoint for actions is `/api/v1/switch/0/action` and the method is `PUT`.

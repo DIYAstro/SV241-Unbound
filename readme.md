@@ -20,8 +20,11 @@ This project consists of two main components:
 2.  **ASCOM Alpaca Proxy:** A standalone application that runs on your computer. It connects to the controller via USB and exposes its functions as standard ASCOM devices, making it compatible with popular astronomy software like NINA, SGP, etc.
 
 ### Firmware Features
-*   Control for 5 DC outputs, 2 USB groups, and 1 adjustable voltage output.
-*   Advanced dew heater control with three modes: Manual, PID-based, and sensorless Ambient Tracking.
+*   Control for 5 DC outputs, 2 USB groups, and 1 adjustable voltage output (with 0-15V slider control).
+*   Advanced dew heater control:
+    *   **Manual Mode:** Variable 0-100% PWM control.
+    *   **PID Mode:** Automatic temperature regulation.
+    *   **Ambient Tracking:** Sensorless power adjustment.
 *   On-board sensor suite for monitoring power, ambient temperature/humidity, and lens temperature. The firmware is resilient to sensor failures.
 *   Experimental automatic drying cycle for the SHT40 humidity sensor.
 *   Configuration persistence across reboots.
