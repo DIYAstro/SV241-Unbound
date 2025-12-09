@@ -84,6 +84,11 @@ func HandlePostSettings(w http.ResponseWriter, r *http.Request) {
 	if portChanged {
 		logger.Info("Serial port configuration changed. Triggering reconnect.")
 		go serial.Reconnect(conf.SerialPortName)
+	} else {
+		// If port didn't change, we still might need to update the switch map (e.g. Master Power)
+		// Reconnect triggers it internally, so we only need it here if NOT reconnecting.
+		// Also, SyncFirmwareConfig relies on a stable connection.
+		go serial.SyncFirmwareConfig()
 	}
 
 	logger.Info("Proxy settings updated via API.")

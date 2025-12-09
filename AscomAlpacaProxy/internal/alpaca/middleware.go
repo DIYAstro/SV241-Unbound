@@ -84,8 +84,9 @@ func ParseSwitchID(w http.ResponseWriter, r *http.Request) (int, bool) {
 	}
 
 	// If ID is 10 (Master Power) and it's disabled, verify it's inaccessible
-	if id == 10 && !config.Get().EnableMasterPower {
-		ErrorResponse(w, r, http.StatusOK, 0x400, "Invalid switch ID (Disabled)")
+	// Check if ID exists in the map
+	if _, ok := config.SwitchIDMap[id]; !ok {
+		ErrorResponse(w, r, http.StatusOK, 0x400, "Invalid switch ID")
 		return 0, false
 	}
 

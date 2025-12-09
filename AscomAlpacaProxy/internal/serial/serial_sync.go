@@ -48,42 +48,32 @@ func SyncFirmwareConfig() {
 	standardSwitches := []string{"dc1", "dc2", "dc3", "dc4", "dc5", "usbc12", "usb345", "adj_conv"}
 	standardShortKeys := []string{"d1", "d2", "d3", "d4", "d5", "u12", "u34", "adj"}
 
-	// Create a slice of the startup states to iterate easily
-	// Order MUST match standardSwitches array above
-	startStates := []int{
-		fwConfig.PS.DC1, fwConfig.PS.DC2, fwConfig.PS.DC3, fwConfig.PS.DC4, fwConfig.PS.DC5,
-		fwConfig.PS.USBC12, fwConfig.PS.USB345, fwConfig.PS.AdjConv,
-	}
-
 	currentID := 0
 
 	for i, name := range standardSwitches {
-		if startStates[i] == 2 {
-			logger.Info("Switch %s is DISABLED (State 2) in firmware. Hiding it.", name)
-			continue
-		}
+		// We add ALL standard switches regardless of state to preserve ASCOM ID mapping stability.
+		// If a switch is disabled in firmware (State 2), it will still appear but might be read-only or error on set.
 		newIDMap[currentID] = name
 		newShortKeyByID[currentID] = standardShortKeys[i]
 		currentID++
 	}
 
-	// 2. Dew Heaters (Dynamic)
-	for i, heater := range fwConfig.DH {
-		if heater.M != 5 { // Not Disabled
-			internalName := fmt.Sprintf("pwm%d", i+1)
-			shortKey := fmt.Sprintf("pwm%d", i+1)
+	// 2. Dew Heaters (Dynamic? No, strict mapping required for ASCOM stability)
+	for i := range fwConfig.DH {
+		// Always add heaters (pwm1, pwm2) to preserve ID mapping.
+		internalName := fmt.Sprintf("pwm%d", i+1)
+		shortKey := fmt.Sprintf("pwm%d", i+1)
 
-			newIDMap[currentID] = internalName
-			newShortKeyByID[currentID] = shortKey
-			currentID++
-		} else {
-			logger.Info("Heater PWM%d is DISABLED in firmware. Hiding it.", i+1)
-		}
+		newIDMap[currentID] = internalName
+		newShortKeyByID[currentID] = shortKey
+		currentID++
 	}
 
 	// 3. Master Power (Always Last)
-	newIDMap[currentID] = "master_power"
-	newShortKeyByID[currentID] = "all"
+	if config.Get().EnableMasterPower {
+		newIDMap[currentID] = "master_power"
+		newShortKeyByID[currentID] = "all"
+	}
 
 	// Update Global Config
 	// Warning: This is not thread-safe if heavily accessed, but we assume this runs at connection time.

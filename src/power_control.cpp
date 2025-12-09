@@ -14,7 +14,7 @@ const int power_output_pins[POWER_OUTPUT_COUNT] = {
   POWER_DC5_PIN,
   POWER_USBC12_PIN,
   POWER_USB345_PIN,
-  -1, // Placeholder for POWER_ADJ_CONV
+  -1, // Placeholder for POWER_ADJ_CONVcdd
   -1,  // Placeholder for POWER_PWM1
   -1  // Placeholder for POWER_PWM2
 };

@@ -253,6 +253,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Pass current known switch names (might be empty initially if proxy config not fetched yet)
                 // We will also call this from fetchProxyConfig to ensure it updates when names arrive.
                 populateSwitchConfigTable(window.currentSwitchNames, config.ps, config.av);
+                populatePowerControls(window.currentSwitchNames); // Update grid to apply filters
             }
 
             if (config.ui) { // update_intervals_ms -> ui
@@ -443,6 +444,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (proxyConf) {
                 applyProxyConfig(proxyConf, availableIPs);
+                populatePowerControls(proxyConf.switchNames); // Restore power controls
                 statusOk = true;
             }
 
@@ -948,6 +950,13 @@ document.addEventListener('DOMContentLoaded', () => {
         grid.innerHTML = '';
         for (const [id, key] of Object.entries(switchIDMap)) {
             const shortKey = shortSwitchIDMap[key] || key;
+
+            // Filter disabled switches (State 2)
+            // We check originalConfig.ps (Power Startup States) which holds the mode (0=Off, 1=On, 2=Disabled)
+            if (originalConfig && originalConfig.ps && originalConfig.ps[shortKey] === 2) {
+                continue;
+            }
+
             const displayName = (switchNames && switchNames[key]) ? switchNames[key] : (longToShortKeyMap[key] || key);
             const controlDiv = document.createElement('div');
             controlDiv.className = 'switch-control glass-panel'; // CSS class handles the rest
