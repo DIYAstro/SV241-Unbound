@@ -418,6 +418,39 @@
             </div>
         </div>
     </div>
+    <!-- Generic Confirmation Modal -->
+    <div id="confirmation-modal" class="modal-overlay hidden">
+        <div class="modal-content glass-panel" style="width: 90%; max-width: 500px; text-align: center;">
+            <div class="modal-header">
+                <h2 id="confirm-modal-title">Confirmation</h2>
+                <button class="close-btn" onclick="closeModal('confirmation-modal')">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 1rem 0;">
+                <p id="confirm-modal-message"
+                    style="font-size: 1.1rem; color: var(--text-primary); margin-bottom: 2rem;">Are you sure?</p>
+                <div class="button-row" style="justify-content: center; gap: 1rem;">
+                    <button id="confirm-modal-ok" class="btn-primary">Yes, Proceed</button>
+                    <button id="confirm-modal-cancel" class="btn-secondary"
+                        onclick="closeModal('confirmation-modal')">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Generic Alert Modal -->
+    <div id="alert-modal" class="modal-overlay hidden">
+        <div class="modal-content glass-panel" style="width: 90%; max-width: 400px; text-align: center;">
+            <div class="modal-header">
+                <h2 id="alert-modal-title">Info</h2>
+                <button class="close-btn" onclick="closeModal('alert-modal')">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 1rem 0;">
+                <p id="alert-modal-message" style="font-size: 1.1rem; color: var(--text-primary); margin-bottom: 2rem;">
+                    Information</p>
+                <button class="btn-primary" onclick="closeModal('alert-modal')">OK</button>
+            </div>
+        </div>
+    </div>
 </body>
 
 </html>

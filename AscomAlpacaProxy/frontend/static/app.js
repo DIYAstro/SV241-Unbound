@@ -634,7 +634,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             if (connectionIndicator.className !== 'connected') {
-                alert('Cannot save device configuration: Device is not connected.');
+                showAlert('Error', 'Cannot save device configuration: Device is not connected.');
                 return;
             }
             showResponse("Saving sensor settings...");
@@ -646,13 +646,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
             showResponse("Sensor settings saved successfully!");
-            alert('Sensor settings saved successfully!');
+            showAlert('Success', 'Sensor settings saved successfully!', 5000);
             resetUnsavedIndicators();
             fetchConfig();
         } catch (error) {
             console.error('Error saving sensor settings:', error);
             showResponse(`Error saving sensor settings: ${error.message}`, true);
-            alert('Error saving sensor settings.');
+            showAlert('Error', 'Error saving sensor settings.');
         }
     }
 
@@ -695,7 +695,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             if (connectionIndicator.className !== 'connected') {
-                alert('Cannot save device configuration: Device is not connected.');
+                showAlert('Error', 'Cannot save device configuration: Device is not connected.');
                 return;
             }
             showResponse("Saving dew heater settings...");
@@ -707,7 +707,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
             showResponse("Dew heater settings saved successfully!");
-            alert('Dew heater settings saved successfully!');
+            showAlert('Success', 'Dew heater settings saved successfully!', 5000);
 
             // After saving heater settings to the device, also save the proxy config
             // to ensure the "auto-enable leader" setting is persisted.
@@ -717,7 +717,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error('Error saving dew heater settings:', error);
             showResponse(`Error saving dew heater settings: ${error.message}`, true);
-            alert('Error saving dew heater settings.');
+            showAlert('Error', 'Error saving dew heater settings.');
         }
     }
 
@@ -728,7 +728,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             if (connectionIndicator.className !== 'connected') {
-                alert('Cannot save device configuration: Device is not connected.');
+                showAlert('Error', 'Cannot save device configuration: Device is not connected.');
                 return;
             }
             showResponse("Saving adjustable voltage preset...");
@@ -740,13 +740,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
             showResponse("Adjustable voltage preset saved successfully!");
-            alert('Adjustable voltage preset saved successfully!');
+            showAlert('Success', 'Adjustable voltage preset saved successfully!', 5000);
             resetUnsavedIndicators();
             fetchConfig();
         } catch (error) {
             console.error('Error saving adjustable voltage preset:', error);
             showResponse(`Error saving adjustable voltage preset: ${error.message}`, true);
-            alert('Error saving adjustable voltage preset.');
+            showAlert('Error', 'Error saving adjustable voltage preset.');
         }
     }
 
@@ -1190,7 +1190,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // 2. Save Firmware Settings (Startup States + Voltage)
         try {
             if (connectionIndicator.className !== 'connected') {
-                alert('Cannot save configuration: Device is not connected.');
+                showAlert('Error', 'Cannot save configuration: Device is not connected.');
                 return;
             }
 
@@ -1221,12 +1221,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!proxyResponse.ok) throw new Error(`Proxy Config Save failed: ${proxyResponse.status}`);
 
             showResponse("All switch settings saved successfully!");
-            alert("Switch configuration saved successfully!");
-            location.reload(); // Reload to refresh the switch list/telemetry based on new "Disabled" states
+            showAlert('Success', "Switch configuration saved successfully!", 5000);
+            setTimeout(() => location.reload(), 5100); // Reload to refresh the switch list/telemetry based on new "Disabled" states
         } catch (error) {
             console.error(error);
             showResponse(`Error saving settings: ${error.message}`, true);
-            alert(`Error saving settings: ${error.message}`);
+            showAlert('Error', `Error saving settings: ${error.message}`);
         }
     }
 
@@ -1271,11 +1271,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!res.ok) throw new Error("Save failed");
 
             showResponse("Proxy settings saved. Restarting proxy might be required for some changes.");
-            alert("Proxy configuration saved!");
-            location.reload();
+            showAlert("Success", "Proxy configuration saved! Restarting proxy might be required for some changes.", 5000);
+            setTimeout(() => location.reload(), 5100);
         } catch (e) {
             console.error(e);
-            alert("Error saving proxy settings: " + e.message);
+            showAlert("Error", "Error saving proxy settings: " + e.message);
         }
     }
 
@@ -1304,25 +1304,25 @@ document.addEventListener('DOMContentLoaded', () => {
         // Other buttons
         const rebootBtn = document.getElementById('reboot-button');
         if (rebootBtn) {
-            rebootBtn.addEventListener('click', async () => {
-                if (confirm('Are you sure you want to reboot the device?')) {
+            rebootBtn.addEventListener('click', () => {
+                showConfirm('Reboot Device', 'Are you sure you want to reboot the device?', async () => {
                     try {
                         await fetch('/api/v1/command', { method: 'POST', body: JSON.stringify({ command: 'reboot' }) });
-                        alert('Reboot command sent.');
-                    } catch (e) { alert('Error sending reboot command'); }
-                }
+                        showAlert('Success', 'Reboot command sent.', 5000);
+                    } catch (e) { showAlert('Error', 'Error sending reboot command'); }
+                });
             });
         }
 
         const factoryResetBtn = document.getElementById('factory-reset-button');
         if (factoryResetBtn) {
-            factoryResetBtn.addEventListener('click', async () => {
-                if (confirm('WARNING: This will reset all settings to factory defaults. Continue?')) {
+            factoryResetBtn.addEventListener('click', () => {
+                showConfirm('Factory Reset', 'WARNING: This will reset all settings to factory defaults. Continue?', async () => {
                     try {
                         await fetch('/api/v1/command', { method: 'POST', body: JSON.stringify({ command: 'factory_reset' }) });
-                        alert('Factory reset command sent. Device will reboot.');
-                    } catch (e) { alert('Error sending factory reset command'); }
-                }
+                        showAlert('Success', 'Factory reset command sent. Device will reboot.', 5000);
+                    } catch (e) { showAlert('Error', 'Error sending factory reset command'); }
+                });
             });
         }
 
@@ -1458,6 +1458,51 @@ document.addEventListener('DOMContentLoaded', () => {
             telemetryChart = null;
         }
     }
+
+    // --- Generic Modals ---
+    window.closeModal = function (id) {
+        document.getElementById(id).classList.add('hidden');
+    };
+
+    function showConfirm(title, message, callback) {
+        const modal = document.getElementById('confirmation-modal');
+        document.getElementById('confirm-modal-title').textContent = title;
+        document.getElementById('confirm-modal-message').textContent = message;
+
+        const okBtn = document.getElementById('confirm-modal-ok');
+        // Remove old listeners to prevent stacking
+        const newBtn = okBtn.cloneNode(true);
+        okBtn.parentNode.replaceChild(newBtn, okBtn);
+
+        newBtn.addEventListener('click', () => {
+            closeModal('confirmation-modal');
+            if (callback) callback();
+        });
+
+        modal.classList.remove('hidden');
+    }
+
+    function showAlert(title, message, autoCloseDuration = 0) {
+        const modal = document.getElementById('alert-modal');
+        document.getElementById('alert-modal-title').textContent = title;
+        document.getElementById('alert-modal-message').textContent = message;
+
+        const okBtn = modal.querySelector('.btn-primary');
+        okBtn.style.display = 'inline-block'; // Always show button
+
+        if (autoCloseDuration > 0) {
+            setTimeout(() => {
+                // Check if modal is still open before closing (simple check)
+                if (!modal.classList.contains('hidden')) {
+                    closeModal('alert-modal');
+                }
+            }, autoCloseDuration);
+        }
+
+        modal.classList.remove('hidden');
+    }
+
+
 
     async function loadDateOptions() {
         dateSelect.innerHTML = '<option value="">Current & Previous Night</option>';
