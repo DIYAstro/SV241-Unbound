@@ -1206,7 +1206,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!tbody) return;
 
         // 1. Gather Data
-        const gatheredProxyNames = {};
+        // Initialize with existing names to preserve those not in the table (e.g. Heaters)
+        const gatheredProxyNames = (originalProxyConfig && originalProxyConfig.switchNames)
+            ? JSON.parse(JSON.stringify(originalProxyConfig.switchNames))
+            : {};
+
         const gatheredStartupStates = {};
         let adjVoltage = null;
 
@@ -1234,9 +1238,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 // Custom Name (Proxy)
-                if (customName) {
-                    gatheredProxyNames[key] = customName;
-                }
+                gatheredProxyNames[key] = customName;
             }
 
             if (voltInput) {
