@@ -764,6 +764,7 @@ document.addEventListener('DOMContentLoaded', () => {
             await saveProxyConfig(true); // Pass true to suppress the alert
             resetUnsavedIndicators();
             fetchConfig();
+            fetchProxyConfig();
         } catch (error) {
             console.error('Error saving dew heater settings:', error);
             showResponse(`Error saving dew heater settings: ${error.message}`, true);
