@@ -711,7 +711,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // After saving heater settings to the device, also save the proxy config
             // to ensure the "auto-enable leader" setting is persisted.
-            await saveProxyConfig(false); // Pass false to suppress the alert
+            await saveProxyConfig(true); // Pass true to suppress the alert
             resetUnsavedIndicators();
             fetchConfig();
         } catch (error) {
@@ -1230,39 +1230,62 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function handleSaveProxyConfig() {
+    async function saveProxyConfig(suppressFeedback = false) {
         if (!originalProxyConfig) return;
 
-        const newConfig = { ...originalProxyConfig };
+        // constant deep copy to prevent mutation of the original until saved
+        const newConfig = JSON.parse(JSON.stringify(originalProxyConfig));
 
         // serial
-        newConfig.serialPortName = document.getElementById('proxy-serial-port').value.trim();
-        newConfig.autoDetectPort = document.getElementById('proxy-auto-detect-port').checked;
+        const serialPortInput = document.getElementById('proxy-serial-port');
+        if (serialPortInput) newConfig.serialPortName = serialPortInput.value.trim();
+
+        const autoDetectInput = document.getElementById('proxy-auto-detect-port');
+        if (autoDetectInput) newConfig.autoDetectPort = autoDetectInput.checked;
 
         // alpaca
-        newConfig.enableAlpacaVoltageControl = document.getElementById('proxy-enable-alpaca-voltage').checked;
-        newConfig.enableMasterPower = (document.getElementById('proxy-master-power-state').value === 'enabled');
-        newConfig.networkPort = parseInt(document.getElementById('proxy-network-port').value, 10);
-        newConfig.logLevel = document.getElementById('proxy-log-level').value;
-        newConfig.listenAddress = document.getElementById('proxy-listen-address').value;
-        newConfig.historyRetentionNights = parseInt(document.getElementById('proxy-history-retention').value, 10);
+        const alpacaVoltageInput = document.getElementById('proxy-enable-alpaca-voltage');
+        if (alpacaVoltageInput) newConfig.enableAlpacaVoltageControl = alpacaVoltageInput.checked;
+
+        const masterPowerStateInput = document.getElementById('proxy-master-power-state');
+        if (masterPowerStateInput) newConfig.enableMasterPower = (masterPowerStateInput.value === 'enabled');
+
+        const networkPortInput = document.getElementById('proxy-network-port');
+        if (networkPortInput) newConfig.networkPort = parseInt(networkPortInput.value, 10);
+
+        const logLevelInput = document.getElementById('proxy-log-level');
+        if (logLevelInput) newConfig.logLevel = logLevelInput.value;
+
+        const listenAddrInput = document.getElementById('proxy-listen-address');
+        if (listenAddrInput) newConfig.listenAddress = listenAddrInput.value;
+
+        const historyRetentionInput = document.getElementById('proxy-history-retention');
+        if (historyRetentionInput) newConfig.historyRetentionNights = parseInt(historyRetentionInput.value, 10);
 
         // heater auto
         if (!newConfig.heaterAutoEnableLeader) newConfig.heaterAutoEnableLeader = {};
-        newConfig.heaterAutoEnableLeader['pwm1'] = document.getElementById('heater-0-auto-enable-leader').checked;
-        newConfig.heaterAutoEnableLeader['pwm2'] = document.getElementById('heater-1-auto-enable-leader').checked;
+        const heater0Auto = document.getElementById('heater-0-auto-enable-leader');
+        if (heater0Auto) newConfig.heaterAutoEnableLeader['pwm1'] = heater0Auto.checked;
+
+        const heater1Auto = document.getElementById('heater-1-auto-enable-leader');
+        if (heater1Auto) newConfig.heaterAutoEnableLeader['pwm2'] = heater1Auto.checked;
 
         // master power name
-        const masterName = document.getElementById('proxy-master-power-name').value.trim();
-        if (!newConfig.switchNames) newConfig.switchNames = {};
-        if (masterName) {
-            newConfig.switchNames['master_power'] = masterName;
-        } else {
-            newConfig.switchNames['master_power'] = "";
+        const masterNameInput = document.getElementById('proxy-master-power-name');
+        if (masterNameInput) {
+            const masterName = masterNameInput.value.trim();
+            if (!newConfig.switchNames) newConfig.switchNames = {};
+            // Preserve existing switch names by strictly assigning only master_power
+            if (masterName) {
+                newConfig.switchNames['master_power'] = masterName;
+            } else {
+                newConfig.switchNames['master_power'] = "";
+            }
         }
 
         try {
-            showResponse("Saving Proxy configuration...");
+            if (!suppressFeedback) showResponse("Saving Proxy configuration...");
+
             const res = await fetch('/api/v1/settings', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1270,12 +1293,20 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             if (!res.ok) throw new Error("Save failed");
 
-            showResponse("Proxy settings saved. Restarting proxy might be required for some changes.");
-            showAlert("Success", "Proxy configuration saved! Restarting proxy might be required for some changes.", 5000);
-            setTimeout(() => location.reload(), 5100);
+            // Update original config to match what we just saved (to keep state in sync without reload if suppressed)
+            originalProxyConfig = newConfig;
+
+            if (!suppressFeedback) {
+                showResponse("Proxy settings saved. Restarting proxy might be required for some changes.");
+                showAlert("Success", "Proxy configuration saved! Restarting proxy might be required for some changes.", 5000);
+                setTimeout(() => location.reload(), 5100);
+            } else {
+                console.log("Proxy config saved silently.");
+            }
         } catch (e) {
             console.error(e);
-            showAlert("Error", "Error saving proxy settings: " + e.message);
+            if (!suppressFeedback) showAlert("Error", "Error saving proxy settings: " + e.message);
+            else console.error("Error saving proxy settings:", e.message);
         }
     }
 
@@ -1299,7 +1330,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (saveSwitchBtn) saveSwitchBtn.addEventListener('click', saveSwitchConfig);
 
         const saveProxyBtn = document.getElementById('save-proxy-config-button');
-        if (saveProxyBtn) saveProxyBtn.addEventListener('click', handleSaveProxyConfig);
+        if (saveProxyBtn) saveProxyBtn.addEventListener('click', () => saveProxyConfig(false));
 
         // Other buttons
         const rebootBtn = document.getElementById('reboot-button');
