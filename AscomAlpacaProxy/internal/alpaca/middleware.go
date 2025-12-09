@@ -82,5 +82,12 @@ func ParseSwitchID(w http.ResponseWriter, r *http.Request) (int, bool) {
 		ErrorResponse(w, r, http.StatusOK, 0x400, "Invalid switch ID")
 		return 0, false
 	}
+
+	// If ID is 10 (Master Power) and it's disabled, verify it's inaccessible
+	if id == 10 && !config.Get().EnableMasterPower {
+		ErrorResponse(w, r, http.StatusOK, 0x400, "Invalid switch ID (Disabled)")
+		return 0, false
+	}
+
 	return id, true
 }

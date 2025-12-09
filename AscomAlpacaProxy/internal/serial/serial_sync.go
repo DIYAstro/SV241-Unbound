@@ -26,6 +26,7 @@ func SyncFirmwareConfig() {
 		DH []struct {
 			M int `json:"m"` // Mode
 		} `json:"dh"`
+		PS config.PowerStartupStates `json:"ps"` // Power Startup States
 	}
 
 	if err := json.Unmarshal([]byte(response), &fwConfig); err != nil {
@@ -43,12 +44,24 @@ func SyncFirmwareConfig() {
 
 	// 1. Standard Switches (Indices 0-7)
 	// These are always present (unless we want to hide unused DC ports later, but for now they are static)
+	// 1. Standard Switches (Indices 0-7)
 	standardSwitches := []string{"dc1", "dc2", "dc3", "dc4", "dc5", "usbc12", "usb345", "adj_conv"}
 	standardShortKeys := []string{"d1", "d2", "d3", "d4", "d5", "u12", "u34", "adj"}
+
+	// Create a slice of the startup states to iterate easily
+	// Order MUST match standardSwitches array above
+	startStates := []int{
+		fwConfig.PS.DC1, fwConfig.PS.DC2, fwConfig.PS.DC3, fwConfig.PS.DC4, fwConfig.PS.DC5,
+		fwConfig.PS.USBC12, fwConfig.PS.USB345, fwConfig.PS.AdjConv,
+	}
 
 	currentID := 0
 
 	for i, name := range standardSwitches {
+		if startStates[i] == 2 {
+			logger.Info("Switch %s is DISABLED (State 2) in firmware. Hiding it.", name)
+			continue
+		}
 		newIDMap[currentID] = name
 		newShortKeyByID[currentID] = standardShortKeys[i]
 		currentID++
@@ -64,14 +77,13 @@ func SyncFirmwareConfig() {
 			newShortKeyByID[currentID] = shortKey
 			currentID++
 		} else {
-			logger.Info("Heater PWM%d is DISABLED in firmware. Hiding it from ASCOM Switch list.", i+1)
+			logger.Info("Heater PWM%d is DISABLED in firmware. Hiding it.", i+1)
 		}
 	}
 
 	// 3. Master Power (Always Last)
 	newIDMap[currentID] = "master_power"
 	newShortKeyByID[currentID] = "all"
-	// currentID++ // No need to increment further
 
 	// Update Global Config
 	// Warning: This is not thread-safe if heavily accessed, but we assume this runs at connection time.

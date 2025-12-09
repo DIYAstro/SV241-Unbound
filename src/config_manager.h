@@ -28,14 +28,14 @@ struct UpdateIntervals {
 };
 
 struct PowerStartupStates {
-    bool dc1;
-    bool dc2;
-    bool dc3;
-    bool dc4;
-    bool dc5;
-    bool usbc12;
-    bool usb345;
-    bool adj_conv;
+    uint8_t dc1;
+    uint8_t dc2;
+    uint8_t dc3;
+    uint8_t dc4;
+    uint8_t dc5;
+    uint8_t usbc12;
+    uint8_t usb345;
+    uint8_t adj_conv;
     // Note: Dew heater startup state is now in DewHeaterConfig
 };
 

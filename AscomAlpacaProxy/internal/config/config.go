@@ -20,12 +20,26 @@ type ProxyConfig struct {
 	HistoryRetentionNights     int               `json:"historyRetentionNights"`
 	TelemetryInterval          int               `json:"telemetryInterval"`          // Seconds
 	EnableAlpacaVoltageControl bool              `json:"enableAlpacaVoltageControl"` // Allow voltage control via Alpaca
+	EnableMasterPower          bool              `json:"enableMasterPower"`          // Show Master Power switch
 }
 
 // CombinedConfig defines the structure for a full backup file.
 type CombinedConfig struct {
 	ProxyConfig    *ProxyConfig    `json:"proxyConfig"`
 	FirmwareConfig json.RawMessage `json:"firmwareConfig"`
+}
+
+// PowerStartupStates defines the startup state of standard switches.
+// 0: Off, 1: On, 2: Disabled
+type PowerStartupStates struct {
+	DC1     int `json:"d1"`
+	DC2     int `json:"d2"`
+	DC3     int `json:"d3"`
+	DC4     int `json:"d4"`
+	DC5     int `json:"d5"`
+	USBC12  int `json:"u12"`
+	USB345  int `json:"u34"`
+	AdjConv int `json:"adj"`
 }
 
 var (

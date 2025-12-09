@@ -95,23 +95,29 @@
                     </div>
 
                     <div class="tab-content active" id="tab-switches">
-                        <div class="config-group">
-                            <h3>Custom Switch Names</h3>
-                            <div id="proxy-switch-names-grid" class="startup-grid"></div>
-                            <button id="save-switch-names-button" class="btn-primary">Save Names</button>
-                        </div>
-                        <div class="config-group">
-                            <h3>Power On Startup States</h3>
-                            <div class="startup-grid" id="power-startup-states"></div>
-                            <button class="save-config-button btn-primary">Save Startup States</button>
-                        </div>
-                        <div class="config-group">
-                            <h3>Adjustable Voltage</h3>
-                            <div class="form-group inline-form">
-                                <label for="adj-voltage">Preset Voltage (V)</label>
-                                <input type="number" id="adj-voltage" name="adj_conv_preset_v" step="0.1">
-                                <button class="save-config-button btn-primary">Save</button>
+                        <div class="config-group full-width-group">
+                            <h3>Switch Configuration</h3>
+                            <p class="subtitle">Configure switch names, startup states, and visibility. "Disabled"
+                                switches are typically hidden from ASCOM and Controls.</p>
+
+                            <div class="table-container">
+                                <table class="config-table" id="switch-config-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Switch Name</th>
+                                            <th>State (Startup)</th>
+                                            <th>Custom Name</th>
+                                            <th>Voltage (Adj Only)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="switch-config-tbody">
+                                        <!-- Populated by JS -->
+                                    </tbody>
+                                </table>
                             </div>
+
+                            <button id="save-switch-config-button" class="btn-primary"
+                                style="margin-top: 1rem; width: 100%;">Save Switch Configuration</button>
                         </div>
                     </div>
 
@@ -314,6 +320,12 @@
                                 <label>Serial Port Name</label>
                                 <input type="text" id="proxy-serial-port" placeholder="Auto-detect">
                             </div>
+                            <div class="form-group">
+                                <label>Master Power Name (Virtual)</label>
+                                <input type="text" id="proxy-master-power-name" placeholder="Master Power">
+                            </div>
+                            <div class="form-group"><label><input type="checkbox" id="proxy-enable-master-power"> Enable
+                                    Master Power Switch</label></div>
                             <div class="form-group"><label><input type="checkbox" id="proxy-auto-detect-port">
                                     Auto-detect Port</label></div>
                             <div class="form-group"><label><input type="checkbox" id="proxy-enable-alpaca-voltage">

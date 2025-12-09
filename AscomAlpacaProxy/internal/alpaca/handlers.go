@@ -157,7 +157,12 @@ func (a *API) HandleObsCondAction(w http.ResponseWriter, r *http.Request) {
 // --- Switch Handlers ---
 
 func (a *API) HandleSwitchMaxSwitch(w http.ResponseWriter, r *http.Request) {
-	IntResponse(w, r, len(config.SwitchIDMap))
+	count := len(config.SwitchIDMap)
+	// If Master Power (ID 10) is disabled, report one less switch
+	if !config.Get().EnableMasterPower {
+		count--
+	}
+	IntResponse(w, r, count)
 }
 
 func (a *API) HandleSwitchGetSwitchName(w http.ResponseWriter, r *http.Request) {

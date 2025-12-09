@@ -39,7 +39,8 @@ static bool power_output_states[POWER_OUTPUT_COUNT];
 void setup_power_outputs() {
   xSemaphoreTake(config_mutex, portMAX_DELAY);
   // Load startup states from the global config struct
-  const bool startup_states[POWER_OUTPUT_COUNT] = {
+  // Using uint8_t to support 0=Off, 1=On, 2=Disabled
+  uint8_t startup_states[POWER_OUTPUT_COUNT] = {
     config.power_startup_states.dc1,
     config.power_startup_states.dc2,
     config.power_startup_states.dc3,
@@ -48,8 +49,8 @@ void setup_power_outputs() {
     config.power_startup_states.usbc12,
     config.power_startup_states.usb345,
     config.power_startup_states.adj_conv,
-    config.dew_heaters[0].enabled_on_startup,
-    config.dew_heaters[1].enabled_on_startup
+    (uint8_t)(config.dew_heaters[0].enabled_on_startup ? 1 : 0),
+    (uint8_t)(config.dew_heaters[1].enabled_on_startup ? 1 : 0)
   };
   xSemaphoreGive(config_mutex);
 
@@ -57,12 +58,16 @@ void setup_power_outputs() {
     // Outputs managed by other modules are skipped here
     if ((PowerOutput)i == POWER_ADJ_CONV || (PowerOutput)i == POWER_PWM1 || (PowerOutput)i == POWER_PWM2) {
         // Their state is set in their own setup function, but we need to track it here too.
-        power_output_states[i] = startup_states[i];
+        // For standard switches, 2 means Disabled, which physically means Off.
+        power_output_states[i] = (startup_states[i] == 1);
         continue;
     }
 
     pinMode(power_output_pins[i], OUTPUT);
-    set_power_output((PowerOutput)i, startup_states[i]);
+    
+    // Logic: 0 -> Off, 1 -> On, 2 -> Disabled (Off)
+    bool physical_state = (startup_states[i] == 1);
+    set_power_output((PowerOutput)i, physical_state);
   }
 }
 

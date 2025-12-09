@@ -239,7 +239,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const config = await response.json();
             originalConfig = JSON.parse(JSON.stringify(config)); // Deep copy
 
-            document.getElementById('adj-voltage').value = config.av !== undefined ? config.av : ''; // Handles 'av' if it is undefined
+            // document.getElementById('adj-voltage').value ... // Removed: now in table
 
             if (config.so) { // sensor_offsets -> so
                 document.getElementById('offset-sht40-temp').value = config.so.st;
@@ -250,10 +250,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (config.ps) { // power_startup_states -> ps
-                for (const [key, value] of Object.entries(config.ps)) {
-                    const checkbox = document.querySelector(`#power-startup-states input[data-key="${key.toLowerCase()}"]`);
-                    if (checkbox) checkbox.checked = value;
-                }
+                // Pass current known switch names (might be empty initially if proxy config not fetched yet)
+                // We will also call this from fetchProxyConfig to ensure it updates when names arrive.
+                populateSwitchConfigTable(window.currentSwitchNames, config.ps, config.av);
             }
 
             if (config.ui) { // update_intervals_ms -> ui
@@ -325,6 +324,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('proxy-serial-port').value = proxyConf.serialPortName || '';
         document.getElementById('proxy-auto-detect-port').checked = proxyConf.autoDetectPort;
         document.getElementById('proxy-enable-alpaca-voltage').checked = proxyConf.enableAlpacaVoltageControl;
+        document.getElementById('proxy-enable-master-power').checked = (proxyConf.enableMasterPower !== false); // Default true
         document.getElementById('proxy-serial-port').disabled = proxyConf.autoDetectPort;
         document.getElementById('proxy-network-port').value = proxyConf.networkPort || 8080;
         document.getElementById('proxy-log-level').value = proxyConf.logLevel || 'INFO';
@@ -379,15 +379,30 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (proxyConf.switchNames) {
-            populateSwitchNameInputs(proxyConf.switchNames);
-            populatePowerControls(proxyConf.switchNames);
-            populateStartupStateLabels(proxyConf.switchNames);
+            // Update internal state
+            window.currentSwitchNames = proxyConf.switchNames;
+
+            // Note: Table population happens in fetchProxyConfig or fetchConfig when both data sources are ready.
+            // But we can trigger it here if originalConfig is available
+            if (originalConfig && originalConfig.ps) {
+                populateSwitchConfigTable(window.currentSwitchNames, originalConfig.ps, originalConfig.av);
+            }
 
             // Update Master Power label if configured
             if (proxyConf.switchNames['master_power']) {
                 const masterLabel = document.getElementById('master-power-label');
                 if (masterLabel) masterLabel.textContent = proxyConf.switchNames['master_power'];
+                const masterInput = document.getElementById('proxy-master-power-name');
+                if (masterInput) masterInput.value = proxyConf.switchNames['master_power'];
             }
+        }
+
+        // Toggle Master Power Visibility based on config
+        const masterContainer = document.getElementById('master-switch-container');
+        if (masterContainer) {
+            // Default to visible if undefined
+            const visible = (proxyConf.enableMasterPower !== false);
+            masterContainer.style.display = visible ? 'flex' : 'none';
         }
     }
 
@@ -449,51 +464,138 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('Error fetching proxy config (fallback):', fallbackError);
                 const defaultNames = {};
                 Object.values(switchIDMap).forEach(key => defaultNames[key] = key);
-                populateSwitchNameInputs(defaultNames);
-                populatePowerControls(defaultNames);
-                populateStartupStateLabels(defaultNames);
+                // Fallback default names
+                window.currentSwitchNames = defaultNames;
+                if (originalConfig && originalConfig.ps) {
+                    populateSwitchConfigTable(defaultNames, originalConfig.ps, originalConfig.av);
+                }
+            } finally {
+                updateConnectionStatus(proxyConfForStatus, statusOk);
+
+                // Update Switch Config Table if we have both configs
+                if (proxyConfForStatus && proxyConfForStatus.switchNames) {
+                    window.currentSwitchNames = proxyConfForStatus.switchNames;
+                }
+                if (originalConfig && originalConfig.ps) {
+                    populateSwitchConfigTable(window.currentSwitchNames, originalConfig.ps, originalConfig.av);
+                }
             }
-        } finally {
-            updateConnectionStatus(proxyConfForStatus, statusOk);
         }
     }
 
-    function populateSwitchNameInputs(switchNames) {
-        const grid = document.getElementById('proxy-switch-names-grid');
-        grid.innerHTML = '';
-        const activeKeys = Object.values(switchIDMap);
-        for (const [key, name] of Object.entries(switchNames)) {
-            // Only show inputs for switches that are currently active/connected
-            if (!activeKeys.includes(key)) continue;
+    function populateSwitchConfigTable(switchNames, startupStates, adjVoltage) {
+        const tbody = document.getElementById('switch-config-tbody');
+        if (!tbody) return;
+        tbody.innerHTML = '';
 
-            const label = document.createElement('label');
-            label.textContent = `${key}: `;
-            const input = document.createElement('input');
-            input.type = 'text';
-            input.dataset.key = key;
-            input.value = name;
-            grid.appendChild(label).appendChild(input);
-        }
-    }
-
-    function populateStartupStateLabels(switchNames) {
-        const grid = document.getElementById('power-startup-states');
+        const switchKeys = ["dc1", "dc2", "dc3", "dc4", "dc5", "usbc12", "usb345", "adj_conv"];
+        const switchLabels = {
+            "dc1": "DC 1", "dc2": "DC 2", "dc3": "DC 3", "dc4": "DC 4", "dc5": "DC 5",
+            "usbc12": "USB-C 1/2", "usb345": "USB 3/4/5", "adj_conv": "Adj. Port"
+        };
         const shortSwitchIDMap = {
             "dc1": "d1", "dc2": "d2", "dc3": "d3", "dc4": "d4", "dc5": "d5",
             "usbc12": "u12", "usb345": "u34", "adj_conv": "adj"
         };
-        grid.innerHTML = '';
-        const startupStateKeys = ["dc1", "dc2", "dc3", "dc4", "dc5", "usbc12", "usb345", "adj_conv"];
-        startupStateKeys.forEach(key => {
-            const shortKey = shortSwitchIDMap[key] || key;
-            const displayName = (switchNames && switchNames[key]) ? switchNames[key] : (longToShortKeyMap[key] || key);
-            const label = document.createElement('label');
-            const input = document.createElement('input');
-            input.type = 'checkbox';
-            input.dataset.key = shortKey;
-            label.appendChild(input);
-            label.appendChild(document.createTextNode(` ${displayName}`));
-            grid.appendChild(label);
+
+
+        switchKeys.forEach(key => {
+            const row = document.createElement('tr');
+
+            // 1. Name
+            const nameCell = document.createElement('td');
+            nameCell.textContent = switchLabels[key] || key;
+            row.appendChild(nameCell);
+
+            // 2. State (Startup)
+            const stateCell = document.createElement('td');
+            const select = document.createElement('select');
+            select.dataset.key = key; // Firmware key (dc1 etc)
+            select.className = "startup-state-select";
+
+            // Options: 2=Disabled, 0=Off (Enabled), 1=On (Enabled)
+            const optDisabled = document.createElement('option');
+            optDisabled.value = "2";
+            optDisabled.textContent = "Disabled";
+
+            const optOff = document.createElement('option');
+            optOff.value = "0";
+            optOff.textContent = "Off (Enabled)";
+
+            const optOn = document.createElement('option');
+            optOn.value = "1";
+            optOn.textContent = "On (Enabled)";
+
+            // Set current value
+            // startupStates[key] is now integer 0, 1, or 2 from firmware
+            let currentVal = "0";
+            const shortKey = shortSwitchIDMap[key];
+            let rawState = undefined;
+
+            if (startupStates) {
+                if (shortKey && typeof startupStates[shortKey] !== 'undefined') rawState = startupStates[shortKey];
+                else if (typeof startupStates[key] !== 'undefined') rawState = startupStates[key];
+            }
+            if (typeof rawState !== 'undefined') {
+                currentVal = rawState.toString();
+            }
+
+            // Fallback for boolean-like behavior if firmware is mixed transition (shouldn't happen with uint8 conversion)
+            if (currentVal === "true") currentVal = "1";
+            if (currentVal === "false") currentVal = "0";
+
+            select.appendChild(optOn);
+            select.appendChild(optOff);
+            select.appendChild(optDisabled);
+            select.value = currentVal;
+
+            if (key === 'master_power') {
+                select.innerHTML = '';
+                const optNA = document.createElement('option');
+                optNA.value = "0";
+                optNA.textContent = "N/A";
+                select.appendChild(optNA);
+                select.disabled = true;
+                select.value = "0";
+            }
+
+            stateCell.appendChild(select);
+            row.appendChild(stateCell);
+
+            // 3. Custom Name
+            const customNameCell = document.createElement('td');
+            const nameInput = document.createElement('input');
+            nameInput.type = 'text';
+            nameInput.className = "custom-name-input";
+            nameInput.dataset.key = key;
+            nameInput.value = (switchNames && switchNames[key]) ? switchNames[key] : "";
+            nameInput.placeholder = switchLabels[key];
+            customNameCell.appendChild(nameInput);
+            row.appendChild(customNameCell);
+
+            // 4. Voltage (Adj Only)
+            const voltCell = document.createElement('td');
+            if (key === "adj_conv") {
+                const voltInput = document.createElement('input');
+                voltInput.type = 'number';
+                voltInput.className = "adj-volt-input";
+                voltInput.id = "adj-voltage-table-input"; // ID for easy saving
+                voltInput.step = "0.1";
+                voltInput.min = "3.0"; // Example limits
+                voltInput.max = "12.0"; // Firmware might clamp differently
+                voltInput.style.width = "80px";
+                if (typeof adjVoltage !== 'undefined') {
+                    voltInput.value = adjVoltage;
+                }
+                voltCell.appendChild(voltInput);
+            } else {
+                voltCell.textContent = "-";
+                voltCell.style.textAlign = "center";
+                voltCell.style.opacity = "0.5";
+            }
+            row.appendChild(voltCell);
+
+            tbody.appendChild(row);
         });
     }
 
@@ -716,13 +818,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function setupSaveButtons() {
-        // Ensure selectors match new HTML structure
-        const savePowerStatesBtn = document.querySelector('#power-startup-states').parentNode.querySelector('.save-config-button');
-        if (savePowerStatesBtn) savePowerStatesBtn.addEventListener('click', savePowerStartupStates);
-
-        const saveAdjVoltBtn = document.getElementById('adj-voltage').parentNode.querySelector('.save-config-button');
-        if (saveAdjVoltBtn) saveAdjVoltBtn.addEventListener('click', saveAdjustableVoltagePreset);
-
         // Dew Heater Save Button - now at the bottom of the tab
         const saveHeatersBtn = document.querySelector('#tab-heaters .save-config-button');
         if (saveHeatersBtn) saveHeatersBtn.addEventListener('click', saveDewHeaterSettings);
@@ -730,13 +825,6 @@ document.addEventListener('DOMContentLoaded', () => {
         // Sensor Settings Save Button
         const saveSensorsBtn = document.querySelector('#tab-sensors .save-config-button');
         if (saveSensorsBtn) saveSensorsBtn.addEventListener('click', saveSensorSettings);
-
-        // Switch Names Save
-        const saveSwitchNamesBtn = document.getElementById('save-switch-names-button');
-        if (saveSwitchNamesBtn) saveSwitchNamesBtn.addEventListener('click', () => saveProxyConfig(true));
-
-        const saveProxyBtn = document.getElementById('save-proxy-config-button');
-        if (saveProxyBtn) saveProxyBtn.addEventListener('click', () => saveProxyConfig(true));
 
         // Auto-Drying Save
         const saveAutoDryBtn = document.querySelector('#tab-sensors .settings-block:last-child .save-config-button');
@@ -1037,6 +1125,141 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function saveSwitchConfig() {
+        const tbody = document.getElementById('switch-config-tbody');
+        if (!tbody) return;
+
+        // 1. Gather Data
+        const gatheredProxyNames = {};
+        const gatheredStartupStates = {};
+        let adjVoltage = null;
+
+        const shortSwitchIDMap = {
+            "dc1": "d1", "dc2": "d2", "dc3": "d3", "dc4": "d4", "dc5": "d5",
+            "usbc12": "u12", "usb345": "u34", "adj_conv": "adj"
+        };
+
+        const rows = tbody.querySelectorAll('tr');
+        rows.forEach(row => {
+            const select = row.querySelector('.startup-state-select');
+            const nameInput = row.querySelector('.custom-name-input');
+            const voltInput = row.querySelector('.adj-volt-input');
+
+            if (select && nameInput) {
+                const key = select.dataset.key;
+                const state = parseInt(select.value, 10);
+                const customName = nameInput.value.trim();
+
+                // Startup State (0, 1, 2)
+                // Filter out master_power as it is Proxy-only
+                if (key !== 'master_power') {
+                    const shortKey = shortSwitchIDMap[key] || key;
+                    gatheredStartupStates[shortKey] = state;
+                }
+
+                // Custom Name (Proxy)
+                if (customName) {
+                    gatheredProxyNames[key] = customName;
+                }
+            }
+
+            if (voltInput) {
+                adjVoltage = parseFloat(voltInput.value);
+            }
+        });
+
+        // 2. Save Firmware Settings (Startup States + Voltage)
+        try {
+            if (connectionIndicator.className !== 'connected') {
+                alert('Cannot save configuration: Device is not connected.');
+                return;
+            }
+
+            const firmwareConfig = {
+                ps: gatheredStartupStates, // power_startup_states
+                av: adjVoltage // adj_conv_preset_v
+            };
+
+            showResponse("Saving firmware switch settings...");
+            const fwResponse = await fetch('/api/v1/config/set', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(firmwareConfig)
+            });
+            if (!fwResponse.ok) throw new Error(`Firmware Config Save failed: ${fwResponse.status}`);
+
+            // 3. Save Proxy Settings (Names)
+            // We need to merge with existing names to avoid losing others if any
+            const newProxyConfig = { ...originalProxyConfig };
+            newProxyConfig.switchNames = gatheredProxyNames;
+
+            showResponse("Saving custom names...");
+            const proxyResponse = await fetch('/api/v1/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newProxyConfig)
+            });
+            if (!proxyResponse.ok) throw new Error(`Proxy Config Save failed: ${proxyResponse.status}`);
+
+            showResponse("All switch settings saved successfully!");
+            alert("Switch configuration saved successfully!");
+            location.reload(); // Reload to refresh the switch list/telemetry based on new "Disabled" states
+        } catch (error) {
+            console.error(error);
+            showResponse(`Error saving settings: ${error.message}`, true);
+            alert(`Error saving settings: ${error.message}`);
+        }
+    }
+
+    async function handleSaveProxyConfig() {
+        if (!originalProxyConfig) return;
+
+        const newConfig = { ...originalProxyConfig };
+
+        // serial
+        newConfig.serialPortName = document.getElementById('proxy-serial-port').value.trim();
+        newConfig.autoDetectPort = document.getElementById('proxy-auto-detect-port').checked;
+
+        // alpaca
+        newConfig.enableAlpacaVoltageControl = document.getElementById('proxy-enable-alpaca-voltage').checked;
+        newConfig.enableMasterPower = document.getElementById('proxy-enable-master-power').checked;
+        newConfig.networkPort = parseInt(document.getElementById('proxy-network-port').value, 10);
+        newConfig.logLevel = document.getElementById('proxy-log-level').value;
+        newConfig.listenAddress = document.getElementById('proxy-listen-address').value;
+        newConfig.historyRetentionNights = parseInt(document.getElementById('proxy-history-retention').value, 10);
+
+        // heater auto
+        if (!newConfig.heaterAutoEnableLeader) newConfig.heaterAutoEnableLeader = {};
+        newConfig.heaterAutoEnableLeader['pwm1'] = document.getElementById('heater-0-auto-enable-leader').checked;
+        newConfig.heaterAutoEnableLeader['pwm2'] = document.getElementById('heater-1-auto-enable-leader').checked;
+
+        // master power name
+        const masterName = document.getElementById('proxy-master-power-name').value.trim();
+        if (!newConfig.switchNames) newConfig.switchNames = {};
+        if (masterName) {
+            newConfig.switchNames['master_power'] = masterName;
+        } else {
+            newConfig.switchNames['master_power'] = "";
+        }
+
+        try {
+            showResponse("Saving Proxy configuration...");
+            const res = await fetch('/api/v1/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newConfig)
+            });
+            if (!res.ok) throw new Error("Save failed");
+
+            showResponse("Proxy settings saved. Restarting proxy might be required for some changes.");
+            alert("Proxy configuration saved!");
+            location.reload();
+        } catch (e) {
+            console.error(e);
+            alert("Error saving proxy settings: " + e.message);
+        }
+    }
+
     // --- Initialization ---
     async function init() {
         setupTabs(); // New tab handler
@@ -1051,6 +1274,13 @@ document.addEventListener('DOMContentLoaded', () => {
         // Setup specific event listeners
         setupChangeDetection();
         setupSaveButtons();
+
+        // Switch Configuration (Unified)
+        const saveSwitchBtn = document.getElementById('save-switch-config-button');
+        if (saveSwitchBtn) saveSwitchBtn.addEventListener('click', saveSwitchConfig);
+
+        const saveProxyBtn = document.getElementById('save-proxy-config-button');
+        if (saveProxyBtn) saveProxyBtn.addEventListener('click', handleSaveProxyConfig);
 
         // Other buttons
         const rebootBtn = document.getElementById('reboot-button');
