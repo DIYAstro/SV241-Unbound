@@ -388,6 +388,10 @@ func reconnect(newPortName string) {
 					lastSentStatus = events.Connected
 				default: // Do nothing if the channel is not ready.
 				}
+
+				// TRIGGER CONFIG SYNC
+				// We do this in a goroutine to avoid blocking the mutex or deadlocking with ProcessCommands
+				go SyncFirmwareConfig()
 			}
 		}
 	} else {

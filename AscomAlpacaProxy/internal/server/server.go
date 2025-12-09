@@ -211,6 +211,10 @@ func handleSetFirmwareConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Failed to send command to device: %v", err), http.StatusServiceUnavailable)
 		return
 	}
+
+	// Trigger a switch map sync in case standard switches were enabled/disabled
+	go serial.SyncFirmwareConfig()
+
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, resp)
 }

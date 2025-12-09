@@ -11,8 +11,9 @@ import (
 
 // SettingsResponse defines the structure for the GET /api/v1/settings response.
 type SettingsResponse struct {
-	ProxyConfig  *config.ProxyConfig `json:"proxy_config"`
-	AvailableIPs []string            `json:"available_ips"`
+	ProxyConfig    *config.ProxyConfig `json:"proxy_config"`
+	AvailableIPs   []string            `json:"available_ips"`
+	ActiveSwitches map[int]string      `json:"active_switches"`
 }
 
 // HandleGetSettings provides the current proxy configuration and available IP addresses.
@@ -26,8 +27,9 @@ func HandleGetSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := SettingsResponse{
-		ProxyConfig:  conf,
-		AvailableIPs: ips,
+		ProxyConfig:    conf,
+		AvailableIPs:   ips,
+		ActiveSwitches: config.SwitchIDMap,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

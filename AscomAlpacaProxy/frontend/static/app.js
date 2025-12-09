@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- State ---
     let originalConfig = {};
     let originalProxyConfig = {};
-    const switchIDMap = {
+    let switchIDMap = {
         0: "dc1", 1: "dc2", 2: "dc3", 3: "dc4", 4: "dc5",
         5: "usbc12", 6: "usb345", 7: "adj_conv", 8: "pwm1", 9: "pwm2",
     };
@@ -381,6 +381,26 @@ document.addEventListener('DOMContentLoaded', () => {
             const proxyConf = settings.proxy_config;
             const availableIPs = settings.available_ips;
 
+            // Update Active Switches dynamically from backend!
+            // Update Active Switches dynamically from backend!
+            if (settings.active_switches) {
+                switchIDMap = settings.active_switches;
+
+                // Toggle Telemetry Tile Visibility
+                const internalNames = Object.values(switchIDMap);
+                const pwm1Status = document.getElementById('status-pwm1');
+                const pwm2Status = document.getElementById('status-pwm2');
+
+                if (pwm1Status) {
+                    const tile = pwm1Status.closest('.status-item');
+                    if (tile) tile.style.display = internalNames.includes('pwm1') ? 'flex' : 'none';
+                }
+                if (pwm2Status) {
+                    const tile = pwm2Status.closest('.status-item');
+                    if (tile) tile.style.display = internalNames.includes('pwm2') ? 'flex' : 'none';
+                }
+            }
+
             originalProxyConfig = JSON.parse(JSON.stringify(proxyConf));
             proxyConfForStatus = proxyConf;
 
@@ -419,7 +439,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function populateSwitchNameInputs(switchNames) {
         const grid = document.getElementById('proxy-switch-names-grid');
         grid.innerHTML = '';
+        const activeKeys = Object.values(switchIDMap);
         for (const [key, name] of Object.entries(switchNames)) {
+            // Only show inputs for switches that are currently active/connected
+            if (!activeKeys.includes(key)) continue;
+
             const label = document.createElement('label');
             label.textContent = `${key}: `;
             const input = document.createElement('input');

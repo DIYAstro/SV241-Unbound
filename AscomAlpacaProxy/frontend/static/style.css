@@ -193,6 +193,9 @@ body {
     border-radius: var(--radius-sm);
     border: 1px solid transparent;
     transition: border-color 0.3s;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
 }
 
 .status-item:hover {
