@@ -325,7 +325,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('proxy-serial-port').value = proxyConf.serialPortName || '';
         document.getElementById('proxy-auto-detect-port').checked = proxyConf.autoDetectPort;
         document.getElementById('proxy-enable-alpaca-voltage').checked = proxyConf.enableAlpacaVoltageControl;
-        document.getElementById('proxy-enable-master-power').checked = (proxyConf.enableMasterPower !== false); // Default true
+        const mpState = (proxyConf.enableMasterPower !== false) ? 'enabled' : 'disabled';
+        document.getElementById('proxy-master-power-state').value = mpState;
         document.getElementById('proxy-serial-port').disabled = proxyConf.autoDetectPort;
         document.getElementById('proxy-network-port').value = proxyConf.networkPort || 8080;
         document.getElementById('proxy-log-level').value = proxyConf.logLevel || 'INFO';
@@ -1234,7 +1235,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // alpaca
         newConfig.enableAlpacaVoltageControl = document.getElementById('proxy-enable-alpaca-voltage').checked;
-        newConfig.enableMasterPower = document.getElementById('proxy-enable-master-power').checked;
+        newConfig.enableMasterPower = (document.getElementById('proxy-master-power-state').value === 'enabled');
         newConfig.networkPort = parseInt(document.getElementById('proxy-network-port').value, 10);
         newConfig.logLevel = document.getElementById('proxy-log-level').value;
         newConfig.listenAddress = document.getElementById('proxy-listen-address').value;

@@ -320,16 +320,9 @@
                                 <label>Serial Port Name</label>
                                 <input type="text" id="proxy-serial-port" placeholder="Auto-detect">
                             </div>
-                            <div class="form-group">
-                                <label>Master Power Name (Virtual)</label>
-                                <input type="text" id="proxy-master-power-name" placeholder="Master Power">
-                            </div>
-                            <div class="form-group"><label><input type="checkbox" id="proxy-enable-master-power"> Enable
-                                    Master Power Switch</label></div>
                             <div class="form-group"><label><input type="checkbox" id="proxy-auto-detect-port">
                                     Auto-detect Port</label></div>
-                            <div class="form-group"><label><input type="checkbox" id="proxy-enable-alpaca-voltage">
-                                    Enable Alpaca Voltage Control (0-15V Slider)</label></div>
+                            
                             <div class="pid-grid">
                                 <label>Listen Address
                                     <select id="proxy-listen-address">
@@ -348,7 +341,30 @@
                                 <label>Keep Telemetry (Nights) <input type="number" id="proxy-history-retention" min="1"
                                         max="365"></label>
                             </div>
-                            <button id="save-proxy-config-button" class="btn-primary">Save Proxy Config</button>
+                        </div>
+
+                        <div class="settings-block">
+                            <h4>Alpaca Features & Switches</h4>
+                            <div class="form-group"><label><input type="checkbox" id="proxy-enable-alpaca-voltage">
+                                    Enable Alpaca Voltage Control (0-15V Slider)</label></div>
+                            
+                            <div class="form-group">
+                                <label>Master Power Switch (Virtual)</label>
+                                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                    <select id="proxy-master-power-state" class="theme-select" style="width: auto; min-width: 120px;">
+                                        <option value="enabled">Enabled</option>
+                                        <option value="disabled">Disabled</option>
+                                    </select>
+                                    <input type="text" id="proxy-master-power-name" placeholder="Switch Name" style="flex: 1;">
+                                </div>
+                                <small style="display: block; margin-top: 0.3rem; color: var(--text-muted);">
+                                    When disabled, this switch is hidden from ASCOM clients.
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <div class="settings-block">
+                            <button id="save-proxy-config-button" class="btn-primary" style="width: 100%;">Save Proxy Config</button>
                         </div>
                     </div>
 
