@@ -33,6 +33,101 @@ document.addEventListener('DOMContentLoaded', () => {
         "pwm1": "PWM 1", "pwm2": "PWM 2",
     };
 
+    // --- Modal Utilities ---
+    window.openModal = function (modalId) {
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.classList.remove('hidden');
+        }
+    };
+
+    window.closeModal = function (modalId) {
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.classList.add('hidden');
+        }
+    };
+
+    function showConfirmation(title, message) {
+        return new Promise((resolve) => {
+            const modalId = 'confirmation-modal';
+            const modal = document.getElementById(modalId);
+            if (!modal) {
+                resolve(confirm(`${title}\n\n${message}`));
+                return;
+            }
+
+            const titleEl = document.getElementById('confirm-modal-title');
+            const msgEl = document.getElementById('confirm-modal-message');
+            if (titleEl) titleEl.textContent = title;
+            if (msgEl) msgEl.textContent = message;
+
+            const okBtn = document.getElementById('confirm-modal-ok');
+            const cancelBtn = document.getElementById('confirm-modal-cancel');
+            const closeBtn = modal.querySelector('.close-btn');
+
+            const cleanup = () => {
+                okBtn.onclick = null;
+                cancelBtn.onclick = null;
+                // Restore default close behavior (just hide) if needed, though onCancel handles it
+                if (closeBtn) closeBtn.onclick = () => window.closeModal(modalId);
+            };
+
+            okBtn.onclick = () => {
+                cleanup();
+                window.closeModal(modalId);
+                resolve(true);
+            };
+
+            const onCancel = () => {
+                cleanup();
+                window.closeModal(modalId);
+                resolve(false);
+            };
+
+            cancelBtn.onclick = onCancel;
+            if (closeBtn) closeBtn.onclick = onCancel;
+
+            window.openModal(modalId);
+        });
+    }
+
+    function showAlert(title, message) {
+        return new Promise((resolve) => {
+            const modalId = 'alert-modal';
+            const modal = document.getElementById(modalId);
+            if (!modal) {
+                alert(`${title}\n\n${message}`);
+                resolve();
+                return;
+            }
+
+            const titleEl = document.getElementById('alert-modal-title');
+            const msgEl = document.getElementById('alert-modal-message');
+            if (titleEl) titleEl.textContent = title;
+            if (msgEl) msgEl.textContent = message;
+
+            const okBtn = modal.querySelector('.btn-primary');
+            const closeBtn = modal.querySelector('.close-btn');
+
+            const cleanup = () => {
+                if (okBtn) okBtn.onclick = null;
+                if (closeBtn) closeBtn.onclick = null;
+            };
+
+            const onClose = () => {
+                cleanup();
+                window.closeModal(modalId);
+                resolve();
+            };
+
+            if (okBtn) okBtn.onclick = onClose;
+            if (closeBtn) closeBtn.onclick = onClose;
+
+            window.openModal(modalId);
+        });
+    }
+
     // --- Connection Status ---
     function updateConnectionStatus(proxyConf, statusOk) {
         if (!proxyConf || Object.keys(proxyConf).length === 0) {
@@ -928,7 +1023,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function triggerManualDrySensor() {
-        if (!confirm('This will activate the sensor heater for a short period, temporarily affecting ambient readings. Proceed?')) return;
+        const confirmed = await showConfirmation(
+            'Dry Sensor',
+            'This will activate the sensor heater for a short period, temporarily affecting ambient readings. Proceed?'
+        );
+        if (!confirmed) return;
         try {
             showResponse("Sending sensor drying command...");
             const response = await fetch('/api/v1/command', {
@@ -942,10 +1041,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const result = await response.json();
             showResponse(`Sensor drying cycle initiated. Device response: ${result.status || 'OK'}`);
-            alert('Sensor drying cycle initiated successfully.');
+            await showAlert('Success', 'Sensor drying cycle initiated successfully.');
         } catch (error) {
             showResponse(`Error sending command: ${error.message}`, true);
-            alert(`Error sending command: ${error.message}`);
+            await showAlert('Error', `Error sending command: ${error.message}`);
         }
     }
 
