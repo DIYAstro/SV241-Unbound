@@ -2,8 +2,7 @@
 
 The project also includes a standalone ASCOM Alpaca proxy driver written in Go. This application connects to the SV241 device via its serial port and exposes it to the ASCOM ecosystem as standard `Switch` and `ObservingConditions` devices.
 
-> **Note:** While the proxy is written in Go and designed to be cross-platform (Windows, macOS, Linux), it has currently only been tested on Windows.
-> **Note:** This proxy driver is designed for Windows.
+> **Note:** While the proxy is written in Go and could theoretically run on other platforms, it is currently only tested and supported on **Windows**. The system tray integration and installer are Windows-specific.
 
 ## Table of Contents
 
@@ -238,9 +237,14 @@ Here is an example of the `proxy_config.json` file structure:
 ```json
 {
   "serialPortName": "COM9",
+  "autoDetectPort": false,
   "networkPort": 8080,
-  "logLevel": "DEBUG",
-  "historyRetentionNights": 30,
+  "listenAddress": "127.0.0.1",
+  "logLevel": "INFO",
+  "historyRetentionNights": 10,
+  "telemetryInterval": 10,
+  "enableAlpacaVoltageControl": false,
+  "enableMasterPower": true,
   "switchNames": {
     "adj_conv": "Adjustable Voltage",
     "dc1": "Camera",
@@ -251,7 +255,12 @@ Here is an example of the `proxy_config.json` file structure:
     "pwm1": "Main Dew Heater",
     "pwm2": "Guide Scope Heater",
     "usb345": "USB Hub 1",
-    "usbc12": "USB Hub 2"
+    "usbc12": "USB Hub 2",
+    "master_power": "Master Power"
+  },
+  "heaterAutoEnableLeader": {
+    "pwm1": true,
+    "pwm2": true
   }
 }
 ```
@@ -260,10 +269,17 @@ Here is an example of the `proxy_config.json` file structure:
 
 *   `serialPortName` (string): The name of the serial port for the SV241 device (e.g., `"COM9"`). If this string is empty (`""`), the proxy will attempt to auto-detect the port on startup.
     > **Note:** When `Auto-Detect Port` is enabled (or `serialPortName` is empty), the proxy probes all available USB serial ports to find the SV241. This "safe-but-aggressive" probing can potentially interfere with other sensitive devices (e.g., Mounts, Weather Stations). **Solution:** To prevent conflicts, connect the SV241 once to let it auto-detect, then **disable "Auto-Detect Port"** (or uncheck the box in the web UI). The proxy will then strictly only open the configured port.
+*   `autoDetectPort` (boolean): When `true`, the proxy will attempt to find the SV241 automatically if the configured port fails. Default is `true`.
 *   `networkPort` (integer): The TCP port on which the Alpaca API server will listen for connections from client applications. The default is `8080`. A restart of the proxy is required for changes to this value to take effect.
+*   `listenAddress` (string): The IP address to bind the server to. Use `"127.0.0.1"` for local-only access (recommended for security) or `"0.0.0.0"` to allow network access. Default is `"127.0.0.1"`.
 *   `logLevel` (string): Controls the verbosity of the log file. Valid values are `"ERROR"`, `"WARN"`, `"INFO"`, and `"DEBUG"`. This setting is applied live when changed.
 *   `historyRetentionNights` (integer): The number of days/nights to retain CSV telemetry logs. Older files are automatically deleted at startup. Default is `10`.
+*   `telemetryInterval` (integer): The interval in seconds between telemetry log entries. Default is `10`.
+*   `enableAlpacaVoltageControl` (boolean): When `true`, the adjustable voltage output can be controlled as a slider (0-15V) via ASCOM. When `false`, it behaves as a simple on/off switch. Default is `false`.
+*   `enableMasterPower` (boolean): When `true`, a "Master Power" switch is exposed via ASCOM that controls all outputs simultaneously. Default is `false`.
 *   `switchNames` (object): A map that allows you to assign custom, user-friendly names to the internal switch identifiers. The `key` is the internal name (e.g., `"dc1"`) and the `value` is the custom name you want to see in ASCOM clients and the web interface.
+*   `heaterAutoEnableLeader` (object): Controls automatic leader activation for PID-Sync mode. When a follower heater (in mode 3) is enabled, the proxy can automatically enable its leader heater. Keys are `"pwm1"` and `"pwm2"`, values are `true`/`false`.
+
 
 ### Log Level Configuration
 

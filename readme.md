@@ -191,7 +191,7 @@ This is an array that can contain up to two heater configuration objects. To upd
 |:----|:------------------------------------------------------------------------------------------------|:---------|
 | `n` | Name of the heater (e.g., "PWM1"). This is read-only. | `string` |
 | `en` | **En**abled on startup: `true` to enable the heater on boot. | `boolean` |
-| `m` | **M**ode: Sets the control mode for the heater (0: Manual, 1: PID, 2: Ambient Tracking). | `int` |
+| `m` | **M**ode: Sets the control mode for the heater (0: Manual, 1: PID, 2: Ambient Tracking, 3: PID-Sync, 4: Minimum Temperature, 5: Disabled). | `int` |
 
 **Mode-Specific Properties:**
 
@@ -219,7 +219,18 @@ This is an array that can contain up to two heater configuration objects. To upd
     This mode allows a heater (the "follower") to mirror the power output of another heater running in PID mode (the "leader"). It is ideal for a guidescope heater that should follow the main scope's heater without needing its own sensor.
     | Key | Description | Value Type |
     |:----|:------------------------------------------------------------------------------------------------|:-----------|
-    | `sf` | **S**ync **F**actor: A multiplier for the leader's power (e.g., `0.8` means the follower runs at 80% of the leader's power). | `float` |
+    | `psf` | **P**ID **S**ync **F**actor: A multiplier for the leader's power (e.g., `0.8` means the follower runs at 80% of the leader's power). | `float` |
+
+*   **Mode 4: Minimum Temperature**
+    This mode works like PID mode, but ensures the lens temperature never drops below a configured minimum, regardless of the dew point.
+    | Key | Description | Value Type |
+    |:----|:------------------------------------------------------------------------------------------------|:-----------|
+    | `to` | **T**arget **O**ffset: Desired temperature difference above the dew point (same as PID mode). | `float` |
+    | `mt` | **M**inimum **T**emperature: The absolute minimum lens temperature to maintain (e.g., `5.0` for 5°C). | `float` |
+    | `kp`, `ki`, `kd` | PID tuning parameters (same as Mode 1). | `double` |
+
+*   **Mode 5: Disabled**
+    This mode completely disables the heater output and hides it from the ASCOM interface. Useful if you don't use one of the heater channels.
 
 
 *   **Examples:**
