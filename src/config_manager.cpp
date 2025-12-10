@@ -169,7 +169,6 @@ void serializeConfig(JsonDocument& doc) {
     doc["av"] = config.adj_conv_preset_v;
 
     JsonObject auto_dry_obj = doc["ad"].to<JsonObject>();
-    auto_dry_obj["en"] = config.sht40_auto_dry.enabled;
     auto_dry_obj["en"] = (int)config.sht40_auto_dry.enabled;
     auto_dry_obj["ht"] = config.sht40_auto_dry.humidity_threshold;
     auto_dry_obj["td"] = config.sht40_auto_dry.trigger_duration_ms / 1000; // Convert from ms to seconds for user
@@ -271,7 +270,7 @@ void updateConfig(const JsonObject& doc) {
                 
                 if (!heater_obj["to"].isNull()) {
                     float offset = heater_obj["to"];
-                    if (offset > 0) {
+                    if (offset >= 0) {
                         config.dew_heaters[i].target_offset = offset;
                     }
                 }

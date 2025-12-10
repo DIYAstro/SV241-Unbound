@@ -75,10 +75,13 @@ static int ds18b20_readings_count = 0;
 // Helper function to calculate the median of an array
 static float calculate_median(float arr[], int count) {
   if (count == 0) return 0;
-  // This bubble sort is inefficient, but acceptable for small N (max 20).
-  float sorted_arr[count];
+  if (count > MAX_SENSOR_AVG_COUNT) count = MAX_SENSOR_AVG_COUNT; // Safety clamp
+  
+  // Use static array instead of VLA to avoid stack overflow risk
+  static float sorted_arr[MAX_SENSOR_AVG_COUNT];
   memcpy(sorted_arr, arr, sizeof(float) * count);
   
+  // This bubble sort is inefficient, but acceptable for small N (max 20).
   for (int i = 0; i < count - 1; i++) {
     for (int j = 0; j < count - i - 1; j++) {
       if (sorted_arr[j] > sorted_arr[j + 1]) {
@@ -116,12 +119,18 @@ void setup_sensors() {
                       INA219_CONFIG_SADCRES_12BIT_1S_532US |
                       INA219_CONFIG_MODE_SANDBVOLT_CONTINUOUS;
 
-    // Manually write to the INA219 registers via I2C.
+    // Write CONFIG register (separate I2C transaction per register)
     Wire.beginTransmission(INA219_ADDR);
     Wire.write(INA219_REG_CONFIG);
-    Wire.write((config_value >> 8) & 0xFF); Wire.write(config_value & 0xFF);
+    Wire.write((config_value >> 8) & 0xFF);
+    Wire.write(config_value & 0xFF);
+    Wire.endTransmission();
+
+    // Write CALIBRATION register (separate I2C transaction)
+    Wire.beginTransmission(INA219_ADDR);
     Wire.write(INA219_REG_CALIBRATION);
-    Wire.write((INA219_CALIB_VALUE >> 8) & 0xFF); Wire.write(INA219_CALIB_VALUE & 0xFF);
+    Wire.write((INA219_CALIB_VALUE >> 8) & 0xFF);
+    Wire.write(INA219_CALIB_VALUE & 0xFF);
     Wire.endTransmission();
   } else {
     Serial.println("{\"error\":\"INA219 sensor not found\"}");

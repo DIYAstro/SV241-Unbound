@@ -149,6 +149,12 @@ void dew_control_task(void *pvParameters) {
 
         float dew_point = calculate_dew_point(sensor_values.sht_temperature, sensor_values.sht_humidity);
 
+        // Two-phase calculation to solve PID-Sync timing issue:
+        // Phase 1: Calculate power for all non-follower heaters (modes 0, 1, 2, 4, 5)
+        // Phase 2: Calculate power for follower heaters (mode 3)
+        // This ensures followers always have up-to-date leader power values.
+
+        // Phase 1: Non-followers
         for (int i = 0; i < MAX_DEW_HEATERS; i++) {
             if (!heater_enabled[i] || HEATER_PINS[i] == -1) {
                 heater_power[i] = 0; // Store 0 if disabled
@@ -160,6 +166,11 @@ void dew_control_task(void *pvParameters) {
             xSemaphoreTake(config_mutex, portMAX_DELAY);
             heater_config = config.dew_heaters[i];
             xSemaphoreGive(config_mutex);
+
+            // Skip followers in Phase 1 - they will be processed in Phase 2
+            if (heater_config.mode == 3) {
+                continue;
+            }
 
             // --- Safety Check for Automatic Modes ---
             // Before running automatic modes, ensure the required sensor data is valid.
@@ -260,25 +271,6 @@ void dew_control_task(void *pvParameters) {
                     break;
                 }
 
-                case 3: { // PID-Sync Mode
-                    int leader_index = 1 - i; // The other heater is the leader
-                    
-                    // Make sure the leader is actually in PID mode or MinTemp mode
-                    if (config.dew_heaters[leader_index].mode == 1 || config.dew_heaters[leader_index].mode == 4) {
-                        float leader_power = (float)heater_power[leader_index];
-                        float follower_power = leader_power * heater_config.pid_sync_factor;
-                        
-                        heater_power[i] = constrain((int)round(follower_power), 0, 100);
-                    } else {
-                        // If the leader is not in PID mode, we turn off for safety.
-                        heater_power[i] = 0;
-                    }
-
-                    uint32_t duty_cycle = get_corrected_duty_cycle(heater_power[i]);
-                    ledcWrite(HEATER_LEDC_CHANNELS[i], duty_cycle);
-                    break;
-                }
-
                 case 5: { // Disabled Mode (Hidden)
                     heater_power[i] = 0;
                     ledcWrite(HEATER_LEDC_CHANNELS[i], 0);
@@ -287,10 +279,46 @@ void dew_control_task(void *pvParameters) {
             }
         }
 
+        // Phase 2: Followers (mode 3) - now all leader powers are calculated
+        for (int i = 0; i < MAX_DEW_HEATERS; i++) {
+            if (!heater_enabled[i] || HEATER_PINS[i] == -1) {
+                continue; // Already handled in Phase 1
+            }
+
+            // Get heater config with mutex protection
+            DewHeaterConfig heater_config;
+            xSemaphoreTake(config_mutex, portMAX_DELAY);
+            heater_config = config.dew_heaters[i];
+            int leader_index = 1 - i; // The other heater is the leader
+            int leader_mode = config.dew_heaters[leader_index].mode;
+            xSemaphoreGive(config_mutex);
+
+            // Only process followers in Phase 2
+            if (heater_config.mode != 3) {
+                continue;
+            }
+
+            // PID-Sync Mode
+            // Make sure the leader is actually in PID mode or MinTemp mode
+            if (leader_mode == 1 || leader_mode == 4) {
+                float leader_power = (float)heater_power[leader_index];
+                float follower_power = leader_power * heater_config.pid_sync_factor;
+                
+                heater_power[i] = constrain((int)round(follower_power), 0, 100);
+            } else {
+                // If the leader is not in PID mode, we turn off for safety.
+                heater_power[i] = 0;
+            }
+
+            uint32_t duty_cycle = get_corrected_duty_cycle(heater_power[i]);
+            ledcWrite(HEATER_LEDC_CHANNELS[i], duty_cycle);
+        }
+
         esp_task_wdt_reset(); // Feed the watchdog
         vTaskDelay(pdMS_TO_TICKS(5000)); // Run every 5 seconds
     }
 }
+
 
 // --- Helper Functions ---
 

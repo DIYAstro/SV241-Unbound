@@ -103,12 +103,14 @@ func SyncFirmwareConfig() {
 		newShortKeyByID[currentID] = "all"
 	}
 
-	// Update Global Config
-	// Warning: This is not thread-safe if heavily accessed, but we assume this runs at connection time.
+	// Update Global Config with mutex protection
+	// This ensures thread-safe access during concurrent web requests
+	config.SwitchMapMutex.Lock()
 	config.SwitchIDMap = newIDMap
 	config.ShortSwitchKeyByID = newShortKeyByID
+	config.SwitchMapMutex.Unlock()
 
-	logger.Info("Switch configuration sync complete. Total Switches: %d", len(config.SwitchIDMap))
+	logger.Info("Switch configuration sync complete. Total Switches: %d", len(newIDMap))
 }
 
 func resetSwitchMaps() {

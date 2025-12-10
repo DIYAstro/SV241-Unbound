@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sv241pro-alpaca-proxy/internal/logger"
+	"sync"
 )
 
 // ProxyConfig stores configuration specific to the Go proxy itself.
@@ -42,8 +43,12 @@ type PowerStartupStates struct {
 	AdjConv int `json:"adj"`
 }
 
+// SwitchMapMutex protects concurrent access to SwitchIDMap and ShortSwitchKeyByID.
+var SwitchMapMutex sync.RWMutex
+
 var (
 	// Maps are public so other packages (like alpaca) can use them.
+	// IMPORTANT: Access these via GetSwitchIDMap() and GetShortSwitchKeyByID() for thread safety.
 	SwitchIDMap = map[int]string{
 		0: "dc1", 1: "dc2", 2: "dc3", 3: "dc4", 4: "dc5",
 		5: "usbc12", 6: "usb345", 7: "adj_conv", 8: "pwm1", 9: "pwm2",
@@ -63,6 +68,29 @@ var (
 	proxyConfig     *ProxyConfig // Singleton instance
 	proxyConfigFile string       // Full path to the config file
 )
+
+// GetSwitchMapLength returns the number of switches in a thread-safe manner.
+func GetSwitchMapLength() int {
+	SwitchMapMutex.RLock()
+	defer SwitchMapMutex.RUnlock()
+	return len(SwitchIDMap)
+}
+
+// GetSwitchIDMapEntry returns the switch name for a given ID in a thread-safe manner.
+func GetSwitchIDMapEntry(id int) (string, bool) {
+	SwitchMapMutex.RLock()
+	defer SwitchMapMutex.RUnlock()
+	val, ok := SwitchIDMap[id]
+	return val, ok
+}
+
+// GetShortSwitchKeyByIDEntry returns the short key for a given ID in a thread-safe manner.
+func GetShortSwitchKeyByIDEntry(id int) (string, bool) {
+	SwitchMapMutex.RLock()
+	defer SwitchMapMutex.RUnlock()
+	val, ok := ShortSwitchKeyByID[id]
+	return val, ok
+}
 
 // init sets up the path to the configuration file.
 func init() {

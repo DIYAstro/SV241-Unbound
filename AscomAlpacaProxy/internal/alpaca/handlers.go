@@ -224,7 +224,14 @@ func (a *API) HandleSwitchGetSwitch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if val, ok := serial.Status.Data[shortKey]; ok {
-		BoolResponse(w, r, val.(float64) >= 1.0)
+		// Safe type assertion - handle both float64 and bool
+		isOn := false
+		if floatVal, isFloat := val.(float64); isFloat {
+			isOn = floatVal >= 1.0
+		} else if boolVal, isBool := val.(bool); isBool {
+			isOn = boolVal
+		}
+		BoolResponse(w, r, isOn)
 	} else {
 		ErrorResponse(w, r, http.StatusOK, 0x400, "Could not read switch status from cache")
 	}
@@ -310,9 +317,9 @@ func (a *API) HandleSwitchGetSwitchValue(w http.ResponseWriter, r *http.Request)
 					heaterIdx = 1
 				}
 
-				serial.Status.RLock()
+				// Note: We're already inside serial.Status.RLock() from line 239,
+				// so we can access Data directly without another lock
 				dmVal, found := serial.Status.Data["dm"]
-				serial.Status.RUnlock()
 
 				if found {
 					if dmArray, ok := dmVal.([]interface{}); ok && heaterIdx < len(dmArray) {
@@ -384,6 +391,9 @@ func (a *API) HandleSwitchSetSwitchValue(w http.ResponseWriter, r *http.Request)
 		heaterIdx = 1
 	}
 
+	// Track if we should send a manual PWM command (replaces goto pattern)
+	sendManualPWMCommand := false
+
 	if heaterIdx >= 0 {
 		// Check Mode from Status Cache
 		isManual := false
@@ -408,34 +418,35 @@ func (a *API) HandleSwitchSetSwitchValue(w http.ResponseWriter, r *http.Request)
 				// Use "true"/"false" so firmware applies default manual power or ON state
 				command = fmt.Sprintf(`{"set":{"%s":%t}}`, shortKey, state)
 			}
-			goto SendCommand
+			sendManualPWMCommand = true
 		}
 	}
 
-	// Special handling for Adjustable Voltage
-	if longKey == "adj_conv" && config.Get().EnableAlpacaVoltageControl {
-		if valueStr, ok := GetFormValueIgnoreCase(r, "Value"); ok {
-			// If Value is provided, set specific voltage
-			value, _ := strconv.ParseFloat(valueStr, 64)
-			command = fmt.Sprintf(`{"set":{"%s":%.2f}}`, shortKey, value)
-			newVoltageTarget = value
+	// Build command if not already set by manual PWM handler
+	if !sendManualPWMCommand {
+		// Special handling for Adjustable Voltage
+		if longKey == "adj_conv" && config.Get().EnableAlpacaVoltageControl {
+			if valueStr, ok := GetFormValueIgnoreCase(r, "Value"); ok {
+				// If Value is provided, set specific voltage
+				value, _ := strconv.ParseFloat(valueStr, 64)
+				command = fmt.Sprintf(`{"set":{"%s":%.2f}}`, shortKey, value)
+				newVoltageTarget = value
+			} else {
+				// Use "true"/"false" for bool to avoid ambiguity with "1"=1V in firmware
+				command = fmt.Sprintf(`{"set":{"%s":%t}}`, shortKey, state)
+			}
+		} else if longKey == "master_power" {
+			// Master Power "all" command usually expects 0/1 in some firmware versions, matching Action handler
+			stateInt := 0
+			if state {
+				stateInt = 1
+			}
+			command = fmt.Sprintf(`{"set":{"%s":%d}}`, shortKey, stateInt)
 		} else {
 			// Use "true"/"false" for bool to avoid ambiguity with "1"=1V in firmware
 			command = fmt.Sprintf(`{"set":{"%s":%t}}`, shortKey, state)
 		}
-	} else if longKey == "master_power" {
-		// Master Power "all" command usually expects 0/1 in some firmware versions, matching Action handler
-		stateInt := 0
-		if state {
-			stateInt = 1
-		}
-		command = fmt.Sprintf(`{"set":{"%s":%d}}`, shortKey, stateInt)
-	} else {
-		// Use "true"/"false" for bool to avoid ambiguity with "1"=1V in firmware
-		command = fmt.Sprintf(`{"set":{"%s":%t}}`, shortKey, state)
 	}
-
-SendCommand:
 
 	responseJSON, err := serial.SendCommand(command, true, 0)
 	if err != nil {
@@ -644,7 +655,11 @@ func (a *API) HandleObsCondTemperature(w http.ResponseWriter, r *http.Request) {
 	serial.Conditions.RLock()
 	defer serial.Conditions.RUnlock()
 	if val, ok := serial.Conditions.Data["t_amb"]; ok && val != nil {
-		FloatResponse(w, r, val.(float64))
+		if floatVal, isFloat := val.(float64); isFloat {
+			FloatResponse(w, r, floatVal)
+		} else {
+			ErrorResponse(w, r, http.StatusOK, 0x401, "Invalid data type for temperature in cache.")
+		}
 	} else {
 		ErrorResponse(w, r, http.StatusOK, 0x401, "Sensor not available or failed to read.")
 	}
@@ -654,7 +669,11 @@ func (a *API) HandleObsCondHumidity(w http.ResponseWriter, r *http.Request) {
 	serial.Conditions.RLock()
 	defer serial.Conditions.RUnlock()
 	if val, ok := serial.Conditions.Data["h_amb"]; ok && val != nil {
-		FloatResponse(w, r, val.(float64))
+		if floatVal, isFloat := val.(float64); isFloat {
+			FloatResponse(w, r, floatVal)
+		} else {
+			ErrorResponse(w, r, http.StatusOK, 0x401, "Invalid data type for humidity in cache.")
+		}
 	} else {
 		ErrorResponse(w, r, http.StatusOK, 0x401, "Sensor not available or failed to read.")
 	}
@@ -664,7 +683,11 @@ func (a *API) HandleObsCondDewPoint(w http.ResponseWriter, r *http.Request) {
 	serial.Conditions.RLock()
 	defer serial.Conditions.RUnlock()
 	if val, ok := serial.Conditions.Data["d"]; ok && val != nil {
-		FloatResponse(w, r, val.(float64))
+		if floatVal, isFloat := val.(float64); isFloat {
+			FloatResponse(w, r, floatVal)
+		} else {
+			ErrorResponse(w, r, http.StatusOK, 0x401, "Invalid data type for dew point in cache.")
+		}
 	} else {
 		ErrorResponse(w, r, http.StatusOK, 0x401, "Sensor not available or failed to read.")
 	}
