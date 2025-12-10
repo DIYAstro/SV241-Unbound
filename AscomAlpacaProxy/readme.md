@@ -27,6 +27,7 @@ The project also includes a standalone ASCOM Alpaca proxy driver written in Go. 
 *   Exposes environmental sensors as an ASCOM `ObservingConditions` device.
 *   **Modern Web Interface:** A responsive, dark-themed dashboard with glassmorphism effects.
 *   **Telemetry History:** Automatic CSV logging of all sensor data with an interactive historical chart visualization.
+*   **Hide Unused Outputs:** Individual power switches and dew heaters can be disabled in the firmware configuration. Disabled outputs are automatically hidden from both the Web UI and the ASCOM device list, keeping your interface clean.
 *   Provides a web-based setup page for configuration, including network settings.
 *   Manages the connection to the device automatically.
 *   Desktop notifications for device connection and disconnection events.
