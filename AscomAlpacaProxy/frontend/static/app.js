@@ -92,7 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function showAlert(title, message) {
+    function showAlert(title, message, autoCloseDuration = 0) {
         return new Promise((resolve) => {
             const modalId = 'alert-modal';
             const modal = document.getElementById(modalId);
@@ -110,9 +110,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const okBtn = modal.querySelector('.btn-primary');
             const closeBtn = modal.querySelector('.close-btn');
 
+            let timerId = null;
+
             const cleanup = () => {
                 if (okBtn) okBtn.onclick = null;
                 if (closeBtn) closeBtn.onclick = null;
+                if (timerId) clearTimeout(timerId);
             };
 
             const onClose = () => {
@@ -125,6 +128,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (closeBtn) closeBtn.onclick = onClose;
 
             window.openModal(modalId);
+
+            if (autoCloseDuration > 0) {
+                timerId = setTimeout(onClose, autoCloseDuration);
+            }
         });
     }
 
@@ -1041,7 +1048,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const result = await response.json();
             showResponse(`Sensor drying cycle initiated. Device response: ${result.status || 'OK'}`);
-            await showAlert('Success', 'Sensor drying cycle initiated successfully.');
+            await showAlert('Success', 'Sensor drying cycle initiated successfully.', 5000);
         } catch (error) {
             showResponse(`Error sending command: ${error.message}`, true);
             await showAlert('Error', `Error sending command: ${error.message}`);
