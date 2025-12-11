@@ -74,6 +74,33 @@ void setup_power_outputs() {
 void set_power_output(PowerOutput output, bool on) {
   if (output < 0 || output >= POWER_OUTPUT_COUNT) return;
 
+  // If trying to turn ON, check if this output is disabled in config
+  if (on) {
+    bool is_disabled = false;
+    xSemaphoreTake(config_mutex, portMAX_DELAY);
+    switch (output) {
+      case POWER_DC1:     is_disabled = (config.power_startup_states.dc1 == 2); break;
+      case POWER_DC2:     is_disabled = (config.power_startup_states.dc2 == 2); break;
+      case POWER_DC3:     is_disabled = (config.power_startup_states.dc3 == 2); break;
+      case POWER_DC4:     is_disabled = (config.power_startup_states.dc4 == 2); break;
+      case POWER_DC5:     is_disabled = (config.power_startup_states.dc5 == 2); break;
+      case POWER_USBC12:  is_disabled = (config.power_startup_states.usbc12 == 2); break;
+      case POWER_USB345:  is_disabled = (config.power_startup_states.usb345 == 2); break;
+      case POWER_ADJ_CONV: is_disabled = (config.power_startup_states.adj_conv == 2); break;
+      case POWER_PWM1:    is_disabled = (config.dew_heaters[0].mode == DEW_MODE_DISABLED); break;
+      case POWER_PWM2:    is_disabled = (config.dew_heaters[1].mode == DEW_MODE_DISABLED); break;
+      default: break;
+    }
+    xSemaphoreGive(config_mutex);
+
+    if (is_disabled) {
+      xSemaphoreTake(serial_mutex, portMAX_DELAY);
+      Serial.printf("{\"error\":\"Cannot enable disabled output: %s\"}\n", get_power_output_name(output));
+      xSemaphoreGive(serial_mutex);
+      return; // Block the command
+    }
+  }
+
   // Special handling for outputs managed by other modules
   if (output == POWER_ADJ_CONV) {
     set_adjustable_converter_state(on);
