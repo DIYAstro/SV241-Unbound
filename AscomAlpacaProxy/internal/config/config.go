@@ -119,6 +119,7 @@ func Load() error {
 			proxyConfig = &ProxyConfig{
 				AutoDetectPort: true, // Standardmäßig ist der Autoscan an
 				NetworkPort:    8080,
+				ListenAddress:  "127.0.0.1", // Default to localhost only
 				LogLevel:       "INFO",
 				SwitchNames:    make(map[string]string),
 				HeaterAutoEnableLeader: map[string]bool{
