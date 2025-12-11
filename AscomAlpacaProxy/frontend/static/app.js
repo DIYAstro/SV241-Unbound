@@ -1651,15 +1651,17 @@ document.addEventListener('DOMContentLoaded', () => {
         currentMetricLabel = title;
         document.getElementById('telemetry-modal-title').textContent = `${title} History`;
 
-        // Populate dates
-        await loadDateOptions();
+        // Populate dates and get the list
+        const dates = await loadDateOptions();
 
         // Show modal
         modal.classList.remove('hidden');
 
-        // Load initial data (current log)
-        dateSelect.value = ""; // Default to current
-        loadTelemetryData("");
+        // Load data for the newest date (first in the sorted list)
+        if (dates.length > 0) {
+            dateSelect.value = dates[0]; // Select newest date
+            loadTelemetryData(dates[0]);
+        }
     }
 
     function closeTelemetryModal() {
@@ -1716,21 +1718,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     async function loadDateOptions() {
-        dateSelect.innerHTML = '<option value="">Current & Previous Night</option>';
+        dateSelect.innerHTML = '';
         try {
             const res = await fetch('/api/v1/telemetry/dates');
             if (res.ok) {
                 const dates = await res.json();
+                if (dates.length === 0) {
+                    const opt = document.createElement('option');
+                    opt.value = '';
+                    opt.textContent = 'No data available';
+                    dateSelect.appendChild(opt);
+                    return [];
+                }
                 dates.forEach(date => {
                     const opt = document.createElement('option');
                     opt.value = date;
                     opt.textContent = date;
                     dateSelect.appendChild(opt);
                 });
+                return dates;
             }
         } catch (e) {
             console.error("Failed to load dates", e);
         }
+        return [];
     }
 
     async function loadTelemetryData(dateParam) {
