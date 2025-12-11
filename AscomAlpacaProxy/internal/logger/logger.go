@@ -96,6 +96,15 @@ func Close() {
 	}
 }
 
+// GetLogFilePath returns the path to the current log file.
+func GetLogFilePath() string {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(configDir, "SV241AlpacaProxy", "proxy.log")
+}
+
 // Error logs a message at the ERROR level.
 func Error(format string, v ...interface{}) {
 	if currentLogLevel >= LevelError {

@@ -1308,6 +1308,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (logContainer) {
             connect();
         }
+
+        // Download Log button
+        const downloadLogBtn = document.getElementById('download-log-button');
+        if (downloadLogBtn) {
+            downloadLogBtn.addEventListener('click', () => {
+                window.location.href = '/api/v1/log/download';
+            });
+        }
     }
 
     async function saveSwitchConfig() {

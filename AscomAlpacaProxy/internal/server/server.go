@@ -76,6 +76,7 @@ func setupRoutes(frontendFS fs.FS, appVersion string) {
 	http.HandleFunc("/api/v1/telemetry/dates", telemetry.HandleGetLogDates)
 	http.HandleFunc("/api/v1/telemetry/history", telemetry.HandleGetHistory)
 	http.HandleFunc("/api/v1/telemetry/download", telemetry.HandleDownloadCSV)
+	http.HandleFunc("/api/v1/log/download", handleDownloadLog)
 
 	// New settings endpoint combines getting and setting proxy config
 	http.HandleFunc("/api/v1/settings", func(w http.ResponseWriter, r *http.Request) {
@@ -315,6 +316,18 @@ func handleDeviceCommand(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	// The device response is expected to be JSON, so we can just pass it through.
 	fmt.Fprint(w, resp)
+}
+
+func handleDownloadLog(w http.ResponseWriter, r *http.Request) {
+	logPath := logger.GetLogFilePath()
+	if logPath == "" {
+		http.Error(w, "Log file path not available", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"proxy.log\"")
+	http.ServeFile(w, r, logPath)
 }
 
 func handleGetFirmwareVersion(w http.ResponseWriter, r *http.Request) {
