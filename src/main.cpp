@@ -55,10 +55,11 @@ void serial_command_task(void *pvParameters) {
   Serial.println("Serial command task started.");
   xSemaphoreGive(serial_mutex);
 
-  // Use a static buffer to avoid heap fragmentation
-  const size_t MAX_INPUT_SIZE = 4096;
+  // Use static buffers to avoid heap fragmentation
+  const size_t MAX_INPUT_SIZE = 8192;
   static char input_buffer[MAX_INPUT_SIZE];
   static size_t input_pos = 0;
+  static JsonDocument doc;  // Static to reduce heap fragmentation
 
   for (;;) {
     while (Serial.available() > 0) {
@@ -72,7 +73,7 @@ void serial_command_task(void *pvParameters) {
         input_pos = 0;
 
         // Try to parse the input string as JSON
-        JsonDocument doc;
+        doc.clear();  // Clear before each use
         DeserializationError error = deserializeJson(doc, input_buffer);
 
         if (!error) {
