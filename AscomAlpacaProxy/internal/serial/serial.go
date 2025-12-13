@@ -419,6 +419,7 @@ func reconnect(newPortName string) {
 				// TRIGGER CONFIG SYNC
 				// We do this in a goroutine to avoid blocking the mutex or deadlocking with ProcessCommands
 				go SyncFirmwareConfig()
+				go FetchFirmwareVersion()
 			}
 		}
 	} else {

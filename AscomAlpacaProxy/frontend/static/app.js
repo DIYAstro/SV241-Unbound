@@ -18,6 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- State ---
     let originalConfig = {};
     let originalProxyConfig = {};
+    let statusPollCounter = 0;
     let switchIDMap = {
         0: "dc1", 1: "dc2", 2: "dc3", 3: "dc4", 4: "dc5",
         5: "usbc12", 6: "usb345", 7: "adj_conv", 8: "pwm1", 9: "pwm2",
@@ -1113,7 +1114,10 @@ document.addEventListener('DOMContentLoaded', () => {
             "dc1": "d1", "dc2": "d2", "dc3": "d3", "dc4": "d4", "dc5": "d5",
             "usbc12": "u12", "usb345": "u34", "adj_conv": "adj", "pwm1": "pwm1", "pwm2": "pwm2",
         };
-        grid.innerHTML = '';
+
+        // Track which switches should be visible
+        const visibleKeys = new Set();
+
         for (const [id, key] of Object.entries(switchIDMap)) {
             // Skip Master Power in the grid (it has its own dedicated control)
             if (key === 'master_power') continue;
@@ -1133,30 +1137,53 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (key === 'pwm2' && originalConfig.h[1] && originalConfig.h[1].m === 5) continue;
             }
 
+            visibleKeys.add(shortKey);
             const displayName = (switchNames && switchNames[key]) ? switchNames[key] : (longToShortKeyMap[key] || key);
-            const controlDiv = document.createElement('div');
-            controlDiv.className = 'switch-control glass-panel'; // CSS class handles the rest
 
-            const nameSpan = document.createElement('span');
-            nameSpan.className = 'name';
-            nameSpan.textContent = displayName;
+            // Check if element already exists
+            let existingControl = grid.querySelector(`[data-switch-key="${shortKey}"]`);
 
-            const switchLabel = document.createElement('label');
-            switchLabel.className = 'switch-toggle';
-            const input = document.createElement('input');
-            input.type = 'checkbox';
-            input.dataset.key = shortKey;
-            input.dataset.id = id;
-            input.addEventListener('change', (e) => setPowerState(e.target.dataset.id, e.target.checked));
-            const sliderSpan = document.createElement('span');
-            sliderSpan.className = 'slider';
-            switchLabel.appendChild(input);
-            switchLabel.appendChild(sliderSpan);
+            if (existingControl) {
+                // Update existing element's name only
+                const nameSpan = existingControl.querySelector('.name');
+                if (nameSpan && nameSpan.textContent !== displayName) {
+                    nameSpan.textContent = displayName;
+                }
+            } else {
+                // Create new element only if it doesn't exist
+                const controlDiv = document.createElement('div');
+                controlDiv.className = 'switch-control glass-panel';
+                controlDiv.dataset.switchKey = shortKey;
 
-            controlDiv.appendChild(nameSpan);
-            controlDiv.appendChild(switchLabel);
-            grid.appendChild(controlDiv);
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'name';
+                nameSpan.textContent = displayName;
+
+                const switchLabel = document.createElement('label');
+                switchLabel.className = 'switch-toggle';
+                const input = document.createElement('input');
+                input.type = 'checkbox';
+                input.dataset.key = shortKey;
+                input.dataset.id = id;
+                input.addEventListener('change', (e) => setPowerState(e.target.dataset.id, e.target.checked));
+                const sliderSpan = document.createElement('span');
+                sliderSpan.className = 'slider';
+                switchLabel.appendChild(input);
+                switchLabel.appendChild(sliderSpan);
+
+                controlDiv.appendChild(nameSpan);
+                controlDiv.appendChild(switchLabel);
+                grid.appendChild(controlDiv);
+            }
         }
+
+        // Remove controls that should no longer be visible
+        const existingControls = grid.querySelectorAll('[data-switch-key]');
+        existingControls.forEach(control => {
+            if (!visibleKeys.has(control.dataset.switchKey)) {
+                control.remove();
+            }
+        });
     }
 
     // --- UI and Event Handlers ---
@@ -1208,6 +1235,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function fetchLiveStatus() {
         let statusOk = false;
+
+        // Refresh proxy config every 5th poll (~10 seconds) to detect connection changes
+        statusPollCounter++;
+        if (statusPollCounter >= 5) {
+            statusPollCounter = 0;
+            await fetchProxyConfig();
+            await fetchFirmwareVersion();
+        }
+
         try {
             const response = await fetch('/api/v1/status');
             if (!response.ok) throw new Error('No response');
