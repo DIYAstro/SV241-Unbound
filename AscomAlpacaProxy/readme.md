@@ -275,8 +275,10 @@ Here is an example of the `proxy_config.json` file structure:
 **Parameter Explanation:**
 
 *   `serialPortName` (string): The name of the serial port for the SV241 device (e.g., `"COM9"`). If this string is empty (`""`), the proxy will attempt to auto-detect the port on startup.
-    > **Note:** When `Auto-Detect Port` is enabled (or `serialPortName` is empty), the proxy probes all available USB serial ports to find the SV241. This "safe-but-aggressive" probing can potentially interfere with other sensitive devices (e.g., Mounts, Weather Stations). **Solution:** To prevent conflicts, connect the SV241 once to let it auto-detect, then **disable "Auto-Detect Port"** (or uncheck the box in the web UI). The proxy will then strictly only open the configured port.
-*   `autoDetectPort` (boolean): When `true`, the proxy will attempt to find the SV241 automatically if the configured port fails. Default is `true`.
+    > **Note:** When `Auto-Detect Port` is enabled (or `serialPortName` is empty), the proxy probes all available USB serial ports to find the SV241. This "safe-but-aggressive" probing can potentially interfere with other sensitive devices (e.g., Mounts, Weather Stations). **Solution:** To prevent conflicts, connect the SV241 once to let it auto-detect, then **disable "Auto-Detect Port"** (or uncheck the box in the web UI) **and ensure a port name is configured**. The proxy will then strictly only open the configured port.
+    >
+    > **Important:** If you disable `Auto-Detect Port` but leave `serialPortName` empty, the proxy will still fall back to auto-detection. Both settings must be configured together: disable auto-detect AND specify the port name.
+*   `autoDetectPort` (boolean): When `true`, the proxy will attempt to find the SV241 automatically if the configured port fails. When `false` **and** a `serialPortName` is specified, the proxy will only try the configured port. Default is `true`.
 *   `networkPort` (integer): The TCP port on which the Alpaca API server will listen for connections from client applications. The default is `32241`. A restart of the proxy is required for changes to this value to take effect.
 *   `listenAddress` (string): The IP address to bind the server to. Use `"127.0.0.1"` for local-only access (recommended for security) or `"0.0.0.0"` to allow network access. Default is `"127.0.0.1"`.
 *   `logLevel` (string): Controls the verbosity of the log file. Valid values are `"ERROR"`, `"WARN"`, `"INFO"`, and `"DEBUG"`. This setting is applied live when changed.
