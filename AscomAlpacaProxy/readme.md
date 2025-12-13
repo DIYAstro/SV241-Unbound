@@ -11,11 +11,16 @@ The project also includes a standalone ASCOM Alpaca proxy driver written in Go. 
   - [Manually Creating a Firewall Rule](#manually-creating-a-firewall-rule)
   - [ASCOM Switch Device Actions](#ascom-switch-device-actions)
 - [Accessing the Setup Page](#accessing-the-setup-page)
+- [Web Interface Guide](#web-interface-guide)
+  - [Live Telemetry Panel](#live-telemetry-panel)
+  - [Power Control Panel](#power-control-panel)
+  - [Configuration Tabs](#configuration-tabs)
+  - [Live Log Panel](#live-log-panel)
 - [Telemetry & Logging](#telemetry--logging)
 - [Driver Installation](#driver-installation)
   - [Easy Driver Creation (Recommended)](#easy-driver-creation-recommended)
   - [Manual Driver Creation (Fallback)](#manual-driver-creation-fallback)
-- [Configuration](#configuration)
+- [Configuration Reference](#configuration-reference)
   - [Manual Configuration (`proxy_config.json`)](#manual-configuration-proxy_configjson)
   - Log Level Configuration
   - Log Rotation
@@ -124,6 +129,85 @@ The primary way to configure the SV241 Alpaca Proxy is through its built-in web 
     *   You would then use that port in the URL: `http://localhost:32242/setup`
 
 
+## Web Interface Guide
+
+This section provides a walkthrough of the web interface, explaining each panel and configuration tab.
+
+### Live Telemetry Panel
+
+The top panel displays real-time sensor readings from the SV241 device:
+
+| Sensor | Description |
+|--------|-------------|
+| **Voltage** | Input voltage (V) |
+| **Current** | Total current draw (A) |
+| **Power** | Total power consumption (W) |
+| **Amb Temp** | Ambient temperature from SHT40 sensor (°C) |
+| **Humidity** | Relative humidity (%) |
+| **Dew Point** | Calculated dew point temperature (°C) |
+| **Lens Temp** | Objective/lens temperature from DS18B20 sensor (°C) |
+| **PWM 1/2** | Current dew heater power levels (%) |
+
+> **Tip:** Click on any sensor value to open an interactive chart showing historical data.
+
+### Power Control Panel
+
+This panel provides quick access to power output control:
+
+*   **Master Power Toggle:** Controls all power outputs simultaneously (if enabled in Proxy settings).
+*   **Individual Switches:** Toggle each power output independently. Switches marked as "Disabled" in the firmware configuration are automatically hidden.
+
+### Configuration Tabs
+
+The collapsible "Configuration & Settings" section contains five tabs:
+
+#### Switches Tab
+Configure power switch behavior:
+*   **State (Startup):** Set each switch to On, Off, or Disabled at device boot.
+*   **Custom Name:** Assign user-friendly names that appear in ASCOM clients.
+*   **Voltage:** Set the adjustable converter output voltage (5-15V).
+
+#### Dew Heaters Tab
+Configure the two PWM dew heater outputs:
+*   **Enable on Startup:** Automatically enable the heater when the device boots.
+*   **Mode:** Select the control strategy:
+    - *Manual:* Fixed power percentage.
+    - *PID (Lens Sensor):* Automatic control using the DS18B20 lens temperature sensor.
+    - *Ambient Tracking:* Power scales based on proximity to dew point.
+    - *PID-Sync (Follower):* Follows another heater's output (useful for dual-heater setups).
+    - *Minimum Temperature:* Maintains a minimum lens temperature.
+    - *Disabled:* Heater is hidden from UI and ASCOM.
+
+#### Sensors Tab
+Fine-tune sensor readings:
+*   **Offsets:** Calibrate temperature, humidity, voltage, and current readings.
+*   **Averaging:** Set the number of samples to average (reduces noise).
+*   **Intervals:** Configure sensor polling frequency.
+*   **SHT40 Auto-Drying:** Enable automatic sensor heater activation at high humidity levels.
+
+#### System Tab
+Maintenance and backup functions:
+*   **Manual Actions:** Trigger a sensor drying cycle manually.
+*   **Backup & Restore:** Export or import the complete configuration (both proxy and firmware settings).
+*   **Danger Zone:** Reboot the device or perform a factory reset.
+
+#### Proxy Tab
+Configure the proxy application itself:
+*   **Connection:** Serial port settings, auto-detection toggle.
+*   **Network:** Listen address, port, and log level.
+*   **ASCOM Features:** Enable/disable voltage slider control and the virtual Master Power switch.
+*   **Telemetry:** Configure history retention period.
+
+> **Important:** When disabling Auto-Detect Port, make sure to also specify a serial port name. See [Configuration Reference](#configuration-reference) for details.
+
+### Live Log Panel
+
+The collapsible log viewer shows real-time proxy activity:
+*   Color-coded entries (errors in red, warnings in yellow).
+*   Auto-scrolls to newest entries (pauses when you scroll up).
+*   Download button to save the current log file.
+
+
 ## Telemetry & Logging
 
 The proxy driver includes a robust telemetry system that logs sensor data to CSV files and provides interactive visualization.
@@ -230,7 +314,7 @@ If you prefer to set up the driver manually, or if the helper script fails for a
 > **Note:** Repeat this process for the `ObservingConditions` device to also add the environmental sensors manually.
 
 
-## Configuration
+## Configuration Reference
 
 The proxy creates its configuration files in the following directory on Windows:
 *   **Windows:** `%APPDATA%\SV241AlpacaProxy\`
