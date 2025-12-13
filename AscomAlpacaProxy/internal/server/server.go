@@ -407,8 +407,15 @@ func handleRestoreBackup(w http.ResponseWriter, r *http.Request) {
 	// Restore Proxy Config
 	conf := config.Get()
 	conf.NetworkPort = backup.ProxyConfig.NetworkPort
+	conf.ListenAddress = backup.ProxyConfig.ListenAddress
 	conf.LogLevel = backup.ProxyConfig.LogLevel
 	conf.SwitchNames = backup.ProxyConfig.SwitchNames
+	conf.HeaterAutoEnableLeader = backup.ProxyConfig.HeaterAutoEnableLeader
+	conf.HistoryRetentionNights = backup.ProxyConfig.HistoryRetentionNights
+	conf.TelemetryInterval = backup.ProxyConfig.TelemetryInterval
+	conf.EnableAlpacaVoltageControl = backup.ProxyConfig.EnableAlpacaVoltageControl
+	conf.EnableMasterPower = backup.ProxyConfig.EnableMasterPower
+	conf.AutoDetectPort = backup.ProxyConfig.AutoDetectPort
 	conf.SerialPortName = "" // Clear port to trigger auto-detection
 	logger.Info("Serial port name cleared to trigger auto-detection.")
 	logger.SetLevelFromString(conf.LogLevel)
