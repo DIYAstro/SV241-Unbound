@@ -446,6 +446,4 @@ func handleRestoreBackup(w http.ResponseWriter, r *http.Request) {
 		go serial.Reconnect("")
 		fmt.Fprint(w, "Configuration restored successfully. Logic will retry connection in background.")
 	}
-
-	w.WriteHeader(http.StatusOK)
 }
