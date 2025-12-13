@@ -38,6 +38,7 @@ func HandleGetSettings(w http.ResponseWriter, r *http.Request) {
 
 // HandlePostSettings updates the proxy configuration.
 func HandlePostSettings(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
 	var newConfig config.ProxyConfig
 	if err := json.NewDecoder(r.Body).Decode(&newConfig); err != nil {
 		http.Error(w, "Invalid JSON format", http.StatusBadRequest)

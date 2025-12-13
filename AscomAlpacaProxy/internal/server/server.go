@@ -196,6 +196,7 @@ func handleGetFirmwareConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleSetFirmwareConfig(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
@@ -233,6 +234,7 @@ func handleGetPowerStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleSetAllPower(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
 	var payload struct {
 		State bool `json:"state"`
 	}
