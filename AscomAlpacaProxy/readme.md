@@ -292,7 +292,6 @@ These actions allow reading the main power metrics directly from the `Switch` de
 *   `getvoltage`: Returns the current input voltage (in Volts).
 *   `getcurrent`: Returns the total current draw (in Amps).
 *   `getpower`: Returns the total power consumption (in Watts).
-*   `getlenstemperature`: Returns the current objective/lens temperature (in °C). Helpful for scripts that need this specific metric.
 
 
 #### Using Actions via API (e.g., with `curl`)
@@ -319,7 +318,10 @@ curl -X PUT -d "Action=getvoltage" http://localhost:32241/api/v1/switch/0/action
 > # Read sensor values
 > Invoke-WebRequest -Uri http://localhost:32241/api/v1/switch/0/action -Method PUT -Body "Action=getvoltage" -ContentType "application/x-www-form-urlencoded"
 > Invoke-WebRequest -Uri http://localhost:32241/api/v1/switch/0/action -Method PUT -Body "Action=getcurrent" -ContentType "application/x-www-form-urlencoded"
-> Invoke-WebRequest -Uri http://localhost:32241/api/v1/switch/0/action -Method PUT -Body "Action=getlenstemperature" -ContentType "application/x-www-form-urlencoded"
+> Invoke-WebRequest -Uri http://localhost:32241/api/v1/switch/0/action -Method PUT -Body "Action=getpower" -ContentType "application/x-www-form-urlencoded"
+>
+> # Read lens/objective temperature (via ObservingConditions endpoint)
+> Invoke-WebRequest -Uri http://localhost:32241/api/v1/observingconditions/0/temperature -Method GET
 > ```
 
 ### Controlling Individual Switches via REST API
