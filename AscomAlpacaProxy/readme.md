@@ -50,7 +50,9 @@ The project also includes a standalone ASCOM Alpaca proxy driver written in Go. 
 
 ### Manually Creating a Firewall Rule
 
-If you accidentally clicked "Cancel" or denied access when the Windows Defender Firewall prompt appeared on the first run, you will need to create a rule manually to allow your astronomy software to connect to the proxy.
+> **Note:** This section only applies if you have configured the proxy to listen on a network address (e.g., `0.0.0.0`). If you are using the default `127.0.0.1` (localhost), no firewall rule is needed.
+
+If you have configured network access and accidentally clicked "Cancel" or denied access when the Windows Defender Firewall prompt appeared, you will need to create a rule manually.
 
 1.  Open **Command Prompt** or **PowerShell** as an **Administrator**.
 2.  Copy and paste the following command, then press Enter:
@@ -59,7 +61,7 @@ If you accidentally clicked "Cancel" or denied access when the Windows Defender 
 netsh advfirewall firewall add rule name="SV241 Alpaca Proxy" dir=in action=allow program="%ProgramFiles(x86)%\SV241 Ascom Alpaca Proxy\AscomAlpacaProxy.exe" enable=yes
 ```
 
-This command adds an inbound rule specifically for the `AscomAlpacaProxy.exe` application, allowing it to receive connections from your astronomy software.
+This command adds an inbound rule specifically for the `AscomAlpacaProxy.exe` application, allowing it to receive connections from other devices on your network.
 
 
 ## Accessing the Setup Page
