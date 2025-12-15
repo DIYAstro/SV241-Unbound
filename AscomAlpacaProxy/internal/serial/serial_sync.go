@@ -42,13 +42,20 @@ func SyncFirmwareConfig() {
 	// It's used for reverse lookup. If the ID doesn't exist, it won't be used.
 	// But let's keep it safe.
 
-	// 1. Standard Switches (Indices 0-7)
+	// 0. Sensors (Always at fixed IDs 0, 1, 2)
+	newIDMap[0] = config.SensorVoltageKey
+	newIDMap[1] = config.SensorCurrentKey
+	newIDMap[2] = config.SensorPowerKey
+	newShortKeyByID[0] = config.SensorVoltageKey
+	newShortKeyByID[1] = config.SensorCurrentKey
+	newShortKeyByID[2] = config.SensorPowerKey
+
+	// 1. Standard Switches (Starting at ID 3)
 	// These are always present (unless we want to hide unused DC ports later, but for now they are static)
-	// 1. Standard Switches (Indices 0-7)
 	standardSwitches := []string{"dc1", "dc2", "dc3", "dc4", "dc5", "usbc12", "usb345", "adj_conv"}
 	standardShortKeys := []string{"d1", "d2", "d3", "d4", "d5", "u12", "u34", "adj"}
 
-	currentID := 0
+	currentID := 3 // Start after sensors
 
 	for i, name := range standardSwitches {
 		shortKey := standardShortKeys[i]

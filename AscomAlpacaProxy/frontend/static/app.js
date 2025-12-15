@@ -1127,6 +1127,9 @@ document.addEventListener('DOMContentLoaded', () => {
             // Skip Master Power in the grid (it has its own dedicated control)
             if (key === 'master_power') continue;
 
+            // Skip sensor switches (they are read-only telemetry, not power controls)
+            if (key.startsWith('sensor_')) continue;
+
             const shortKey = shortSwitchIDMap[key] || key;
 
             // Filter disabled switches (State 2)

@@ -164,6 +164,20 @@ func (a *API) HandleSwitchMaxSwitch(w http.ResponseWriter, r *http.Request) {
 func (a *API) HandleSwitchGetSwitchName(w http.ResponseWriter, r *http.Request) {
 	if id, ok := ParseSwitchID(w, r); ok {
 		internalName := config.SwitchIDMap[id]
+
+		// Sensor switches have fixed human-readable names
+		switch internalName {
+		case config.SensorVoltageKey:
+			StringResponse(w, r, "Input Voltage")
+			return
+		case config.SensorCurrentKey:
+			StringResponse(w, r, "Total Current")
+			return
+		case config.SensorPowerKey:
+			StringResponse(w, r, "Total Power")
+			return
+		}
+
 		customName := config.Get().SwitchNames[internalName]
 		if customName != "" {
 			StringResponse(w, r, customName)
@@ -176,6 +190,20 @@ func (a *API) HandleSwitchGetSwitchName(w http.ResponseWriter, r *http.Request) 
 func (a *API) HandleSwitchGetSwitchDescription(w http.ResponseWriter, r *http.Request) {
 	if id, ok := ParseSwitchID(w, r); ok {
 		internalName := config.SwitchIDMap[id]
+
+		// Sensor switches have descriptive text with units
+		switch internalName {
+		case config.SensorVoltageKey:
+			StringResponse(w, r, "Input voltage in Volts (V)")
+			return
+		case config.SensorCurrentKey:
+			StringResponse(w, r, "Total current draw in Amperes (A)")
+			return
+		case config.SensorPowerKey:
+			StringResponse(w, r, "Total power consumption in Watts (W)")
+			return
+		}
+
 		StringResponse(w, r, internalName)
 	}
 }
@@ -185,6 +213,15 @@ func (a *API) HandleSwitchGetSwitch(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
+	key := config.SwitchIDMap[id]
+
+	// Sensors always return true (they are "on" when device is connected)
+	if config.IsSensorSwitch(key) {
+		BoolResponse(w, r, true)
+		return
+	}
+
 	shortKey := config.ShortSwitchKeyByID[id]
 	serial.Status.RLock()
 	defer serial.Status.RUnlock()
@@ -242,6 +279,38 @@ func (a *API) HandleSwitchGetSwitchValue(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
+
+	key := config.SwitchIDMap[id]
+
+	// Handle sensor switches - read from Conditions, not Status
+	if config.IsSensorSwitch(key) {
+		serial.Conditions.RLock()
+		defer serial.Conditions.RUnlock()
+
+		var dataKey string
+		switch key {
+		case config.SensorVoltageKey:
+			dataKey = "v"
+		case config.SensorCurrentKey:
+			dataKey = "i"
+		case config.SensorPowerKey:
+			dataKey = "p"
+		}
+
+		if val, found := serial.Conditions.Data[dataKey]; found && val != nil {
+			if floatVal, isFloat := val.(float64); isFloat {
+				// Current is in mA, convert to A
+				if key == config.SensorCurrentKey {
+					floatVal = floatVal / 1000.0
+				}
+				FloatResponse(w, r, floatVal)
+				return
+			}
+		}
+		FloatResponse(w, r, 0.0)
+		return
+	}
+
 	shortKey := config.ShortSwitchKeyByID[id]
 	serial.Status.RLock()
 	defer serial.Status.RUnlock()
@@ -353,6 +422,13 @@ func (a *API) HandleSwitchGetSwitchValue(w http.ResponseWriter, r *http.Request)
 func (a *API) HandleSwitchSetSwitchValue(w http.ResponseWriter, r *http.Request) {
 	id, ok := ParseSwitchID(w, r)
 	if !ok {
+		return
+	}
+
+	// Sensors are read-only - cannot be set
+	key := config.SwitchIDMap[id]
+	if config.IsSensorSwitch(key) {
+		ErrorResponse(w, r, http.StatusOK, 0x400, "Sensor switches are read-only and cannot be set")
 		return
 	}
 
@@ -519,7 +595,13 @@ func (a *API) HandleSwitchSetSwitchName(w http.ResponseWriter, r *http.Request) 
 }
 
 func (a *API) HandleSwitchCanWrite(w http.ResponseWriter, r *http.Request) {
-	if _, ok := ParseSwitchID(w, r); ok {
+	if id, ok := ParseSwitchID(w, r); ok {
+		key := config.SwitchIDMap[id]
+		// Sensors are read-only
+		if config.IsSensorSwitch(key) {
+			BoolResponse(w, r, false)
+			return
+		}
 		BoolResponse(w, r, true)
 	}
 }
@@ -529,6 +611,19 @@ func (a *API) HandleSwitchMaxSwitchValue(w http.ResponseWriter, r *http.Request)
 		key := config.SwitchIDMap[id]
 		// Debug logging for troubleshooting slider issue
 		logger.Debug("MaxSwitchValue: ID=%d Key=%s", id, key)
+
+		// Sensor max values
+		switch key {
+		case config.SensorVoltageKey:
+			FloatResponse(w, r, 15.0) // Max voltage
+			return
+		case config.SensorCurrentKey:
+			FloatResponse(w, r, 10.0) // Max current in A
+			return
+		case config.SensorPowerKey:
+			FloatResponse(w, r, 150.0) // Max power in W
+			return
+		}
 
 		if key == "adj_conv" && config.Get().EnableAlpacaVoltageControl {
 			FloatResponse(w, r, 15.0)

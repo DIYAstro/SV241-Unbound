@@ -46,23 +46,40 @@ type PowerStartupStates struct {
 // SwitchMapMutex protects concurrent access to SwitchIDMap and ShortSwitchKeyByID.
 var SwitchMapMutex sync.RWMutex
 
+// Sensor switch keys - these are read-only sensors at fixed IDs 0, 1, 2
+const (
+	SensorVoltageKey = "sensor_voltage"
+	SensorCurrentKey = "sensor_current"
+	SensorPowerKey   = "sensor_power"
+)
+
+// IsSensorSwitch returns true if the switch key is a read-only sensor
+func IsSensorSwitch(key string) bool {
+	return key == SensorVoltageKey || key == SensorCurrentKey || key == SensorPowerKey
+}
+
 var (
 	// Maps are public so other packages (like alpaca) can use them.
 	// IMPORTANT: Access these via GetSwitchIDMap() and GetShortSwitchKeyByID() for thread safety.
+	// Sensors are always at IDs 0, 1, 2. Power switches start at ID 3.
 	SwitchIDMap = map[int]string{
-		0: "dc1", 1: "dc2", 2: "dc3", 3: "dc4", 4: "dc5",
-		5: "usbc12", 6: "usb345", 7: "adj_conv", 8: "pwm1", 9: "pwm2",
-		10: "master_power",
+		0: SensorVoltageKey, 1: SensorCurrentKey, 2: SensorPowerKey,
+		3: "dc1", 4: "dc2", 5: "dc3", 6: "dc4", 7: "dc5",
+		8: "usbc12", 9: "usb345", 10: "adj_conv", 11: "pwm1", 12: "pwm2",
+		13: "master_power",
 	}
 	ShortSwitchIDMap = map[string]string{
 		"dc1": "d1", "dc2": "d2", "dc3": "d3", "dc4": "d4", "dc5": "d5",
 		"usbc12": "u12", "usb345": "u34", "adj_conv": "adj", "pwm1": "pwm1", "pwm2": "pwm2",
 		"master_power": "all",
+		// Sensors don't need short keys as they read from serial.Conditions
 	}
 	ShortSwitchKeyByID = map[int]string{
-		0: "d1", 1: "d2", 2: "d3", 3: "d4", 4: "d5",
-		5: "u12", 6: "u34", 7: "adj", 8: "pwm1", 9: "pwm2",
-		10: "all",
+		// Sensors at 0, 1, 2 - these use different data source
+		0: SensorVoltageKey, 1: SensorCurrentKey, 2: SensorPowerKey,
+		3: "d1", 4: "d2", 5: "d3", 6: "d4", 7: "d5",
+		8: "u12", 9: "u34", 10: "adj", 11: "pwm1", 12: "pwm2",
+		13: "all",
 	}
 
 	proxyConfig     *ProxyConfig // Singleton instance
