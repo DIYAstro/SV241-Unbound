@@ -278,20 +278,18 @@ This section covers advanced usage for power users who want to control the SV241
 
 To provide functionality beyond the standard ASCOM `Switch` specification, the driver implements several custom **Actions**. These can be triggered by ASCOM client software that supports them, or manually via API calls.
 
-#### Master Switch Actions
+#### Master Switch Actions (Switch Device)
 
 These actions provide a "Master Switch" to control all power outputs simultaneously.
 
 *   `MasterSwitchOn`: Turns all power outputs on.
 *   `MasterSwitchOff`: Turns all power outputs off.
 
-#### Sensor Readout Actions
+#### Sensor Actions (ObservingConditions Device)
 
-These actions allow reading the main power metrics directly from the `Switch` device, which can be convenient in some clients.
+The `ObservingConditions` device provides an action to read the lens/objective temperature separately from the ambient temperature.
 
-*   `getvoltage`: Returns the current input voltage (in Volts).
-*   `getcurrent`: Returns the total current draw (in Amps).
-*   `getpower`: Returns the total power consumption (in Watts).
+*   `getlenstemperature`: Returns the current lens/objective temperature from the DS18B20 sensor (in °C).
 
 
 #### Using Actions via API (e.g., with `curl`)
@@ -303,10 +301,11 @@ You can trigger these actions from the command line using a tool like `curl`. Th
 curl -X PUT -d "Action=MasterSwitchOff" http://localhost:32241/api/v1/switch/0/action
 ```
 
-**Example: Get current voltage**
+**Example: Turn all switches on**
 ```bash
-curl -X PUT -d "Action=getvoltage" http://localhost:32241/api/v1/switch/0/action
+curl -X PUT -d "Action=MasterSwitchOn" http://localhost:32241/api/v1/switch/0/action
 ```
+
 > **Note for Windows PowerShell users:** The standard `curl` command in PowerShell is an alias for `Invoke-WebRequest`, which has a different syntax and requires the `Content-Type` to be set explicitly. Here are the correct PowerShell commands:
 > ```powershell
 > # Turn all switches off
@@ -314,22 +313,82 @@ curl -X PUT -d "Action=getvoltage" http://localhost:32241/api/v1/switch/0/action
 >
 > # Turn all switches on
 > Invoke-WebRequest -Uri http://localhost:32241/api/v1/switch/0/action -Method PUT -Body "Action=MasterSwitchOn" -ContentType "application/x-www-form-urlencoded"
->
-> # Read sensor values
-> Invoke-WebRequest -Uri http://localhost:32241/api/v1/switch/0/action -Method PUT -Body "Action=getvoltage" -ContentType "application/x-www-form-urlencoded"
-> Invoke-WebRequest -Uri http://localhost:32241/api/v1/switch/0/action -Method PUT -Body "Action=getcurrent" -ContentType "application/x-www-form-urlencoded"
-> Invoke-WebRequest -Uri http://localhost:32241/api/v1/switch/0/action -Method PUT -Body "Action=getpower" -ContentType "application/x-www-form-urlencoded"
->
-> # Read lens/objective temperature (via ObservingConditions endpoint)
-> Invoke-WebRequest -Uri http://localhost:32241/api/v1/observingconditions/0/temperature -Method GET
 > ```
+
+**Example: Get lens temperature (via ObservingConditions)**
+```bash
+curl -X PUT -d "Action=getlenstemperature" http://localhost:32241/api/v1/observingconditions/0/action
+```
+
+**Windows PowerShell:**
+```powershell
+Invoke-WebRequest -Uri http://localhost:32241/api/v1/observingconditions/0/action -Method PUT -Body "Action=getlenstemperature" -ContentType "application/x-www-form-urlencoded"
+```
+
+### Reading Sensor Values (Sensor Switches)
+
+The power metrics (Voltage, Current, Power) are exposed as read-only ASCOM Switch devices at **fixed IDs 0, 1, and 2**. These can be used to display values in NINA gauges or any ASCOM client that supports analog switch values.
+
+| ID | Name | Unit | Description |
+|----|------|------|-------------|
+| 0 | Input Voltage | V | Input voltage from power supply |
+| 1 | Total Current | A | Total current draw of all outputs |
+| 2 | Total Power | W | Total power consumption |
+
+> [!NOTE]
+> **Sensor switch IDs are always fixed (0, 1, 2).** Unlike power switches, sensor IDs do not shift when switches are disabled. Power switches start at ID 3.
+
+**Reading Sensor Values via API:**
+
+**Linux/Mac/Git Bash (native curl):**
+```bash
+# Read input voltage (ID 0)
+curl "http://localhost:32241/api/v1/switch/0/getswitchvalue?Id=0"
+
+# Read total current (ID 1)
+curl "http://localhost:32241/api/v1/switch/0/getswitchvalue?Id=1"
+
+# Read total power (ID 2)
+curl "http://localhost:32241/api/v1/switch/0/getswitchvalue?Id=2"
+```
+
+**Windows PowerShell:**
+```powershell
+# Read input voltage (ID 0)
+Invoke-RestMethod -Uri "http://localhost:32241/api/v1/switch/0/getswitchvalue?Id=0"
+
+# Read total current (ID 1)
+Invoke-RestMethod -Uri "http://localhost:32241/api/v1/switch/0/getswitchvalue?Id=1"
+
+# Read total power (ID 2)
+Invoke-RestMethod -Uri "http://localhost:32241/api/v1/switch/0/getswitchvalue?Id=2"
+```
+
+> **Tip for localized Windows:** `Invoke-RestMethod` parses JSON and displays numbers using your locale (e.g., `12,8` in German). To get the raw JSON with standard decimal format, use `Invoke-WebRequest` and access the `.Content` property:
+> ```powershell
+> # Get raw JSON (always uses period as decimal separator)
+> (Invoke-WebRequest -Uri "http://localhost:32241/api/v1/switch/0/getswitchvalue?Id=0").Content
+>
+> # Example output: {"ClientTransactionID":0,"ServerTransactionID":123,"ErrorNumber":0,"ErrorMessage":"","Value":12.87}
+> ```
+
+**Example Response:**
+```json
+{
+  "ClientTransactionID": 0,
+  "ServerTransactionID": 123,
+  "ErrorNumber": 0,
+  "ErrorMessage": "",
+  "Value": 12.87
+}
+```
 
 ### Controlling Individual Switches via REST API
 
 Beyond the custom actions, you can directly control individual switches using the standard ASCOM Alpaca `Switch` endpoints.
 
 > [!IMPORTANT]
-> **Switch IDs are dynamic.** When you disable a switch in the configuration (set to "Disabled"), it is removed from the ASCOM device list. This causes all subsequent switch IDs to shift down. For example, if DC1 is disabled, DC2 moves from ID 1 to ID 0. Always check your current switch configuration to determine the correct IDs.
+> **Switch ID Schema:** Sensor switches (Voltage, Current, Power) always occupy IDs 0, 1, 2. Power switches start at ID 3. When you disable a power switch in the configuration, it is removed from the ASCOM device list, causing subsequent power switch IDs to shift down. Sensor IDs remain fixed.
 
 **Endpoints:**
 - `PUT /api/v1/switch/0/setswitch` – Set a switch on or off (parameters: `Id`, `State`)
@@ -340,41 +399,41 @@ Beyond the custom actions, you can directly control individual switches using th
 **Examples using native `curl` (Linux/Mac/Git Bash):**
 
 ```bash
-# Turn switch ID 0 (typically DC1) ON
-curl -X PUT -d "Id=0&State=true" http://localhost:32241/api/v1/switch/0/setswitch
+# Turn switch ID 3 (typically DC1) ON
+curl -X PUT -d "Id=3&State=true" http://localhost:32241/api/v1/switch/0/setswitch
 
-# Turn switch ID 0 OFF
-curl -X PUT -d "Id=0&State=false" http://localhost:32241/api/v1/switch/0/setswitch
+# Turn switch ID 3 OFF
+curl -X PUT -d "Id=3&State=false" http://localhost:32241/api/v1/switch/0/setswitch
 
-# Get the current state of switch ID 0
-curl "http://localhost:32241/api/v1/switch/0/getswitch?Id=0"
+# Get the current state of switch ID 3
+curl "http://localhost:32241/api/v1/switch/0/getswitch?Id=3"
 
 # Set adjustable converter to 9.5V (requires EnableAlpacaVoltageControl in proxy config)
-# Replace ID 7 with the actual ID of adj_conv in your configuration
-curl -X PUT -d "Id=7&Value=9.5" http://localhost:32241/api/v1/switch/0/setswitchvalue
+# Replace ID 10 with the actual ID of adj_conv in your configuration
+curl -X PUT -d "Id=10&Value=9.5" http://localhost:32241/api/v1/switch/0/setswitchvalue
 
 # Get the current voltage of the adjustable converter
-curl "http://localhost:32241/api/v1/switch/0/getswitchvalue?Id=7"
+curl "http://localhost:32241/api/v1/switch/0/getswitchvalue?Id=10"
 ```
 
 **Examples using Windows PowerShell:**
 
 ```powershell
-# Turn switch ID 0 ON
-Invoke-WebRequest -Uri "http://localhost:32241/api/v1/switch/0/setswitch" -Method PUT -Body "Id=0&State=true" -ContentType "application/x-www-form-urlencoded"
+# Turn switch ID 3 (typically DC1) ON
+Invoke-WebRequest -Uri "http://localhost:32241/api/v1/switch/0/setswitch" -Method PUT -Body "Id=3&State=true" -ContentType "application/x-www-form-urlencoded"
 
-# Turn switch ID 0 OFF
-Invoke-WebRequest -Uri "http://localhost:32241/api/v1/switch/0/setswitch" -Method PUT -Body "Id=0&State=false" -ContentType "application/x-www-form-urlencoded"
+# Turn switch ID 3 OFF
+Invoke-WebRequest -Uri "http://localhost:32241/api/v1/switch/0/setswitch" -Method PUT -Body "Id=3&State=false" -ContentType "application/x-www-form-urlencoded"
 
-# Get the current state of switch ID 0
-Invoke-WebRequest -Uri "http://localhost:32241/api/v1/switch/0/getswitch?Id=0"
+# Get the current state of switch ID 3
+Invoke-RestMethod -Uri "http://localhost:32241/api/v1/switch/0/getswitch?Id=3"
 
 # Set adjustable converter to 9.5V (requires EnableAlpacaVoltageControl in proxy config)
-# Replace ID 7 with the actual ID of adj_conv in your configuration
-Invoke-WebRequest -Uri "http://localhost:32241/api/v1/switch/0/setswitchvalue" -Method PUT -Body "Id=7&Value=9.5" -ContentType "application/x-www-form-urlencoded"
+# Replace ID 10 with the actual ID of adj_conv in your configuration
+Invoke-WebRequest -Uri "http://localhost:32241/api/v1/switch/0/setswitchvalue" -Method PUT -Body "Id=10&Value=9.5" -ContentType "application/x-www-form-urlencoded"
 
 # Get the current voltage of the adjustable converter
-Invoke-WebRequest -Uri "http://localhost:32241/api/v1/switch/0/getswitchvalue?Id=7"
+Invoke-RestMethod -Uri "http://localhost:32241/api/v1/switch/0/getswitchvalue?Id=10"
 ```
 
 ## Configuration Reference
