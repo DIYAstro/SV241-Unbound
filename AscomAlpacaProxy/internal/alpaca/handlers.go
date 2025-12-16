@@ -703,7 +703,7 @@ func (a *API) HandleSwitchSwitchStep(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) HandleSwitchSupportedActions(w http.ResponseWriter, r *http.Request) {
-	actions := []string{"getvoltage", "getcurrent", "getpower", "MasterSwitchOn", "MasterSwitchOff"}
+	actions := []string{"MasterSwitchOn", "MasterSwitchOff"}
 	StringListResponse(w, r, actions)
 }
 
@@ -714,7 +714,6 @@ func (a *API) HandleSwitchAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var valueStr string
 	switch strings.ToLower(action) {
 	case "masterswitchon", "masterswitchoff":
 		state := strings.ToLower(action) == "masterswitchon"
@@ -729,43 +728,10 @@ func (a *API) HandleSwitchAction(w http.ResponseWriter, r *http.Request) {
 			serial.SendCommand(command, true, 0)
 		}()
 		return
-	case "getvoltage":
-		serial.Conditions.RLock()
-		defer serial.Conditions.RUnlock()
-		if value, found := serial.Conditions.Data["v"]; found && value != nil {
-			valueStr = fmt.Sprintf("%v", value)
-		} else {
-			ErrorResponse(w, r, http.StatusOK, 0x401, "Sensor not available or failed to read.")
-			return
-		}
-	case "getpower":
-		serial.Conditions.RLock()
-		defer serial.Conditions.RUnlock()
-		if value, found := serial.Conditions.Data["p"]; found && value != nil {
-			valueStr = fmt.Sprintf("%v", value)
-		} else {
-			ErrorResponse(w, r, http.StatusOK, 0x401, "Sensor not available or failed to read.")
-			return
-		}
-	case "getcurrent":
-		serial.Conditions.RLock()
-		defer serial.Conditions.RUnlock()
-		if value, found := serial.Conditions.Data["i"]; found && value != nil {
-			if currentMA, ok := value.(float64); ok {
-				valueStr = fmt.Sprintf("%.3f", currentMA/1000.0)
-			} else {
-				ErrorResponse(w, r, http.StatusOK, 0x401, "Invalid data type for current in cache.")
-				return
-			}
-		} else {
-			ErrorResponse(w, r, http.StatusOK, 0x401, "Sensor not available or failed to read.")
-			return
-		}
 	default:
 		ErrorResponse(w, r, http.StatusOK, 0x400, fmt.Sprintf("Action '%s' is not supported.", action))
 		return
 	}
-	StringResponse(w, r, valueStr)
 }
 
 // --- ObservingConditions Handlers ---
