@@ -34,21 +34,24 @@ This project consists of two main components:
 
 Follow these steps to get up and running quickly.
 
-### 1. Flashing the Firmware
-
-The easiest way to install the firmware is using the web flasher.
-
-1.  Connect the SV241 controller to your computer via USB.
-2.  Open the **[SV241-Unbound Web Flasher](https://diyastro.github.io/SV241-Unbound/)** in a modern web browser (Chrome, Edge).
-3.  Click "Connect", select the correct COM port for your device, and follow the on-screen instructions.
-
-### 2. Running the ASCOM Alpaca Proxy
-
-The proxy is the bridge between the hardware and your astronomy software.
+### 1. Install the ASCOM Alpaca Proxy
 
 1.  Download the latest installer (`SV241-AscomAlpacaProxy-Setup-x.x.exe`) from the project's releases page.
 2.  Run the installer. It's recommended to allow the proxy to start automatically with Windows.
-3.  Once running, an icon will appear in your system tray. The proxy will automatically detect the controller's COM port and connect to it.
+3.  Once running, an icon will appear in your system tray. Right-click it and select **"Open Setup Page"** to access the web interface.
+
+### 2. Flashing the Firmware
+
+> **Note:** The web flasher requires a modern browser with Web Serial API support (**Chrome** or **Edge**).
+
+On first startup, the proxy will display a **First-Run Wizard** that guides you through the firmware installation:
+
+1.  Connect the SV241 controller to your computer via USB.
+2.  The wizard will automatically check for compatible firmware.
+3.  If no firmware is detected, click **"Flash Firmware"** to open the integrated web flasher.
+4.  Select the correct COM port and follow the on-screen instructions.
+
+**Alternative:** Use the standalone **[SV241-Unbound Web Flasher](https://diyastro.github.io/SV241-Unbound/)** directly.
 
 ### 3. Connecting from Astronomy Software
 
