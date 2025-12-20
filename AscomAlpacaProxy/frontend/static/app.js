@@ -247,8 +247,8 @@ document.addEventListener('DOMContentLoaded', () => {
         statusEl.textContent = 'Checking firmware status...';
         actionsEl.innerHTML = '';
 
-        // Wait a few seconds for firmware connection
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        // Wait for firmware connection (10 seconds to allow device reboot after flashing)
+        await new Promise(resolve => setTimeout(resolve, 10000));
 
         const installedVersion = firmwareVersionElement?.textContent;
         const isConnected = installedVersion && installedVersion !== '-' && installedVersion !== 'Unknown';
@@ -266,7 +266,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     statusEl.innerHTML = '⚠ Firmware update available.<br>Installed: ' + installedVersion + ' → Available: ' + bundledVersion;
                     actionsEl.innerHTML = `
-                        <button class="btn-primary" onclick="window.location.href='/flasher'">Update Firmware</button>
+                        <button class="btn-primary" onclick="releaseAndFlash()">Update Firmware</button>
                         <button class="btn-secondary" onclick="completeOnboarding()">Skip</button>
                     `;
                 }
@@ -278,11 +278,21 @@ document.addEventListener('DOMContentLoaded', () => {
             // No firmware detected
             statusEl.innerHTML = '⚠ Compatible firmware not detected.<br>Please flash SV241-Unbound to get started.';
             actionsEl.innerHTML = `
-                <button class="btn-primary" onclick="window.location.href='/flasher'">Flash Firmware</button>
-                <button class="btn-secondary" onclick="completeOnboarding()">I\'ll do it later</button>
+                <button class="btn-primary" onclick="releaseAndFlash()">Flash Firmware</button>
+                <button class="btn-secondary" onclick="completeOnboarding()">I\\'ll do it later</button>
             `;
         }
     }
+
+    // Release serial port and navigate to flasher
+    window.releaseAndFlash = async function () {
+        try {
+            await fetch('/api/serial/release', { method: 'POST' });
+        } catch (e) {
+            // Ignore errors - might already be released or not connected
+        }
+        window.location.href = '/flasher';
+    };
 
     // Global function to complete onboarding
     window.completeOnboarding = async function () {
@@ -299,12 +309,8 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error("Failed to save onboarding status", e);
         }
 
-        // Close modal - reset both class and inline styles
-        const modal = document.getElementById('onboarding-modal');
-        if (modal) {
-            modal.classList.add('hidden');
-            modal.style.display = 'none';
-        }
+        // Reload page to refresh all version displays
+        window.location.reload();
     };
 
     async function fetchProxyVersion() {
