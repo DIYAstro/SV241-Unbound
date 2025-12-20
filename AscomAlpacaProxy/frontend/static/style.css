@@ -702,14 +702,15 @@ button {
     justify-content: center;
     align-items: center;
     z-index: 1000;
-    opacity: 0;
-    pointer-events: none;
+    opacity: 1;
+    pointer-events: auto;
     transition: opacity 0.3s ease;
 }
 
-.modal-overlay:not(.hidden) {
-    opacity: 1;
-    pointer-events: auto;
+.modal-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+    display: none;
 }
 
 .modal-content {

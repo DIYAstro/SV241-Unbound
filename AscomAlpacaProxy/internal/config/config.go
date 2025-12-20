@@ -22,6 +22,7 @@ type ProxyConfig struct {
 	TelemetryInterval          int               `json:"telemetryInterval"`          // Seconds
 	EnableAlpacaVoltageControl bool              `json:"enableAlpacaVoltageControl"` // Allow voltage control via Alpaca
 	EnableMasterPower          bool              `json:"enableMasterPower"`          // Show Master Power switch
+	FirstRunComplete           bool              `json:"firstRunComplete"`           // Onboarding wizard completed
 }
 
 // CombinedConfig defines the structure for a full backup file.

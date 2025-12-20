@@ -228,6 +228,85 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function showOnboardingWizard() {
+        // Check if first run is already complete
+        if (originalProxyConfig && originalProxyConfig.firstRunComplete) {
+            return; // Already completed onboarding
+        }
+
+        const modal = document.getElementById('onboarding-modal');
+        const statusEl = document.getElementById('onboarding-status');
+        const actionsEl = document.getElementById('onboarding-actions');
+        if (!modal || !statusEl || !actionsEl) return;
+
+        // Show the modal - force visibility with inline styles
+        modal.classList.remove('hidden');
+        modal.style.display = 'flex';
+        modal.style.opacity = '1';
+        modal.style.pointerEvents = 'auto';
+        statusEl.textContent = 'Checking firmware status...';
+        actionsEl.innerHTML = '';
+
+        // Wait a few seconds for firmware connection
+        await new Promise(resolve => setTimeout(resolve, 5000));
+
+        const installedVersion = firmwareVersionElement?.textContent;
+        const isConnected = installedVersion && installedVersion !== '-' && installedVersion !== 'Unknown';
+
+        if (isConnected) {
+            // Firmware is connected - check for update
+            try {
+                const bundledRes = await fetch('/flasher/firmware/version.json');
+                const bundledData = await bundledRes.json();
+                const bundledVersion = bundledData.version;
+
+                if (installedVersion === bundledVersion) {
+                    statusEl.innerHTML = '✅ SV241-Unbound firmware detected.<br>Version: ' + installedVersion;
+                    actionsEl.innerHTML = '<button class="btn-primary" onclick="completeOnboarding()">Continue Setup</button>';
+                } else {
+                    statusEl.innerHTML = '⚠ Firmware update available.<br>Installed: ' + installedVersion + ' → Available: ' + bundledVersion;
+                    actionsEl.innerHTML = `
+                        <button class="btn-primary" onclick="window.location.href='/flasher'">Update Firmware</button>
+                        <button class="btn-secondary" onclick="completeOnboarding()">Skip</button>
+                    `;
+                }
+            } catch (e) {
+                statusEl.innerHTML = '✅ SV241-Unbound firmware detected.<br>Version: ' + installedVersion;
+                actionsEl.innerHTML = '<button class="btn-primary" onclick="completeOnboarding()">Continue Setup</button>';
+            }
+        } else {
+            // No firmware detected
+            statusEl.innerHTML = '⚠ Compatible firmware not detected.<br>Please flash SV241-Unbound to get started.';
+            actionsEl.innerHTML = `
+                <button class="btn-primary" onclick="window.location.href='/flasher'">Flash Firmware</button>
+                <button class="btn-secondary" onclick="completeOnboarding()">I\'ll do it later</button>
+            `;
+        }
+    }
+
+    // Global function to complete onboarding
+    window.completeOnboarding = async function () {
+        // Update firstRunComplete in config
+        try {
+            const currentConfig = originalProxyConfig || {};
+            currentConfig.firstRunComplete = true;
+            await fetch('/api/v1/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(currentConfig)
+            });
+        } catch (e) {
+            console.error("Failed to save onboarding status", e);
+        }
+
+        // Close modal - reset both class and inline styles
+        const modal = document.getElementById('onboarding-modal');
+        if (modal) {
+            modal.classList.add('hidden');
+            modal.style.display = 'none';
+        }
+    };
+
     async function fetchProxyVersion() {
         try {
             const response = await fetch('/api/v1/proxy/version');
@@ -1588,6 +1667,9 @@ document.addEventListener('DOMContentLoaded', () => {
         await fetchFirmwareVersion();
         await checkFirmwareUpdate();
         await fetchProxyVersion();
+
+        // Show onboarding wizard for first-time users
+        showOnboardingWizard();
 
         // Setup specific event listeners
         setupChangeDetection();
