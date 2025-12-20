@@ -137,6 +137,18 @@ Configure the two PWM dew heater outputs:
     - *Minimum Temperature:* Maintains a minimum lens temperature.
     - *Disabled:* Heater is hidden from UI and ASCOM.
 
+##### Simplified PID Tuning Guide
+PID mode automatically regulates the heater to keep your optics dry. If you notice unstable temperatures, use this guide to tune the parameters:
+
+*   **Target Offset:** Desired temperature difference above the Dew Point (Recommended: 2.0°C - 5.0°C).
+*   **Kp (Aggressiveness):** Controls how hard the heater pushes.
+    *   *Problem:* Temperature swings up and down (Oscillation) -> **Reduce Kp**.
+    *   *Problem:* Heating is too slow -> **Increase Kp**.
+*   **Ki (Correction):** Corrects small, constant errors.
+    *   *Problem:* Temperature stabilizes *below* the target -> **Increase Ki**.
+*   **Kd (Damping):** Prevents shooting past the target.
+    *   *Problem:* Temperature spikes significantly above target on startup (Overshoot) -> **Increase Kd**.
+
 #### Sensors Tab
 Fine-tune sensor readings:
 *   **Offsets:** Calibrate temperature, humidity, voltage, and current readings.
