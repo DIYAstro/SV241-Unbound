@@ -248,25 +248,36 @@ document.addEventListener('DOMContentLoaded', () => {
         modal.style.display = 'flex';
         modal.style.opacity = '1';
         modal.style.pointerEvents = 'auto';
-        statusEl.textContent = 'Checking firmware status...';
         actionsEl.innerHTML = '';
 
-        // Wait for firmware connection (10 seconds to allow device reboot after flashing)
-        await new Promise(resolve => setTimeout(resolve, 10000));
-
-        // Fetch firmware version directly from API (more reliable than DOM element)
+        // Poll for firmware connection with countdown (15 seconds max, check every 2 seconds)
+        const maxWaitSeconds = 15;
+        const pollIntervalMs = 2000;
         let installedVersion = null;
-        try {
-            const fwRes = await fetch('/api/v1/firmware/version');
-            if (fwRes.ok) {
-                const fwData = await fwRes.json();
-                installedVersion = fwData.version;
+
+        for (let elapsed = 0; elapsed < maxWaitSeconds; elapsed += pollIntervalMs / 1000) {
+            const remaining = maxWaitSeconds - elapsed;
+            statusEl.textContent = `Waiting for device... (${remaining}s)`;
+
+            // Try to fetch firmware version
+            try {
+                const fwRes = await fetch('/api/v1/firmware/version');
+                if (fwRes.ok) {
+                    const fwData = await fwRes.json();
+                    if (fwData.version && fwData.version.toLowerCase() !== 'unknown') {
+                        installedVersion = fwData.version;
+                        break; // Found valid firmware, exit loop early
+                    }
+                }
+            } catch (e) {
+                // Device not connected yet, continue polling
             }
-        } catch (e) {
-            // Device not connected
+
+            // Wait before next poll
+            await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
         }
 
-        const isConnected = installedVersion && installedVersion.toLowerCase() !== 'unknown';
+        const isConnected = installedVersion !== null;
 
         if (isConnected) {
             // Firmware is connected - check for update
