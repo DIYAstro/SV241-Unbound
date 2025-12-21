@@ -63,6 +63,8 @@ netsh advfirewall firewall add rule name="SV241 Alpaca Proxy" dir=in action=allo
 
 This command adds an inbound rule specifically for the `AscomAlpacaProxy.exe` application, allowing it to receive connections from other devices on your network.
 
+> **Note:** The proxy does **not** require administrator privileges to run. Running it as admin may cause permission issues with configuration files. Always run the proxy as a normal user.
+
 
 ## Accessing the Setup Page
 
