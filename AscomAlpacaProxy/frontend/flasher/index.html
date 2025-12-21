@@ -229,8 +229,12 @@
         <div id="status-message" class="info" style="display: none;"></div>
 
         <div class="warning">
-            <strong>Warning:</strong> This process will erase all existing data and settings on your device. Ensure the
-            device is stable and do not disconnect it during the process.
+            <strong>⚠️ Warning:</strong> This process will erase all existing data and settings on your device.
+            <br><br>
+            <button onclick="backupConfig()"
+                style="width: 100%; background: var(--primary-color); color: #000; border: none; padding: 0.75rem 1rem; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 1rem;">
+                💾 Backup Now
+            </button>
         </div>
 
         <p>Before flashing, you must release the serial port so the browser can access it:</p>
@@ -383,6 +387,24 @@
             } catch (e) {
                 resumeBtn.textContent = 'Resume Failed';
                 resumeBtn.disabled = false;
+            }
+        };
+
+        // Backup configuration function
+        window.backupConfig = async function () {
+            try {
+                const response = await fetch('/api/v1/backup/create');
+                if (!response.ok) throw new Error('Backup failed');
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+                a.download = `sv241-backup-${timestamp}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            } catch (e) {
+                alert('Backup failed. Device may not be connected.');
             }
         };
     </script>

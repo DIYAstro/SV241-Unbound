@@ -1741,8 +1741,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const backupBtn = document.getElementById('backup-button');
         if (backupBtn) {
-            backupBtn.addEventListener('click', () => {
-                window.location.href = '/api/v1/backup/create';
+            backupBtn.addEventListener('click', async () => {
+                try {
+                    const response = await fetch('/api/v1/backup/create');
+                    if (!response.ok) throw new Error('Backup failed');
+                    const blob = await response.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+                    a.download = `sv241-backup-${timestamp}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                } catch (e) {
+                    showResponse('Backup failed. Device may not be connected.', true);
+                }
             });
         }
 
