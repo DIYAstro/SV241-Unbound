@@ -12,6 +12,7 @@ This is a replacement firmware for the **Svbony SV241 Pro**.
     *   [3. Connecting from Astronomy Software](#3-connecting-from-astronomy-software)
 *   [The ASCOM Alpaca Proxy](#the-ascom-alpaca-proxy)
 *   [Advanced: Serial Command Interface](#advanced-serial-command-interface)
+*   [Troubleshooting](./TROUBLESHOOTING.md)
 
 ## Project Overview
 
