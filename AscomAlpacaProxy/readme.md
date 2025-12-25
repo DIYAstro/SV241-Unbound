@@ -27,6 +27,7 @@ The project also includes a standalone ASCOM Alpaca proxy driver written in Go. 
   - [Log Level Configuration](#log-level-configuration)
   - [Log Rotation](#log-rotation)
 - [Troubleshooting](../TROUBLESHOOTING.md)
+- [Advanced: Development & Building](#advanced-development--building)
 
 ## Features
 
@@ -559,3 +560,55 @@ To prevent the log file from growing indefinitely, the proxy performs a simple r
 2.  A new, empty `proxy.log` is created for the current session.
 
 This ensures that the logs from the current and the immediately preceding session are always available for troubleshooting.
+
+---
+
+## Advanced: Development & Building
+
+<details>
+<summary><strong>Click to expand the Developer Guide</strong></summary>
+
+### Project Structure
+```
+AscomAlpacaProxy/
+├── frontend-vue/     # Vue 3 SPA (web interface)
+│   ├── src/          # Vue components & stores
+│   ├── public/       # Static assets (flasher, favicon)
+│   └── dist/         # Build output (generated)
+├── internal/         # Go backend modules
+├── build/            # Compiled .exe (generated)
+└── install/          # Installer output (generated)
+```
+
+### Prerequisites
+- **Node.js 18+** (for frontend)
+- **Go 1.21+** (for proxy backend)
+- **PlatformIO** (for firmware & proxy builds)
+- **[Inno Setup](https://jrsoftware.org/isinfo.php)** (for Windows installer)
+
+### Building the Frontend
+```bash
+cd AscomAlpacaProxy/frontend-vue
+npm install
+npm run build   # Output: dist/
+```
+
+### Building the Go Proxy (.exe only)
+```bash
+pio run --target buildgoproxyexe --environment AscomAlpacaProxyWinExecutable
+```
+
+### Building the Windows Installer
+```bash
+pio run --target buildgoproxyinstaller --environment AscomAlpacaProxyWinExecutable
+```
+> **Requires:** Inno Setup installed and `ISCC.exe` in PATH
+
+### Development Mode (Hot Reload)
+```bash
+cd AscomAlpacaProxy/frontend-vue
+npm run dev     # Dev server: http://localhost:5173
+```
+> **Note:** The dev server proxies API requests to the running Go proxy on port 32241.
+
+</details>
