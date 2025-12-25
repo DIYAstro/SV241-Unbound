@@ -54,12 +54,18 @@ func (h *Hub) Run() {
 type Broadcaster struct{}
 
 // Write sends the byte slice to the hub's broadcast channel.
+// IMPORTANT: We must copy the slice because log.Printf reuses its internal buffer,
+// which would corrupt the data if we send the original slice asynchronously.
 func (b *Broadcaster) Write(p []byte) (n int, err error) {
 	if hub != nil {
+		// Make a copy of the slice to prevent data corruption from buffer reuse
+		msg := make([]byte, len(p))
+		copy(msg, p)
+
 		// To avoid blocking the logger, we send this in a non-blocking way.
 		// If the hub's broadcast channel is full, the message is dropped.
 		select {
-		case hub.broadcast <- p:
+		case hub.broadcast <- msg:
 		default:
 			// Hub is busy, drop log message to prevent blocking.
 		}
@@ -81,8 +87,8 @@ func NewHub() *Hub {
 // ServeWs handles websocket requests from the peer.
 func ServeWs(w http.ResponseWriter, r *http.Request) {
 	var upgrader = websocket.Upgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
+		ReadBufferSize:  8192, // Increased from 1024 to prevent truncation
+		WriteBufferSize: 8192, // Increased from 1024 to prevent truncation
 		CheckOrigin: func(r *http.Request) bool {
 			// Allow all connections.
 			return true
@@ -145,8 +151,10 @@ func (c *Client) writePump() {
 			w.Write(message)
 
 			// Add queued messages to the current websocket message.
+			// Add newline separator between batched messages to prevent corruption
 			n := len(c.send)
 			for i := 0; i < n; i++ {
+				w.Write([]byte("\n"))
 				w.Write(<-c.send)
 			}
 

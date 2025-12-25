@@ -190,19 +190,40 @@ The collapsible log viewer shows real-time proxy activity:
 
 ## Telemetry & Logging
 
-The proxy driver includes a robust telemetry system that logs sensor data to CSV files and provides interactive visualization.
+The proxy driver includes a robust telemetry system that logs sensor data to a local SQLite database and provides interactive visualization with CSV export.
 
-### Automatic CSV Logging
-*   **Frequency:** Telemetry data is logged every 10 seconds (configurable).
-*   **Format:** Standard CSV files stored in `AscomAlpaca/logs/`.
-*   **Rotation:** Logs use a "Noon-to-Noon" rotation strategy. This means a single "night's" imaging session is contained in one file, even if it spans across midnight. A new file is created automatically at 12:00 PM local time.
-*   **Retention:** Old logs are automatically pruned. You can configure the number of nights to retain (default: 10) in the setup page.
+### Automatic Database Logging
+*   **Storage:** Telemetry data is stored in a local SQLite database (`telemetry.db`) in the configuration directory.
+*   **Frequency:** Configurable logging interval from 1-10 seconds, or disabled entirely (0 seconds). Default is 10 seconds.
+*   **Data Points:** Logs all sensor values including voltage, current, power, temperatures, humidity, dew point, switch states, and heater PWM levels.
+*   **Rotation:** Uses a "Noon-to-Noon" rotation strategy. A single imaging night is contained in one session, even if it spans midnight.
+*   **Retention:** Old data is automatically pruned based on the configured number of nights to retain (default: 10).
 
-### Interactive Visualization
-The web interface features a built-in telemetry viewer:
-*   Click on any sensor value (Voltage, Current, Temp, etc.) in the **Live Telemetry** panel to open the history chart.
-*   **Interactive Chart:** Zoom and pan through the data to analyze power consumption or environmental changes over time.
-*   **Historical Data:** Use the dropdown menu in the modal to load and view data from previous recording sessions.
+### Data Explorer
+The web interface features a built-in **Data Explorer** for interactive telemetry visualization:
+
+*   **Access:** Click the 📊 button in the Live Telemetry panel to open the Data Explorer. This button is only visible when telemetry logging is enabled.
+*   **Time Range:** Choose from presets (1h, 12h, 24h, 7d) or select a custom date/time range.
+*   **Multi-Sensor Charts:** Select multiple sensors to display on the same chart for comparison.
+*   **Interactive Navigation:** Zoom and pan through the data using mouse wheel and drag.
+*   **Reset View:** Click "🔄 Reset View" to return to the full time range after zooming.
+*   **Custom Names:** Sensors display your custom switch names (e.g., "DC 1 (Telescope Mount)").
+*   **Disabled Filtering:** Switches and heaters marked as "Disabled" are automatically hidden from the sensor list.
+
+### CSV Export
+Export telemetry data for external analysis:
+
+*   **Download:** Click "Download Selection CSV" in the Data Explorer to export only the selected sensors.
+*   **Headers:** CSV headers include custom names in the format `key (custom_name)` for easy identification.
+*   **Time Format:** Timestamps are exported in ISO 8601 format (RFC3339).
+
+### Configuration
+Telemetry settings are available in the **Proxy Settings** tab under "Logging & Telemetry":
+
+| Setting | Description |
+|---------|-------------|
+| **Telemetry Interval** | How often to log data (Disabled, 1-10 seconds) |
+| **Min. Retention (Nights)** | Minimum number of recorded nights to keep before pruning |
 
 
 ## Driver Installation

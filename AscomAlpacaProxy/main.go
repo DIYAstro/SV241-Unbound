@@ -16,7 +16,7 @@ import (
 //go:embed icon.ico
 var iconData []byte
 
-//go:embed frontend
+//go:embed frontend-vue/dist
 var embeddedFS embed.FS
 
 var frontendFS fs.FS
@@ -27,7 +27,7 @@ var AppVersion string = "dev"
 
 func main() {
 	var err error
-	frontendFS, err = fs.Sub(embeddedFS, "frontend")
+	frontendFS, err = fs.Sub(embeddedFS, "frontend-vue/dist")
 	if err != nil {
 		// This is a critical error at startup. A message box is appropriate.
 		systray.ShowMessageBox("Fatal Error", "Failed to load embedded frontend files. The application will exit.", 0x10)
@@ -58,6 +58,8 @@ func startApp() {
 		logger.Fatal("Failed to load proxy configuration: %v", err)
 	}
 
+	// 4. Start background tasks for serial communication and cache updates.
+	// This will perform the initial connection attempt.
 	// 4. Start background tasks for serial communication and cache updates.
 	// This will perform the initial connection attempt.
 	serial.StartManager()

@@ -9,7 +9,7 @@ goversioninfo_path = os.path.join(go_bin_path, "goversioninfo")
 def extract_firmware_version():
     """Extract FIRMWARE_VERSION from config_manager.h and write to version.json"""
     config_manager_path = "src/config_manager.h"
-    version_json_path = "AscomAlpacaProxy/frontend/flasher/firmware/version.json"
+    version_json_path = "AscomAlpacaProxy/frontend-vue/dist/flasher/firmware/version.json"
     
     try:
         with open(config_manager_path, "r", encoding="utf-8") as f:

@@ -46,15 +46,15 @@ func setupRoutes(frontendFS fs.FS, appVersion string) {
 	api := alpaca.NewAPI(appVersion)
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/" {
-			http.Redirect(w, r, "/setup", http.StatusFound)
+		if r.URL.Path == "/" || r.URL.Path == "/setup" {
+			// Serve the SPA entry point
+			http.ServeFileFS(w, r, frontendFS, "index.html")
 		} else {
+			// Serve static assets
 			http.FileServer(http.FS(frontendFS)).ServeHTTP(w, r)
 		}
 	})
-	http.HandleFunc("/setup", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFileFS(w, r, frontendFS, "setup.html")
-	})
+
 	http.HandleFunc("/flasher", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFileFS(w, r, frontendFS, "flasher/index.html")
 	})
@@ -65,8 +65,6 @@ func setupRoutes(frontendFS fs.FS, appVersion string) {
 	} else {
 		http.Handle("/flasher/", http.StripPrefix("/flasher/", http.FileServer(http.FS(flasherFS))))
 	}
-
-	http.Handle("/static/", http.FileServer(http.FS(frontendFS)))
 
 	// --- Management API ---
 	http.HandleFunc("/management/v1/description", api.HandleManagementDescription)

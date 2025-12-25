@@ -200,9 +200,7 @@ func Load() error {
 	if proxyConfig.HistoryRetentionNights == 0 {
 		proxyConfig.HistoryRetentionNights = 10
 	}
-	if proxyConfig.TelemetryInterval == 0 {
-		proxyConfig.TelemetryInterval = 10
-	}
+	// Note: TelemetryInterval=0 is valid (means disabled), so no auto-default here
 
 	// Wenn das Feld in einer alten Konfigurationsdatei fehlt, setzen wir es auf true,
 	// um das bisherige Verhalten beizubehalten.

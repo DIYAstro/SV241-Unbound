@@ -242,11 +242,6 @@
             If you have other ESP32 devices connected, their firmware will be overwritten without further confirmation.
         </div>
 
-        <p>Before flashing, you must release the serial port so the browser can access it:</p>
-
-        <button id="release-btn" onclick="releaseSerialPort()">Release Serial Port</button>
-        <button id="resume-btn" onclick="resumeReconnect()" style="display: none;">Resume Reconnect</button>
-
         <div>
             <esp-web-install-button id="install-button"></esp-web-install-button>
         </div>
@@ -288,6 +283,42 @@
         const manifestUrl = URL.createObjectURL(manifestBlob);
         installButton.manifest = manifestUrl;
         installButton.setAttribute('erase-first', '');
+
+        // Intercept clicks on the install button to auto-release serial port first
+        let isReleased = false;
+
+        installButton.addEventListener('click', async (e) => {
+            // If already released, let the normal flow continue
+            if (isReleased) return;
+
+            // Prevent the default connect action
+            e.stopPropagation();
+            e.preventDefault();
+
+            statusEl.textContent = 'Releasing serial port...';
+
+            try {
+                const response = await fetch('/api/serial/release', { method: 'POST' });
+                const data = await response.json();
+
+                if (!data.success) {
+                    statusEl.textContent = 'Failed to release port: ' + (data.error || 'Unknown error');
+                    return;
+                }
+
+                // Wait 5 seconds for the port to be fully released
+                statusEl.textContent = 'Port released. Waiting 2 seconds...';
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
+                isReleased = true;
+                statusEl.textContent = 'Ready! Click CONNECT to select the COM port.';
+
+                // Automatically trigger the connect dialog
+                installButton.shadowRoot?.querySelector('button')?.click();
+            } catch (err) {
+                statusEl.textContent = 'Error releasing port: ' + err.message;
+            }
+        }, true); // Use capture phase to intercept before the component handles it
 
         // Listen for the install dialog state changes
         installButton.addEventListener('state-changed', (e) => {
@@ -395,11 +426,28 @@
             }
         };
 
-        // Backup configuration function
+        // Backup configuration function - with serial resume/release workflow
         window.backupConfig = async function () {
+            const backupBtn = event.target;
+            const originalText = backupBtn.textContent;
+
             try {
+                // Step 1: Resume serial connection
+                backupBtn.textContent = '🔄 Reconnecting...';
+                backupBtn.disabled = true;
+
+                const resumeRes = await fetch('/api/serial/resume', { method: 'POST' });
+                if (!resumeRes.ok) throw new Error('Failed to resume serial connection');
+
+                // Step 2: Wait for connection to establish (5 seconds)
+                backupBtn.textContent = '⏳ Waiting for connection...';
+                await new Promise(resolve => setTimeout(resolve, 5000));
+
+                // Step 3: Create backup
+                backupBtn.textContent = '💾 Creating backup...';
                 const response = await fetch('/api/v1/backup/create');
-                if (!response.ok) throw new Error('Backup failed');
+                if (!response.ok) throw new Error('Backup creation failed');
+
                 const blob = await response.blob();
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -408,8 +456,25 @@
                 a.download = `sv241-backup-${timestamp}.json`;
                 a.click();
                 URL.revokeObjectURL(url);
+
+                backupBtn.textContent = '✅ Backup Complete!';
+
             } catch (e) {
-                alert('Backup failed. Device may not be connected.');
+                alert('Backup failed: ' + e.message);
+                backupBtn.textContent = '❌ Failed';
+            } finally {
+                // Step 4: Always release serial port again for flasher
+                try {
+                    await fetch('/api/serial/release', { method: 'POST' });
+                } catch (releaseErr) {
+                    console.error('Failed to release port after backup:', releaseErr);
+                }
+
+                // Reset button after short delay
+                setTimeout(() => {
+                    backupBtn.textContent = originalText;
+                    backupBtn.disabled = false;
+                }, 2000);
             }
         };
     </script>
