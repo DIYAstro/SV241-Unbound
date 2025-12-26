@@ -166,6 +166,7 @@ Maintenance and backup functions:
 *   **Backup & Restore:** Export or import the complete configuration (both proxy and firmware settings).
 *   **Danger Zone:** Contains critical device operations:
     *   **Update Firmware:** Opens the integrated web flasher to update the SV241 firmware directly from the browser using the Web Serial API—no additional tools required.
+        > **Note:** Flashing requires the browser to run on the same machine where the SV241-Box is connected via USB. Opening the flasher page remotely from another device will not work.
     *   **Reboot Device:** Performs a soft restart of the SV241 device.
     *   **Factory Reset:** Erases all saved settings on the device and restores factory defaults.
 
