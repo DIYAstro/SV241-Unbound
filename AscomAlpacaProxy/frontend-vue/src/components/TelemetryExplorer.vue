@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { Line } from 'vue-chartjs'
 import {
   Chart as ChartJS,
@@ -37,6 +37,8 @@ const startDate = ref('')
 const endDate = ref('')
 const selectedSensors = ref([]) // No default selection
 const chartRef = ref(null) // Chart reference for reset zoom
+const chartContainerRef = ref(null) // Container ref for ResizeObserver
+let resizeObserver = null
 
 // Mapping from internal keys to short keys (for config.ps lookup)
 const switchMapping = {
@@ -69,23 +71,27 @@ function isSwitchDisabled(key) {
 }
 
 // Dynamic sensor list - filters disabled features and uses custom names
+// Axis grouping: y_left = temps/humidity/PWM, y_right = voltage/current/power
 const availableSensors = computed(() => {
     const sensors = [
         // Core telemetry (always available) - distinct warm/cool colors
-        { id: 'voltage', label: 'Voltage (V)', color: '#ffd700' },       // Gold
-        { id: 'current', label: 'Current (mA)', color: '#ff8c00' },      // Dark Orange
-        { id: 'current_a', label: 'Current (A)', color: '#ff6b00' },     // Deep Orange
-        { id: 'power', label: 'Power (W)', color: '#dc143c' },           // Crimson
-        { id: 't_amb', label: 'Amb Temp (°C)', color: '#00ced1' },       // Dark Turquoise
-        { id: 'h_amb', label: 'Humidity (%)', color: '#1e90ff' },        // Dodger Blue
-        { id: 'dew_point', label: 'Dew Point (°C)', color: '#9370db' },  // Medium Purple
-        { id: 't_lens', label: 'Lens Temp (°C)', color: '#20b2aa' },     // Light Sea Green
+        // Right axis: Voltage, Current, Power (electrical measurements)
+        { id: 'voltage', label: 'Voltage (V)', color: '#ffd700', axis: 'y_right' },       // Gold
+        { id: 'current', label: 'Current (mA)', color: '#ff8c00', axis: 'y_right' },      // Dark Orange
+        { id: 'current_a', label: 'Current (A)', color: '#ff6b00', axis: 'y_right' },     // Deep Orange
+        { id: 'power', label: 'Power (W)', color: '#dc143c', axis: 'y_right' },           // Crimson
+        // Left axis: Temperatures, Humidity (environmental measurements)
+        { id: 't_amb', label: 'Amb Temp (°C)', color: '#00ced1', axis: 'y_left' },       // Dark Turquoise
+        { id: 'h_amb', label: 'Humidity (%)', color: '#1e90ff', axis: 'y_left' },        // Dodger Blue
+        { id: 'dew_point', label: 'Dew Point (°C)', color: '#9370db', axis: 'y_left' },  // Medium Purple
+        { id: 't_lens', label: 'Lens Temp (°C)', color: '#20b2aa', axis: 'y_left' },     // Light Sea Green
     ];
     
     // Switches/Heaters - only add if not disabled - distinct colors
+    // PWM on left axis (percentage like humidity), adj_conv on right (voltage), DC/USB are boolean
     const switchSensors = [
-        { id: 'pwm1', label: 'PWM 1 (%)', defaultLabel: 'PWM 1 (%)', color: '#ff1493' },      // Deep Pink
-        { id: 'pwm2', label: 'PWM 2 (%)', defaultLabel: 'PWM 2 (%)', color: '#00ff7f' },      // Spring Green
+        { id: 'pwm1', label: 'PWM 1 (%)', defaultLabel: 'PWM 1 (%)', color: '#ff1493', axis: 'y_left' },      // Deep Pink
+        { id: 'pwm2', label: 'PWM 2 (%)', defaultLabel: 'PWM 2 (%)', color: '#00ff7f', axis: 'y_left' },      // Spring Green
         { id: 'dc1', label: 'DC1', defaultLabel: 'DC 1', color: '#e74c3c', isBool: true },    // Red
         { id: 'dc2', label: 'DC2', defaultLabel: 'DC 2', color: '#f39c12', isBool: true },    // Orange
         { id: 'dc3', label: 'DC3', defaultLabel: 'DC 3', color: '#f1c40f', isBool: true },    // Yellow
@@ -93,7 +99,7 @@ const availableSensors = computed(() => {
         { id: 'dc5', label: 'DC5', defaultLabel: 'DC 5', color: '#3498db', isBool: true },    // Blue
         { id: 'usbc12', label: 'USB C1/2', defaultLabel: 'USB C 1/2', color: '#9b59b6', isBool: true }, // Purple
         { id: 'usb345', label: 'USB 3/4/5', defaultLabel: 'USB 3/4/5', color: '#1abc9c', isBool: true }, // Turquoise
-        { id: 'adj_conv', label: 'Adj Conv (V)', defaultLabel: 'Adj Conv (V)', color: '#bdc3c7' },       // Silver
+        { id: 'adj_conv', label: 'Adj Conv (V)', defaultLabel: 'Adj Conv (V)', color: '#bdc3c7', axis: 'y_right' },       // Silver
     ];
     
     for (const s of switchSensors) {
@@ -110,9 +116,26 @@ const availableSensors = computed(() => {
 
 const graphData = ref([])
 
-// Initialize dates to last 24h
+// Initialize dates to last 24h and setup ResizeObserver
 onMounted(() => {
     setPreset('24h')
+    
+    // Setup ResizeObserver to handle browser zoom and window resize
+    if (chartContainerRef.value) {
+        resizeObserver = new ResizeObserver(() => {
+            if (chartRef.value?.chart) {
+                chartRef.value.chart.resize()
+            }
+        })
+        resizeObserver.observe(chartContainerRef.value)
+    }
+})
+
+// Cleanup ResizeObserver on unmount
+onUnmounted(() => {
+    if (resizeObserver) {
+        resizeObserver.disconnect()
+    }
 })
 
 function setPreset(preset) {
@@ -202,7 +225,8 @@ const chartData = computed(() => {
         // I'll proceed with frontend but I must fix backend API to include switches in JSON.
         
         return {
-            label: def ? def.label : sensorId,
+            // Add axis indicator to label: ← for left, → for right (boolean switches have no suffix)
+            label: def ? (def.isBool ? def.label : `${def.label} ${def.axis === 'y_right' ? '→' : '←'}`) : sensorId,
             data: graphData.value.map(d => {
                 switch(sensorId) {
                     case 'voltage': return d.v;
@@ -234,7 +258,7 @@ const chartData = computed(() => {
             pointHitRadius: 10,
             stepped: def && def.isBool ? true : false,
             fill: def && def.isBool ? 'origin' : false,
-            yAxisID: def && def.isBool ? 'y_bool' : 'y'
+            yAxisID: def && def.isBool ? 'y_bool' : (def?.axis || 'y_left')
         }
     });
 
@@ -262,9 +286,21 @@ const chartOptions = {
         }
     },
     scales: {
-        y: {
-            beginAtZero: false, 
-            grid: { color: 'rgba(255,255,255,0.1)' }
+        y_left: {
+            type: 'linear',
+            position: 'left',
+            beginAtZero: false,
+            grid: { color: 'rgba(255,255,255,0.1)' },
+            ticks: { color: '#00ced1' }, // Cyan for environmental data
+            title: { display: false }
+        },
+        y_right: {
+            type: 'linear',
+            position: 'right',
+            beginAtZero: false,
+            grid: { drawOnChartArea: false }, // Don't draw grid lines for right axis
+            ticks: { color: '#ffd700' }, // Gold for electrical data
+            title: { display: false }
         },
         y_bool: {
             type: 'linear',
@@ -333,7 +369,7 @@ const chartOptions = {
             <button class="download-btn" @click="downloadCSV">Download Selection CSV</button>
         </aside>
 
-        <section class="explorer-chart">
+        <section class="explorer-chart" ref="chartContainerRef">
             <div class="chart-toolbar">
                 <button class="reset-btn" @click="resetZoom" title="Reset to full view">🔄 Reset View</button>
             </div>
