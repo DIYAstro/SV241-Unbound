@@ -4,8 +4,8 @@
 
 // LEDC (PWM) channel settings
 #define LEDC_CHANNEL    0
-#define LEDC_FREQUENCY  5000 // 5 kHz
-#define LEDC_RESOLUTION 10   // 10-bit resolution (0-1023)
+#define LEDC_FREQUENCY  100000 // 100 kHz - top of SC8903 VPWM range (20-100 kHz)
+#define LEDC_RESOLUTION 8      // 8-bit resolution (0-255) = ~59mV steps, sufficient for voltage control
 
 // Calibration data points: {real_measured_voltage, setpoint_to_achieve_it}
 const int num_cal_points = 7;
@@ -89,7 +89,7 @@ void set_adjustable_converter_state(bool on) {
     float calibrated_setpoint = get_calibrated_setpoint(desired_target_voltage);
 
     // Map the calibrated setpoint to the PWM duty cycle
-    uint32_t max_duty = (1 << LEDC_RESOLUTION) - 1; // e.g., 1023 for 10-bit
+    uint32_t max_duty = (1 << LEDC_RESOLUTION) - 1; // 255 for 8-bit
     uint32_t duty_cycle = (calibrated_setpoint / ADJUSTABLE_CONVERTER_MAX_VOLTAGE) * max_duty;
     
     ledcWrite(LEDC_CHANNEL, duty_cycle);
