@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include "ArduinoJson.h"
 
-#define FIRMWARE_VERSION "0.9.9"
+#define FIRMWARE_VERSION "0.9.10"
 
 // Maximum number of supported dew heaters
 // Maximum number of supported dew heaters
