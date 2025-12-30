@@ -112,8 +112,14 @@ func (a *API) HandleConnected(w http.ResponseWriter, r *http.Request) {
 			ErrorResponse(w, r, http.StatusOK, 0x400, "Missing Connected parameter for PUT request")
 			return
 		}
-		if _, err := strconv.ParseBool(connectedStr); err != nil {
+		connected, err := strconv.ParseBool(connectedStr)
+		if err != nil {
 			ErrorResponse(w, r, http.StatusOK, 0x400, fmt.Sprintf("Invalid value for Connected: '%s'", connectedStr))
+			return
+		}
+		// When client tries to connect, verify hardware is available
+		if connected && !serial.IsConnected() {
+			ErrorResponse(w, r, http.StatusOK, 0x400, "SV241 device not connected. Please check the USB connection.")
 			return
 		}
 		// The connection is managed automatically, so we just acknowledge.
