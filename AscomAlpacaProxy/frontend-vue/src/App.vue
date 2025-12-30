@@ -39,13 +39,20 @@ onMounted(() => {
       
       <TelemetryExplorer v-if="showExplorer" @close="showExplorer = false" />
 
-      <Configuration />
+      <div class="section-spacing">
+        <Configuration />
+      </div>
       
       <!-- Live Log Section -->
-      <LiveLog />
+      <div class="section-spacing">
+        <LiveLog />
+      </div>
     </main>
   </div>
 </template>
 
 <style scoped>
+.section-spacing {
+    margin-top: 1.5rem;
+}
 </style>
