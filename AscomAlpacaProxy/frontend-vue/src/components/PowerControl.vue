@@ -87,7 +87,7 @@ function toggleSwitch(id, currentState) {
       </div>
       <div id="power-grid" class="power-grid">
           <div v-for="s in visibleSwitches" :key="s.id" class="switch-control glass-panel">
-              <span class="name">{{ s.name }}</span>
+              <span class="name" :title="s.name">{{ s.name }}</span>
               <label class="switch-toggle">
                   <input type="checkbox" :checked="s.isOn" @change="toggleSwitch(s.id, s.isOn)">
                   <span class="slider"></span>
@@ -98,5 +98,12 @@ function toggleSwitch(id, currentState) {
 </template>
 
 <style scoped>
-/* Inherited from global styles, but scoped overrides can go here */
+/* Text truncation for long switch names */
+.switch-control .name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 </style>
