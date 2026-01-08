@@ -1,7 +1,7 @@
 <script setup>
 import { useDeviceStore } from '../stores/device'
 import { storeToRefs } from 'pinia'
-import { computed } from 'vue'
+import { computed, ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 
 const store = useDeviceStore()
 const { activeSwitches, switchNames, powerStatus, config, proxyConfig } = storeToRefs(store)
@@ -72,6 +72,40 @@ function getDefaultName(key) {
 function toggleSwitch(id, currentState) {
     store.setSwitch(id, !currentState);
 }
+
+// Truncation detection
+const truncatedSwitches = ref(new Set());
+const switchRefs = ref([]);
+
+function checkTruncation() {
+    truncatedSwitches.value.clear();
+    switchRefs.value.forEach((el, index) => {
+        if (el) {
+            const nameEl = el.querySelector('.name');
+            if (nameEl && nameEl.scrollWidth > nameEl.clientWidth) {
+                truncatedSwitches.value.add(index);
+            }
+        }
+    });
+    // Force reactivity update
+    truncatedSwitches.value = new Set(truncatedSwitches.value);
+}
+
+function isTruncated(index) {
+    return truncatedSwitches.value.has(index);
+}
+
+// Check truncation on mount and when switches change
+onMounted(() => {
+    nextTick(checkTruncation);
+    window.addEventListener('resize', checkTruncation);
+});
+
+onUnmounted(() => {
+    window.removeEventListener('resize', checkTruncation);
+});
+
+watch(visibleSwitches, () => nextTick(checkTruncation), { deep: true });
 </script>
 
 <template>
@@ -86,8 +120,11 @@ function toggleSwitch(id, currentState) {
           </label>
       </div>
       <div id="power-grid" class="power-grid">
-          <div v-for="s in visibleSwitches" :key="s.id" class="switch-control glass-panel">
-              <span class="name" :title="s.name">{{ s.name }}</span>
+          <div v-for="(s, index) in visibleSwitches" :key="s.id" 
+               :ref="el => switchRefs[index] = el"
+               class="switch-control glass-panel" 
+               :data-fullname="isTruncated(index) ? s.name : ''">
+              <span class="name">{{ s.name }}</span>
               <label class="switch-toggle">
                   <input type="checkbox" :checked="s.isOn" @change="toggleSwitch(s.id, s.isOn)">
                   <span class="slider"></span>
@@ -98,6 +135,12 @@ function toggleSwitch(id, currentState) {
 </template>
 
 <style scoped>
+/* Allow tooltip to overflow the card */
+.switch-control {
+    overflow: visible;
+    position: relative;
+}
+
 /* Text truncation for long switch names */
 .switch-control .name {
     flex: 1;
@@ -105,5 +148,34 @@ function toggleSwitch(id, currentState) {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    cursor: default;
+}
+
+/* Tooltip wrapper on the card itself */
+.switch-control::before {
+    content: attr(data-fullname);
+    position: absolute;
+    left: 1.2rem;
+    top: -2.5rem;
+    padding: 0.5rem 0.75rem;
+    background: rgba(15, 12, 41, 0.95);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    color: #fff;
+    font-size: 0.85rem;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+    pointer-events: none;
+    z-index: 1000;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+.switch-control[data-fullname]:not([data-fullname=""]):hover::before {
+    opacity: 1;
+    visibility: visible;
+    transition-delay: 0.7s;
 }
 </style>
