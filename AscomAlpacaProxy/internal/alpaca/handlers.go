@@ -187,10 +187,18 @@ func (a *API) HandleSwitchGetSwitchName(w http.ResponseWriter, r *http.Request) 
 			StringResponse(w, r, "Lens Temperature")
 			return
 		case config.SensorPWM1Key:
-			StringResponse(w, r, "Dew Heater 1")
+			if name := config.Get().SwitchNames["pwm1"]; name != "" {
+				StringResponse(w, r, name)
+			} else {
+				StringResponse(w, r, "Dew Heater 1")
+			}
 			return
 		case config.SensorPWM2Key:
-			StringResponse(w, r, "Dew Heater 2")
+			if name := config.Get().SwitchNames["pwm2"]; name != "" {
+				StringResponse(w, r, name)
+			} else {
+				StringResponse(w, r, "Dew Heater 2")
+			}
 			return
 		}
 
