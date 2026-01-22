@@ -312,28 +312,10 @@ func (a *API) HandleSwitchGetSwitchValue(w http.ResponseWriter, r *http.Request)
 	key := config.SwitchIDMap[id]
 
 	// Handle sensor switches
+	// Handle sensor switches
 	if config.IsSensorSwitch(key) {
-		// PWM Sensors are special: they live in Status cache, not Conditions
-		if key == config.SensorPWM1Key || key == config.SensorPWM2Key {
-			serial.Status.RLock()
-			defer serial.Status.RUnlock()
-
-			shortKey := "pwm1"
-			if key == config.SensorPWM2Key {
-				shortKey = "pwm2"
-			}
-
-			if val, ok := serial.Status.Data[shortKey]; ok {
-				if floatVal, isFloat := val.(float64); isFloat {
-					FloatResponse(w, r, floatVal)
-					return
-				}
-			}
-			FloatResponse(w, r, 0.0)
-			return
-		}
-
-		// All other sensors (Voltage, Current, Power, LensTemp) live in Conditions cache
+		// All sensors (Voltage, Current, Power, LensTemp, PWM) live in Conditions cache (Telemetry)
+		// PWM in Status (e.g. "pwm1": false) is just the enabled state, not the duty cycle.
 		serial.Conditions.RLock()
 		defer serial.Conditions.RUnlock()
 
@@ -347,6 +329,10 @@ func (a *API) HandleSwitchGetSwitchValue(w http.ResponseWriter, r *http.Request)
 			dataKey = "p"
 		case config.SensorLensTempKey:
 			dataKey = "t_lens"
+		case config.SensorPWM1Key:
+			dataKey = "pwm1"
+		case config.SensorPWM2Key:
+			dataKey = "pwm2"
 		}
 
 		// Handle Lens Temp specifically to inject fallback check
