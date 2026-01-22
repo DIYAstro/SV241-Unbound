@@ -55,6 +55,13 @@ Some ASCOM clients (including test tools and custom scripts) may strip decimal s
 *   **Verification:** Set the proxy Log Level to `DEBUG`. Check the log for a line like: `[DEBUG] SetSwitchValue (AdjConv) - Received: '5', Normalized: '5'`.
 *   **Solution:** This is a client-side formatting issue. Check your client's region settings or input validation rules. The proxy natively supports both `.` (dot) and `,` (comma) separators, provided the client actually sends them.
 
+### Adjustable Voltage Switch Timeout
+When trying to switch ON the Adjustable Voltage port (e.g., from NINA), the operation times out or fails.
+
+*   **Symptom:** You toggle the switch to ON, but it fails after a few seconds or reverts to OFF.
+*   **Cause:** If `EnableAlpacaVoltageControl` is disabled (default), the proxy acts as a simple switch. If the port was previously set to **0V**, switching it "ON" keeps it at 0V. The ASCOM client expects to see the port turn "ON" (Voltage > 1V), but since it stays at 0V, the client reports a timeout.
+*   **Solution:** Configure a startup voltage > 0V for the Adjustable Output (via the Web Interface), or enable `EnableAlpacaVoltageControl` to set the voltage directly via ASCOM.
+
 ---
 
 ## Firmware Issues
