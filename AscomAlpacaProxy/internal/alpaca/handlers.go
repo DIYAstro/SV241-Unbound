@@ -231,13 +231,13 @@ func (a *API) HandleSwitchGetSwitchDescription(w http.ResponseWriter, r *http.Re
 			StringResponse(w, r, "Total power consumption in Watts (W)")
 			return
 		case config.SensorLensTempKey:
-			StringResponse(w, r, "Lens/Objective temperature in °C")
+			StringResponse(w, r, "Temperature in °C")
 			return
 		case config.SensorPWM1Key:
-			StringResponse(w, r, "Dew Heater 1 power output in %")
+			StringResponse(w, r, "PWM 1 power output in %")
 			return
 		case config.SensorPWM2Key:
-			StringResponse(w, r, "Dew Heater 2 power output in %")
+			StringResponse(w, r, "PWM 2 power output in %")
 			return
 		}
 
