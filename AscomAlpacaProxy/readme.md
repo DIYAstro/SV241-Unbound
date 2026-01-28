@@ -60,7 +60,7 @@ If you have configured network access and accidentally clicked "Cancel" or denie
 2.  Copy and paste the following command, then press Enter:
 
 ```bash
-netsh advfirewall firewall add rule name="SV241 Alpaca Proxy" dir=in action=allow program="%ProgramFiles(x86)%\SV241 Ascom Alpaca Proxy\AscomAlpacaProxy.exe" enable=yes
+netsh advfirewall firewall add rule name="SV241 Alpaca Proxy" dir=in action=allow program="%ProgramFiles%\SV241 Ascom Alpaca Proxy\AscomAlpacaProxy.exe" enable=yes
 ```
 
 This command adds an inbound rule specifically for the `AscomAlpacaProxy.exe` application, allowing it to receive connections from other devices on your network.
