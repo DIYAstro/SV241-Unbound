@@ -576,6 +576,14 @@ func updateStatusCacheFromJSON(statusJSON string) {
 			// Inject "dm" (Dew Mode) array into the status map so handlers can find it easily
 			if dmVal, found := rootData["dm"]; found {
 				statusMap["dm"] = dmVal
+			} else {
+				// Important: 'set' command responses don't include 'dm', but we need it for the UI.
+				// Preserve the existing 'dm' from the cache if available.
+				if Status.Data != nil {
+					if existingDM, ok := Status.Data["dm"]; ok {
+						statusMap["dm"] = existingDM
+					}
+				}
 			}
 
 			Status.Data = statusMap
