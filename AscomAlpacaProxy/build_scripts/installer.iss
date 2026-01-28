@@ -64,52 +64,70 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChang
 
 [Code]
 // Helper function to uninstall previous version
-function GetUninstallString(): String;
+// Returns UninstallString in Result, and InstallLocation in sInstallPath param
+function GetUninstallInfo(var sInstallPath: String): String;
 var
-  sUnInstPath: String;
   sUnInstPathKey: String;
+  sUnInstString: String;
+  sInstallLoc: String;
 begin
-  sUnInstPath := '';
+  Result := '';
+  sInstallPath := '';
   // Hardcoded AppId to ensure we match the registry key exactly (Inno uses single braces in Reg)
   sUnInstPathKey := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{F4F3A3A4-8E44-4B9A-9A8C-5A3D3E2F5B3A}_is1';
 
-  // Check 32-bit Registry (WOW6432Node) - For previous 32-bit installs
-  if RegQueryStringValue(HKLM32, sUnInstPathKey, 'UninstallString', sUnInstPath) then
+  // Check 32-bit Registry (HKLM32)
+  if RegQueryStringValue(HKLM32, sUnInstPathKey, 'UninstallString', sUnInstString) then
   begin
-    Result := sUnInstPath;
+    Result := sUnInstString;
+    RegQueryStringValue(HKLM32, sUnInstPathKey, 'InstallLocation', sInstallPath);
   end
   else
-  // Check 64-bit Registry - For previous 64-bit installs
-  if RegQueryStringValue(HKLM64, sUnInstPathKey, 'UninstallString', sUnInstPath) then
+  // Check 64-bit Registry (HKLM64)
+  if RegQueryStringValue(HKLM64, sUnInstPathKey, 'UninstallString', sUnInstString) then
   begin
-    Result := sUnInstPath;
+    Result := sUnInstString;
+    RegQueryStringValue(HKLM64, sUnInstPathKey, 'InstallLocation', sInstallPath);
   end
   else
-  // Check Current User (HKCU) - In case a Per-User install exists
-  if RegQueryStringValue(HKCU32, sUnInstPathKey, 'UninstallString', sUnInstPath) then
+  // Check HKCU32
+  if RegQueryStringValue(HKCU32, sUnInstPathKey, 'UninstallString', sUnInstString) then
   begin
-    Result := sUnInstPath;
+    Result := sUnInstString;
+    RegQueryStringValue(HKCU32, sUnInstPathKey, 'InstallLocation', sInstallPath);
   end
   else
-  if RegQueryStringValue(HKCU64, sUnInstPathKey, 'UninstallString', sUnInstPath) then
+  // Check HKCU64
+  if RegQueryStringValue(HKCU64, sUnInstPathKey, 'UninstallString', sUnInstString) then
   begin
-      Result := sUnInstPath;
+      Result := sUnInstString;
+      RegQueryStringValue(HKCU64, sUnInstPathKey, 'InstallLocation', sInstallPath);
   end;
 end;
 
 function InitializeSetup(): Boolean;
 var
   sUnInstallString: String;
+  sOldInstallPath: String;
   iResultCode: Integer;
 begin
+  // 0. Force close the application to unlock files
+  Exec('taskkill.exe', '/F /IM AscomAlpacaProxy.exe /T', '', SW_HIDE, ewWaitUntilTerminated, iResultCode);
+
   Result := True;
-  sUnInstallString := GetUninstallString();
+  sUnInstallString := GetUninstallInfo(sOldInstallPath);
+  
   if sUnInstallString <> '' then
   begin
     sUnInstallString := RemoveQuotes(sUnInstallString);
     if Exec(sUnInstallString, '/SILENT /NORESTART /SUPPRESSMSGBOXES', '', SW_HIDE, ewWaitUntilTerminated, iResultCode) then
     begin
-        // Successfully uninstalled
+        // Successfully uninstalled. Now force-delete the old folder if it still exists.
+        // This cleans up leftover config files, logs, etc.
+        if (sOldInstallPath <> '') and DirExists(sOldInstallPath) then
+        begin
+            DelTree(sOldInstallPath, True, True, True);
+        end;
     end
     else
     begin
@@ -123,5 +141,31 @@ begin
   if RegKeyExists(HKCU, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Run') then
   begin
     RegDeleteValue(HKCU, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Run', '{#emit SetupSetting("AppName")}');
+  end;
+end;
+
+// -----------------------------------------------------------------------------
+// Uninstaller Logic (When running the Uninstaller manually)
+// -----------------------------------------------------------------------------
+
+function InitializeUninstall(): Boolean;
+var
+  iResultCode: Integer;
+begin
+  Result := True;
+  // Force close the application before uninstalling to ensure files can be removed
+  Exec('taskkill.exe', '/F /IM AscomAlpacaProxy.exe /T', '', SW_HIDE, ewWaitUntilTerminated, iResultCode);
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usPostUninstall then
+  begin
+    // Aggressively clean up the installation directory (including logs/configs) after uninstall
+    // Note: The uninstaller extracts itself to temp, so it's safe to delete the target dir now.
+    if DirExists(ExpandConstant('{app}')) then
+    begin
+      DelTree(ExpandConstant('{app}'), True, True, True);
+    end;
   end;
 end;
