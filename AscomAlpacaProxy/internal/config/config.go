@@ -18,6 +18,7 @@ type ProxyConfig struct {
 	LogLevel                   string            `json:"logLevel"`
 	SwitchNames                map[string]string `json:"switchNames"`
 	HeaterAutoEnableLeader     map[string]bool   `json:"heaterAutoEnableLeader"`
+	SavedHeaterValues          map[int]float64   `json:"savedHeaterValues"` // Map of Heater Index (0-based) to Last Manual Power Value
 	HistoryRetentionNights     int               `json:"historyRetentionNights"`
 	TelemetryInterval          int               `json:"telemetryInterval"`          // Seconds
 	EnableAlpacaVoltageControl bool              `json:"enableAlpacaVoltageControl"` // Allow voltage control via Alpaca
@@ -155,6 +156,7 @@ func Load() error {
 				HistoryRetentionNights: 10,   // Default to 10 nights
 				TelemetryInterval:      10,   // Default to 10 seconds
 				EnableNotifications:    true, // Default to notifications enabled
+				SavedHeaterValues:      make(map[int]float64),
 			}
 			for _, internalName := range SwitchIDMap {
 				proxyConfig.SwitchNames[internalName] = internalName
@@ -204,6 +206,9 @@ func Load() error {
 	if _, exists := proxyConfig.HeaterAutoEnableLeader["pwm2"]; !exists {
 		logger.Warn("Missing auto-enable setting for 'pwm2', adding with default 'true'.")
 		proxyConfig.HeaterAutoEnableLeader["pwm2"] = true
+	}
+	if proxyConfig.SavedHeaterValues == nil {
+		proxyConfig.SavedHeaterValues = make(map[int]float64)
 	}
 	// Defaults for new fields
 	if proxyConfig.HistoryRetentionNights == 0 {

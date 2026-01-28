@@ -563,8 +563,37 @@ func (a *API) HandleSwitchSetSwitchValue(w http.ResponseWriter, r *http.Request)
 				value, _ := strconv.ParseFloat(valueStr, 64)
 				command = fmt.Sprintf(`{"set":{"%s":%.0f}}`, shortKey, value)
 			} else {
-				// Use "true"/"false" so firmware applies default manual power or ON state
-				command = fmt.Sprintf(`{"set":{"%s":%t}}`, shortKey, state)
+				// Restore-on-Toggle Logic:
+				if state {
+					// Turning ON (state=true) in Manual Mode
+					// 1. Try to restore from Proxy's local persistent storage (best for user preference)
+					conf := config.Get()
+					config.SwitchMapMutex.RLock()
+					savedVal, found := conf.SavedHeaterValues[heaterIdx]
+					config.SwitchMapMutex.RUnlock()
+
+					// 2. If not found locally, try firmware config (fallback)
+					if !found || savedVal <= 0 {
+						savedVal = getSavedManualPower(heaterIdx)
+					}
+
+					// 3. Apply
+					if savedVal > 0 {
+						command = fmt.Sprintf(`{"set":{"%s":%.0f}}`, shortKey, savedVal)
+						logger.Info("Toggle ON (Manual): Restoring saved power %.0f%% for %s", savedVal, shortKey)
+					} else {
+						// Fallback: Enable with 0 or min (sending true might result in 0 anyway)
+						command = fmt.Sprintf(`{"set":{"%s":%t}}`, shortKey, state) // Logic "true"
+						logger.Warn("Toggle ON (Manual): No saved power found, sending simple enable for %s", shortKey)
+					}
+				} else {
+					// Turning OFF
+					// CRITICAL: We must send 0 to ensure it turns off, as boolean "false" is often ignored by firmware for PWM.
+					// However, sending 0 overwrites the firmware's "mp" register to 0.
+					// This is why we need the Proxy-side storage (SavedHeaterValues) to remember the non-zero value.
+					// We do NOT update the saved value here.
+					command = fmt.Sprintf(`{"set":{"%s":0}}`, shortKey)
+				}
 			}
 			sendManualPWMCommand = true
 		}
@@ -642,7 +671,109 @@ func (a *API) HandleSwitchSetSwitchValue(w http.ResponseWriter, r *http.Request)
 	// Handle auto-enable/disable logic in a goroutine
 	go handleHeaterInteractions(id, state)
 
+	// Persistence fix: If we just set a specific PWM value in Manual Mode
+	if sendManualPWMCommand && heaterIdx >= 0 {
+		if valueStr, ok := GetFormValueIgnoreCase(r, "Value"); ok {
+			// user explicitly set a value
+			valueStr = strings.Replace(valueStr, ",", ".", -1)
+			if newVal, err := strconv.ParseFloat(valueStr, 64); err == nil {
+				// 1. Update Proxy Config (Primary Store)
+				conf := config.Get()
+				config.SwitchMapMutex.Lock()
+				conf.SavedHeaterValues[heaterIdx] = newVal
+				config.SwitchMapMutex.Unlock()
+				go config.Save()
+
+				// 2. Update Firmware Config (Backup/Boot Persistence)
+				// We still do this so if the proxy isn't running, the device remembers.
+				go updateHeaterPersistence(heaterIdx, newVal)
+			}
+		}
+	}
+
 	EmptyResponse(w, r)
+}
+
+func getSavedManualPower(heaterIdx int) float64 {
+	// Attempt to read the full config to find the 'mp' value for this heater.
+	// This is a blocking call, but necessary to ensure we restore the correct value.
+	configJSON, err := serial.SendCommand(`{"get":"config"}`, false, 0)
+	if err != nil {
+		logger.Warn("RestoreToggle: Could not get firmware config: %v", err)
+		return 0
+	}
+
+	var fullConfig map[string]interface{}
+	if err := json.Unmarshal([]byte(configJSON), &fullConfig); err != nil {
+		logger.Warn("RestoreToggle: Could not parse firmware config: %v", err)
+		return 0
+	}
+
+	if dhRaw, ok := fullConfig["dh"]; ok {
+		if dhArray, ok := dhRaw.([]interface{}); ok && heaterIdx < len(dhArray) {
+			if heaterMap, ok := dhArray[heaterIdx].(map[string]interface{}); ok {
+				if mpVal, found := heaterMap["mp"]; found {
+					if mpFloat, isFloat := mpVal.(float64); isFloat {
+						return mpFloat
+					}
+				}
+			}
+		}
+	}
+	return 0
+}
+
+func updateHeaterPersistence(heaterIdx int, newValue float64) {
+	// 1. Fetch current config
+	configJSON, err := serial.SendCommand(`{"get":"config"}`, false, 0)
+	if err != nil {
+		logger.Warn("Persistence: Could not get firmware config: %v", err)
+		return
+	}
+
+	// 2. Parse into a map structure to preserve all other fields
+	var fullConfig map[string]interface{}
+	if err := json.Unmarshal([]byte(configJSON), &fullConfig); err != nil {
+		logger.Warn("Persistence: Could not parse firmware config: %v", err)
+		return
+	}
+
+	// 3. Locate and update the target heater's manual power setting
+	// Structure: "dh": [ { "m": 0, "mp": 25, ... }, ... ]
+	updated := false
+	if dhRaw, ok := fullConfig["dh"]; ok {
+		if dhArray, ok := dhRaw.([]interface{}); ok && heaterIdx < len(dhArray) {
+			if heaterMap, ok := dhArray[heaterIdx].(map[string]interface{}); ok {
+				oldMP := heaterMap["mp"]
+				heaterMap["mp"] = newValue
+				dhArray[heaterIdx] = heaterMap // Re-assign modified map to array
+				fullConfig["dh"] = dhArray     // Re-assign modified array to root
+				updated = true
+				logger.Info("Persistence: Updated Heater %d Manual Power (mp) from %v to %.0f", heaterIdx+1, oldMP, newValue)
+			}
+		}
+	}
+
+	if !updated {
+		logger.Warn("Persistence: Failed to locate 'dh' structure or heater index %d in config.", heaterIdx)
+		return
+	}
+
+	// 4. Send the updated configuration back to the device
+	// The device expects {"sc": { ...config... }}
+	updatedConfigBytes, err := json.Marshal(fullConfig)
+	if err != nil {
+		logger.Warn("Persistence: Failed to marshal updated config: %v", err)
+		return
+	}
+
+	setConfigCommand := fmt.Sprintf(`{"sc":%s}`, string(updatedConfigBytes))
+	_, err = serial.SendCommand(setConfigCommand, true, 0)
+	if err != nil {
+		logger.Error("Persistence: Failed to write updated config to device: %v", err)
+	} else {
+		logger.Info("Persistence: Successfully saved manual power setting to firmware.")
+	}
 }
 
 func (a *API) HandleSwitchSetSwitchName(w http.ResponseWriter, r *http.Request) {
