@@ -578,32 +578,11 @@ func (a *API) HandleSwitchSetSwitchValue(w http.ResponseWriter, r *http.Request)
 				// Restore-on-Toggle Logic:
 				if state {
 					// Turning ON (state=true) in Manual (or Unknown) Mode
-					// 1. Try to restore from Proxy's local persistent storage (best for user preference)
-					conf := config.Get()
-					config.SwitchMapMutex.RLock()
-					savedVal, found := conf.SavedHeaterValues[heaterIdx]
-					config.SwitchMapMutex.RUnlock()
-
-					// 2. If not found locally, try firmware config (fallback)
-					if !found || savedVal <= 0 {
-						savedVal = getSavedManualPower(heaterIdx)
-					}
-
-					// 3. Apply
-					if savedVal > 0 {
-						command = fmt.Sprintf(`{"set":{"%s":%.0f}}`, shortKey, savedVal)
-						logger.Info("Toggle ON (Manual/Recovery): Restoring saved power %.0f%% for %s", savedVal, shortKey)
-					} else {
-						// Fallback: Enable with 0 or min (sending true might result in 0 anyway)
-						command = fmt.Sprintf(`{"set":{"%s":%t}}`, shortKey, state) // Logic "true"
-						logger.Warn("Toggle ON (Manual/Recovery): No saved power found, sending simple enable for %s", shortKey)
-					}
+					// Use Smart Restore Helper
+					command = restorePowerState(shortKey, heaterIdx, state)
 				} else {
 					// Turning OFF
-					// CRITICAL: We must send 0 to ensure it turns off, as boolean "false" is often ignored by firmware for PWM.
-					// However, sending 0 overwrites the firmware's "mp" register to 0.
-					// This is why we need the Proxy-side storage (SavedHeaterValues) to remember the non-zero value.
-					// We do NOT update the saved value here.
+					// CRITICAL: We must send 0 to ensure it turns off.
 					command = fmt.Sprintf(`{"set":{"%s":0}}`, shortKey)
 				}
 			}
@@ -628,12 +607,31 @@ func (a *API) HandleSwitchSetSwitchValue(w http.ResponseWriter, r *http.Request)
 				command = fmt.Sprintf(`{"set":{"%s":%t}}`, shortKey, state)
 			}
 		} else if longKey == "master_power" {
-			// Master Power "all" command usually expects 0/1 in some firmware versions, matching Action handler
-			stateInt := 0
+			// Master Power Handling:
+			// If turning ON, we must intelligently restore PWM values to > 0 to prevent NINA timeouts.
 			if state {
-				stateInt = 1
+				logger.Info("Master Power ON: Triggering Smart Restore for PWM heaters...")
+
+				// Global Enable first (synchronous)
+				serial.SendCommand(`{"set":{"all":1}}`, true, 0)
+
+				// Now force-restore values for PWM heaters using smart restore logic
+				// We don't need to check errors here, we just fire and forget
+				cmd1 := restorePowerState("pwm1", 0, true)
+				serial.SendCommand(cmd1, true, 0)
+
+				cmd2 := restorePowerState("pwm2", 1, true)
+				serial.SendCommand(cmd2, true, 0)
+
+				// Respond success immediately (the commands are queued)
+				w.WriteHeader(http.StatusOK)
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, `{"status":"Master Power ON sequence initiated"}`)
+				return
+			} else {
+				// Turning OFF -> Standard all:0
+				command = `{"set":{"all":0}}`
 			}
-			command = fmt.Sprintf(`{"set":{"%s":%d}}`, shortKey, stateInt)
 		} else {
 			// Use "true"/"false" for bool to avoid ambiguity with "1"=1V in firmware
 			command = fmt.Sprintf(`{"set":{"%s":%t}}`, shortKey, state)
@@ -653,57 +651,23 @@ func (a *API) HandleSwitchSetSwitchValue(w http.ResponseWriter, r *http.Request)
 		serial.VoltageMutex.Unlock()
 	}
 
-	// Parse response which can contain mixed types ("status" object and "dm" array)
-	var rootData map[string]interface{}
-	if json.Unmarshal([]byte(responseJSON), &rootData) == nil {
-		if statusMap, ok := rootData["status"].(map[string]interface{}); ok {
-			serial.Status.Lock()
-
-			// Inject "dm" (Dew Mode) array into the status map so handlers can find it easily
-			if dmVal, found := rootData["dm"]; found {
-				statusMap["dm"] = dmVal
-			} else {
-				// If not found in response (e.g. from SET command), preserve existing DM from cache
-				// We must do this before overwriting serial.Status.Data
-				// ALREADY LOCKED via serial.Status.Lock() above, so we can access directly.
-				if existingDM, exists := serial.Status.Data["dm"]; exists {
-					statusMap["dm"] = existingDM
-				}
-			}
-
-			serial.Status.Data = statusMap
-			serial.Status.Unlock()
-		} else {
-			logger.Warn("Status JSON missing 'status' object after set command.")
-		}
-	} else {
-		logger.Warn("Failed to unmarshal status JSON from device after set command. Raw data: %s", responseJSON)
-	}
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprint(w, responseJSON)
 
 	// Handle auto-enable/disable logic in a goroutine
 	go handleHeaterInteractions(id, state)
 
-	// Persistence fix: If we just set a specific PWM value in Manual Mode
-	if sendManualPWMCommand && heaterIdx >= 0 {
-		if valueStr, ok := GetFormValueIgnoreCase(r, "Value"); ok {
-			// user explicitly set a value
-			valueStr = strings.Replace(valueStr, ",", ".", -1)
-			if newVal, err := strconv.ParseFloat(valueStr, 64); err == nil {
-				// 1. Update Proxy Config (Primary Store)
-				conf := config.Get()
-				config.SwitchMapMutex.Lock()
-				conf.SavedHeaterValues[heaterIdx] = newVal
-				config.SwitchMapMutex.Unlock()
-				go config.Save()
+}
 
-				// 2. Update Firmware Config (Backup/Boot Persistence)
-				// We still do this so if the proxy isn't running, the device remembers.
-				go updateHeaterPersistence(heaterIdx, newVal)
-			}
-		}
-	}
+// restorePowerState determines the best command to enable a heater with a valid (>0) value.
+// restorePowerState determines the best command to enable a heater using the firmware configuration (mp).
+func restorePowerState(shortKey string, heaterIdx int, state bool) string {
+	// Simple Logic: Always use the firmware's configured "Manual Power" (mp) setting.
+	// This matches the simplified user requirement: On = Set to Configured Value.
+	savedVal := getSavedManualPower(heaterIdx)
 
-	EmptyResponse(w, r)
+	logger.Info("Smart Restore (%s): Restoring power to %.0f%% (Firmware Config).", shortKey, savedVal)
+	return fmt.Sprintf(`{"set":{"%s":%.0f}}`, shortKey, savedVal)
 }
 
 func getSavedManualPower(heaterIdx int) float64 {

@@ -11,22 +11,22 @@ import (
 
 // ProxyConfig stores configuration specific to the Go proxy itself.
 type ProxyConfig struct {
-	SerialPortName             string            `json:"serialPortName"`
-	AutoDetectPort             bool              `json:"autoDetectPort"`
-	NetworkPort                int               `json:"networkPort"`
-	ListenAddress              string            `json:"listenAddress"`
-	LogLevel                   string            `json:"logLevel"`
-	SwitchNames                map[string]string `json:"switchNames"`
-	HeaterAutoEnableLeader     map[string]bool   `json:"heaterAutoEnableLeader"`
-	SavedHeaterValues          map[int]float64   `json:"savedHeaterValues"` // Map of Heater Index (0-based) to Last Manual Power Value
-	HistoryRetentionNights     int               `json:"historyRetentionNights"`
-	TelemetryInterval          int               `json:"telemetryInterval"`          // Seconds
-	EnableAlpacaVoltageControl bool              `json:"enableAlpacaVoltageControl"` // Allow voltage control via Alpaca
-	EnableMasterPower          bool              `json:"enableMasterPower"`          // Show Master Power switch
-	EnableNotifications        bool              `json:"enableNotifications"`        // Show Windows toast notifications
-	AlwaysShowLensTemp         bool              `json:"alwaysShowLensTemp"`         // Always expose Lens Temp switch regardless of PID mode
-	LensTempName               string            `json:"lensTempName"`               // Custom name for Lens Temp sensor check
-	FirstRunComplete           bool              `json:"firstRunComplete"`           // Onboarding wizard completed
+	SerialPortName         string            `json:"serialPortName"`
+	AutoDetectPort         bool              `json:"autoDetectPort"`
+	NetworkPort            int               `json:"networkPort"`
+	ListenAddress          string            `json:"listenAddress"`
+	LogLevel               string            `json:"logLevel"`
+	SwitchNames            map[string]string `json:"switchNames"`
+	HeaterAutoEnableLeader map[string]bool   `json:"heaterAutoEnableLeader"`
+
+	HistoryRetentionNights     int    `json:"historyRetentionNights"`
+	TelemetryInterval          int    `json:"telemetryInterval"`          // Seconds
+	EnableAlpacaVoltageControl bool   `json:"enableAlpacaVoltageControl"` // Allow voltage control via Alpaca
+	EnableMasterPower          bool   `json:"enableMasterPower"`          // Show Master Power switch
+	EnableNotifications        bool   `json:"enableNotifications"`        // Show Windows toast notifications
+	AlwaysShowLensTemp         bool   `json:"alwaysShowLensTemp"`         // Always expose Lens Temp switch regardless of PID mode
+	LensTempName               string `json:"lensTempName"`               // Custom name for Lens Temp sensor check
+	FirstRunComplete           bool   `json:"firstRunComplete"`           // Onboarding wizard completed
 }
 
 // CombinedConfig defines the structure for a full backup file.
@@ -156,7 +156,7 @@ func Load() error {
 				HistoryRetentionNights: 10,   // Default to 10 nights
 				TelemetryInterval:      10,   // Default to 10 seconds
 				EnableNotifications:    true, // Default to notifications enabled
-				SavedHeaterValues:      make(map[int]float64),
+
 			}
 			for _, internalName := range SwitchIDMap {
 				proxyConfig.SwitchNames[internalName] = internalName
@@ -207,9 +207,7 @@ func Load() error {
 		logger.Warn("Missing auto-enable setting for 'pwm2', adding with default 'true'.")
 		proxyConfig.HeaterAutoEnableLeader["pwm2"] = true
 	}
-	if proxyConfig.SavedHeaterValues == nil {
-		proxyConfig.SavedHeaterValues = make(map[int]float64)
-	}
+
 	// Defaults for new fields
 	if proxyConfig.HistoryRetentionNights == 0 {
 		proxyConfig.HistoryRetentionNights = 10

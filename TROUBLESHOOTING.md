@@ -62,6 +62,13 @@ When trying to switch ON the Adjustable Voltage port (e.g., from NINA), the oper
 *   **Cause:** If `EnableAlpacaVoltageControl` is disabled (default), the proxy acts as a simple switch. If the port was previously set to **0V**, switching it "ON" keeps it at 0V. The ASCOM client expects to see the port turn "ON" (Voltage > 1V), but since it stays at 0V, the client reports a timeout.
 *   **Solution:** Configure a startup voltage > 0V for the Adjustable Output (via the Web Interface), or enable `EnableAlpacaVoltageControl` to set the voltage directly via ASCOM.
 
+### Master Power Switch Timeout
+If using the "Master Power" switch to turn on all devices, NINA may report a timeout if a heater is configured to 0%.
+
+*   **Symptom:** You turn on "Master Power", but it switches back off after a few seconds, or NINA shows an error.
+*   **Cause:** The Master Switch relies on the "Manual Power" configuration of the heaters. If a heater is configured to **0%** (Off), the Master Switch will turn it "On" to 0% power. Since the power output remains at 0, NINA (expecting a value > 0 for "On") thinks the command failed.
+*   **Solution:** Ensure that you have configured a valid power level (e.g., 10%) in the `Manaual Power` settings *before* using the Master Switch. The Master Switch simply restores this configured value.
+
 ---
 
 ## Firmware Issues
