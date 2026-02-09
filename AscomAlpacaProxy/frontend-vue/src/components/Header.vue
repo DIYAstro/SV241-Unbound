@@ -52,11 +52,10 @@ const handleThemeChange = (event) => {
 .theme-selector {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    background: rgba(0, 0, 0, 0.3);
-    padding: 0.5rem 0.75rem;
-    border-radius: 50px;
-    border: 1px solid var(--surface-border);
+    gap: 0.75rem;
+    padding: 0;
+    background: transparent;
+    border: none;
 }
 
 .theme-label {
@@ -76,29 +75,22 @@ const handleThemeChange = (event) => {
 }
 
 .theme-select {
-    background: transparent;
-    border: none;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--surface-border);
     color: var(--text-primary);
     font-size: 0.9rem;
     cursor: pointer;
     outline: none;
-    padding: 0;
+    padding: 0.4rem 0.6rem;
+    border-radius: var(--radius-sm);
     font-family: inherit;
     font-weight: 500;
+    color-scheme: dark;
+    transition: all 0.3s ease;
 }
 
-.theme-select option {
-    background-color: #1a1a2e;
-    color: #fff;
-}
-
-[data-theme="dark"] .theme-select option {
-    background-color: #0d0d0d;
-    color: #e1e1e1;
-}
-
-[data-theme="red"] .theme-select option {
-    background-color: #1a0505;
-    color: #ffcccc;
+.theme-select:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.2);
 }
 </style>
