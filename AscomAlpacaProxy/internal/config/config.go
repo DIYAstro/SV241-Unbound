@@ -27,6 +27,14 @@ type ProxyConfig struct {
 	AlwaysShowLensTemp         bool   `json:"alwaysShowLensTemp"`         // Always expose Lens Temp switch regardless of PID mode
 	LensTempName               string `json:"lensTempName"`               // Custom name for Lens Temp sensor check
 	FirstRunComplete           bool   `json:"firstRunComplete"`           // Onboarding wizard completed
+
+	// Weather Service (Open-Meteo)
+	EnableWeatherService  bool              `json:"enableWeatherService"`
+	WeatherLatitude       float64           `json:"weatherLatitude"`
+	WeatherLongitude      float64           `json:"weatherLongitude"`
+	WeatherModel          string            `json:"weatherModel"`          // best_match, icon_seamless, etc.
+	WeatherInterval       int               `json:"weatherInterval"`       // Minutes
+	WeatherSourcePriority map[string]string `json:"weatherSourcePriority"` // metric -> hardware|internet|hybrid
 }
 
 // CombinedConfig defines the structure for a full backup file.
@@ -156,7 +164,9 @@ func Load() error {
 				HistoryRetentionNights: 10,   // Default to 10 nights
 				TelemetryInterval:      10,   // Default to 10 seconds
 				EnableNotifications:    true, // Default to notifications enabled
-
+				WeatherInterval:        5,    // Default to 5 minutes
+				WeatherModel:           "best_match",
+				WeatherSourcePriority:  make(map[string]string),
 			}
 			for _, internalName := range SwitchIDMap {
 				proxyConfig.SwitchNames[internalName] = internalName
@@ -206,6 +216,17 @@ func Load() error {
 	if _, exists := proxyConfig.HeaterAutoEnableLeader["pwm2"]; !exists {
 		logger.Warn("Missing auto-enable setting for 'pwm2', adding with default 'true'.")
 		proxyConfig.HeaterAutoEnableLeader["pwm2"] = true
+	}
+
+	// Weather Defaults
+	if proxyConfig.WeatherInterval < 1 {
+		proxyConfig.WeatherInterval = 5
+	}
+	if proxyConfig.WeatherModel == "" {
+		proxyConfig.WeatherModel = "best_match"
+	}
+	if proxyConfig.WeatherSourcePriority == nil {
+		proxyConfig.WeatherSourcePriority = make(map[string]string)
 	}
 
 	// Defaults for new fields

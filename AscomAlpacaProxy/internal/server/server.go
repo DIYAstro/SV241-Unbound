@@ -158,16 +158,16 @@ func setupAlpacaDeviceRoutes(api *alpaca.API) {
 		"sensordescription":   api.HandleObsCondSensorDescription,
 		"timesincelastupdate": api.HandleObsCondTimeSinceLastUpdate,
 		"refresh":             api.HandleObsCondRefresh,
-		"cloudcover":          api.HandleObsCondNotImplemented,
-		"pressure":            api.HandleObsCondNotImplemented,
-		"rainrate":            api.HandleObsCondNotImplemented,
+		"cloudcover":          api.HandleObsCondCloudCover,
+		"pressure":            api.HandleObsCondPressure,
+		"rainrate":            api.HandleObsCondRainRate,
 		"skybrightness":       api.HandleObsCondNotImplemented,
 		"skyquality":          api.HandleObsCondNotImplemented,
 		"skytemperature":      api.HandleObsCondNotImplemented,
 		"starfwhm":            api.HandleObsCondNotImplemented,
-		"winddirection":       api.HandleObsCondNotImplemented,
-		"windgust":            api.HandleObsCondNotImplemented,
-		"windspeed":           api.HandleObsCondNotImplemented,
+		"winddirection":       api.HandleObsCondWindDirection,
+		"windgust":            api.HandleObsCondWindGust,
+		"windspeed":           api.HandleObsCondWindSpeed,
 	}
 	for k, v := range commonHandlers {
 		obsCondHandlers[k] = v

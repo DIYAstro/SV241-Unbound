@@ -10,6 +10,8 @@ import (
 	"sv241pro-alpaca-proxy/internal/config"
 	"sv241pro-alpaca-proxy/internal/logger"
 	"sv241pro-alpaca-proxy/internal/serial"
+	"sv241pro-alpaca-proxy/internal/weather"
+	"time"
 )
 
 // --- Management Handlers ---
@@ -933,44 +935,74 @@ func (a *API) HandleSwitchAction(w http.ResponseWriter, r *http.Request) {
 // --- ObservingConditions Handlers ---
 
 func (a *API) HandleObsCondTemperature(w http.ResponseWriter, r *http.Request) {
-	serial.Conditions.RLock()
-	defer serial.Conditions.RUnlock()
-	if val, ok := serial.Conditions.Data["t_amb"]; ok && val != nil {
-		if floatVal, isFloat := val.(float64); isFloat {
-			FloatResponse(w, r, floatVal)
-		} else {
-			ErrorResponse(w, r, http.StatusOK, 0x401, "Invalid data type for temperature in cache.")
-		}
+	if val, err := a.getWeatherValue("temperature", "t_amb"); err == nil {
+		FloatResponse(w, r, val)
 	} else {
-		ErrorResponse(w, r, http.StatusOK, 0x401, "Sensor not available or failed to read.")
+		ErrorResponse(w, r, http.StatusOK, 0x40C, err.Error())
 	}
 }
 
 func (a *API) HandleObsCondHumidity(w http.ResponseWriter, r *http.Request) {
-	serial.Conditions.RLock()
-	defer serial.Conditions.RUnlock()
-	if val, ok := serial.Conditions.Data["h_amb"]; ok && val != nil {
-		if floatVal, isFloat := val.(float64); isFloat {
-			FloatResponse(w, r, floatVal)
-		} else {
-			ErrorResponse(w, r, http.StatusOK, 0x401, "Invalid data type for humidity in cache.")
-		}
+	if val, err := a.getWeatherValue("humidity", "h_amb"); err == nil {
+		FloatResponse(w, r, val)
 	} else {
-		ErrorResponse(w, r, http.StatusOK, 0x401, "Sensor not available or failed to read.")
+		ErrorResponse(w, r, http.StatusOK, 0x40C, err.Error())
 	}
 }
 
 func (a *API) HandleObsCondDewPoint(w http.ResponseWriter, r *http.Request) {
-	serial.Conditions.RLock()
-	defer serial.Conditions.RUnlock()
-	if val, ok := serial.Conditions.Data["d"]; ok && val != nil {
-		if floatVal, isFloat := val.(float64); isFloat {
-			FloatResponse(w, r, floatVal)
-		} else {
-			ErrorResponse(w, r, http.StatusOK, 0x401, "Invalid data type for dew point in cache.")
-		}
+	if val, err := a.getWeatherValue("dewpoint", "d"); err == nil {
+		FloatResponse(w, r, val)
 	} else {
-		ErrorResponse(w, r, http.StatusOK, 0x401, "Sensor not available or failed to read.")
+		ErrorResponse(w, r, http.StatusOK, 0x40C, err.Error())
+	}
+}
+
+func (a *API) HandleObsCondPressure(w http.ResponseWriter, r *http.Request) {
+	if val, err := a.getWeatherValue("pressure", "p"); err == nil {
+		FloatResponse(w, r, val)
+	} else {
+		ErrorResponse(w, r, http.StatusOK, 0x40C, err.Error())
+	}
+}
+
+func (a *API) HandleObsCondWindSpeed(w http.ResponseWriter, r *http.Request) {
+	if val, err := a.getWeatherValue("windspeed", ""); err == nil {
+		FloatResponse(w, r, val)
+	} else {
+		ErrorResponse(w, r, http.StatusOK, 0x40C, err.Error())
+	}
+}
+
+func (a *API) HandleObsCondWindDirection(w http.ResponseWriter, r *http.Request) {
+	if val, err := a.getWeatherValue("winddirection", ""); err == nil {
+		FloatResponse(w, r, val)
+	} else {
+		ErrorResponse(w, r, http.StatusOK, 0x40C, err.Error())
+	}
+}
+
+func (a *API) HandleObsCondWindGust(w http.ResponseWriter, r *http.Request) {
+	if val, err := a.getWeatherValue("windgust", ""); err == nil {
+		FloatResponse(w, r, val)
+	} else {
+		ErrorResponse(w, r, http.StatusOK, 0x40C, err.Error())
+	}
+}
+
+func (a *API) HandleObsCondCloudCover(w http.ResponseWriter, r *http.Request) {
+	if val, err := a.getWeatherValue("cloudcover", ""); err == nil {
+		FloatResponse(w, r, val)
+	} else {
+		ErrorResponse(w, r, http.StatusOK, 0x40C, err.Error())
+	}
+}
+
+func (a *API) HandleObsCondRainRate(w http.ResponseWriter, r *http.Request) {
+	if val, err := a.getWeatherValue("rainrate", ""); err == nil {
+		FloatResponse(w, r, val)
+	} else {
+		ErrorResponse(w, r, http.StatusOK, 0x40C, err.Error())
 	}
 }
 
@@ -1038,6 +1070,66 @@ func (a *API) HandleObsCondRefresh(w http.ResponseWriter, r *http.Request) {
 }
 
 // --- Helper Logic ---
+
+func (a *API) getWeatherValue(metric string, hwKey string) (float64, error) {
+	conf := config.Get()
+	priority := conf.WeatherSourcePriority[metric]
+	if priority == "" {
+		priority = "hybrid" // Default to hybrid for all
+	}
+
+	// 1. Try Hardware if priority is 'hybrid' or 'hardware'
+	if priority == "hybrid" || priority == "hardware" {
+		if hwKey != "" {
+			serial.Conditions.RLock()
+			val, ok := serial.Conditions.Data[hwKey]
+			serial.Conditions.RUnlock()
+			if ok && val != nil {
+				if floatVal, isFloat := val.(float64); isFloat {
+					return floatVal, nil
+				}
+			}
+		}
+		// If hardware-only or if hardware failed but it's hardware priority
+		if priority == "hardware" {
+			return 0, fmt.Errorf("property not implemented (hardware sensor missing)")
+		}
+	}
+
+	// 2. Try Internet (Open-Meteo) if priority is 'hybrid' or 'internet'
+	if priority == "hybrid" || priority == "internet" {
+		if !conf.EnableWeatherService {
+			return 0, fmt.Errorf("property not implemented (weather service disabled)")
+		}
+
+		data := weather.GetService().GetData()
+		// Cache validity check: Double the interval as grace period
+		if data != nil && time.Since(data.Timestamp) < time.Duration(conf.WeatherInterval*2+1)*time.Minute {
+			switch metric {
+			case "temperature":
+				return data.Temperature, nil
+			case "humidity":
+				return data.Humidity, nil
+			case "dewpoint":
+				return data.DewPoint, nil
+			case "pressure":
+				return data.Pressure, nil
+			case "windspeed":
+				return data.WindSpeed, nil
+			case "winddirection":
+				return data.WindDir, nil
+			case "windgust":
+				return data.WindGust, nil
+			case "cloudcover":
+				return data.CloudCover, nil
+			case "rainrate":
+				return data.Precipitation, nil
+			}
+		}
+	}
+
+	return 0, fmt.Errorf("property not implemented (data not available)")
+}
 
 func handleHeaterInteractions(id int, state bool) {
 	// This logic checks for heater inter-dependencies (PID leader/follower).

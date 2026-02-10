@@ -11,6 +11,7 @@ import (
 	"sv241pro-alpaca-proxy/internal/serial"
 	"sv241pro-alpaca-proxy/internal/server"
 	"sv241pro-alpaca-proxy/internal/systray"
+	"sv241pro-alpaca-proxy/internal/weather"
 )
 
 //go:embed icon.ico
@@ -73,7 +74,10 @@ func startApp() {
 	// Fetch firmware version in the background after initialization is complete.
 	go serial.FetchFirmwareVersion()
 
-	// 6. Start the web server. This is a blocking call and will run for the
+	// 6. Start the weather service poller.
+	weather.GetService().Start()
+
+	// 7. Start the web server. This is a blocking call and will run for the
 	// lifetime of the application, so it must be last.
 	server.Start(frontendFS, AppVersion)
 }
