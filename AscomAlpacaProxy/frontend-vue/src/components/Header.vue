@@ -52,10 +52,23 @@ const handleThemeChange = (event) => {
 .theme-selector {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0;
-    background: transparent;
-    border: none;
+    gap: 0.5rem;
+    background: var(--surface-color);
+    padding: 0.5rem 0.75rem;
+    border-radius: 50px;
+    border: 1px solid var(--surface-border);
+    transition: all 0.3s ease;
+}
+
+.theme-selector:hover {
+    background: var(--surface-hover);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.theme-selector:focus-within {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(0, 210, 255, 0.2);
+    background: rgba(255, 255, 255, 0.1);
 }
 
 .theme-label {
@@ -75,22 +88,16 @@ const handleThemeChange = (event) => {
 }
 
 .theme-select {
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid var(--surface-border);
+    background: rgba(255, 255, 255, 0.01); /* Nearly invisible, for Firefox color-scheme support */
+    border: none;
     color: var(--text-primary);
     font-size: 0.9rem;
     cursor: pointer;
     outline: none;
-    padding: 0.4rem 0.6rem;
-    border-radius: var(--radius-sm);
+    padding: 0;
     font-family: inherit;
     font-weight: 500;
     color-scheme: dark;
-    transition: all 0.3s ease;
-}
-
-.theme-select:hover {
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.2);
+    box-shadow: none !important; /* Disable individual focus shadow */
 }
 </style>
