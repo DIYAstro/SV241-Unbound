@@ -32,7 +32,8 @@ type StatusCache struct {
 
 // ConditionsCache stores the latest sensor readings from the device.
 type ConditionsCache struct {
-	Data map[string]interface{}
+	Data       map[string]interface{}
+	LastUpdate time.Time
 	*sync.RWMutex
 }
 
@@ -611,6 +612,7 @@ func updateConditionsCacheFromJSON(conditionsJSON string) {
 		Conditions.Lock()
 		defer Conditions.Unlock()
 		Conditions.Data = conditionsData
+		Conditions.LastUpdate = time.Now()
 		logMemoryStatus(conditionsData)
 		logger.Debug("Successfully updated conditions cache.")
 	} else {

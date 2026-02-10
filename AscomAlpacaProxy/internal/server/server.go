@@ -37,7 +37,24 @@ func Start(frontendFS fs.FS, appVersion string) {
 	// Initialize CSV Telemetry Logger
 	telemetry.Init()
 
-	if err := http.Serve(listener, nil); err != nil {
+	// Global HTTP handler with route normalization and logging
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Log incoming requests at Debug level
+		logger.Debug("Global HTTP: %s %s (from %s)", r.Method, r.URL.Path, r.RemoteAddr)
+
+		// Normalize Alpaca/Management paths to lowercase for case-insensitive routing
+		lowered := strings.ToLower(r.URL.Path)
+		if strings.HasPrefix(lowered, "/api/v1/") ||
+			strings.HasPrefix(lowered, "/management/v1/") ||
+			strings.HasPrefix(lowered, "/setup/v1/") ||
+			strings.HasPrefix(lowered, "/management/apiversions") {
+
+			r.URL.Path = lowered
+		}
+		http.DefaultServeMux.ServeHTTP(w, r)
+	})
+
+	if err := http.Serve(listener, handler); err != nil {
 		logger.Fatal("HTTP server failed: %v", err)
 	}
 }
@@ -161,6 +178,8 @@ func setupAlpacaDeviceRoutes(api *alpaca.API) {
 		"cloudcover":          api.HandleObsCondCloudCover,
 		"pressure":            api.HandleObsCondPressure,
 		"rainrate":            api.HandleObsCondRainRate,
+		"latestupdatetime":    api.HandleObsCondLatestUpdateTime,
+		"latestupdate":        api.HandleObsCondLatestUpdateTime, // Alias
 		"skybrightness":       api.HandleObsCondNotImplemented,
 		"skyquality":          api.HandleObsCondNotImplemented,
 		"skytemperature":      api.HandleObsCondNotImplemented,
@@ -185,11 +204,13 @@ func deviceMux(handlers map[string]http.HandlerFunc, api *alpaca.API) http.Handl
 			return
 		}
 		method := strings.ToLower(path[lastSlash+1:])
+		logger.Debug("Alpaca DeviceMux: Routing method '%s' (Path: %s)", method, r.URL.Path)
 
 		if handler, ok := handlers[method]; ok {
 			handler(w, r)
 		} else {
-			alpaca.ErrorResponse(w, r, http.StatusNotFound, 0x404, fmt.Sprintf("Method '%s' not found on this device.", method))
+			logger.Warn("Alpaca DeviceMux: Method '%s' not found on this device (Path: %s)", method, r.URL.Path)
+			alpaca.ErrorResponse(w, r, http.StatusNotFound, 0x40C, fmt.Sprintf("Method '%s' not found on this device.", method))
 		}
 	}
 }
