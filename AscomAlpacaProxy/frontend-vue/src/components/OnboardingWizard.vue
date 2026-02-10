@@ -104,7 +104,7 @@ async function completeOnboarding() {
 
 <template>
   <div v-if="showModal" class="modal-overlay">
-      <div class="onboarding-modal glass-panel">
+      <div class="onboarding-modal modal-content">
           <h2>Welcome to SV241-Unbound</h2>
           <p class="subtitle">Let's get your device set up</p>
           
@@ -126,21 +126,7 @@ async function completeOnboarding() {
 </template>
 
 <style scoped>
-.modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.7);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 1000;
-}
-
 .onboarding-modal {
-    padding: 2.5rem;
     max-width: 500px;
     width: 90%;
     text-align: center;
@@ -148,10 +134,7 @@ async function completeOnboarding() {
 
 .onboarding-modal h2 {
     margin: 0 0 0.5rem 0;
-    background: linear-gradient(90deg, #fff, var(--primary-color));
-    background-clip: text;
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: var(--primary-color);
 }
 
 .subtitle {

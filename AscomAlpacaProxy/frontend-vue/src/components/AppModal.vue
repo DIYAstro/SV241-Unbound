@@ -17,7 +17,7 @@ function handleButtonClick(button) {
 <template>
     <Teleport to="body">
         <div v-if="isVisible" class="modal-overlay" @click.self="modalStore.close">
-            <div class="modal-content glass-panel">
+            <div class="modal-content">
                 <div class="modal-header">
                     <span v-if="modalConfig.icon" class="modal-icon">{{ modalConfig.icon }}</span>
                     <h3>{{ modalConfig.title }}</h3>
@@ -42,23 +42,12 @@ function handleButtonClick(button) {
 
 <style scoped>
 .modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.7);
-    display: flex;
-    justify-content: center;
-    align-items: center;
     z-index: 9999;
-    backdrop-filter: blur(4px);
 }
 
 .modal-content {
     min-width: 350px;
     max-width: 500px;
-    padding: 1.5rem;
     text-align: center;
     animation: modalSlideIn 0.2s ease-out;
 }
