@@ -47,7 +47,40 @@
             --info-bg: rgba(0, 210, 255, 0.1);
             --font-main: 'Outfit', sans-serif;
             --radius-lg: 16px;
+            --radius-sm: 8px;
             --shadow-soft: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        /* Red Theme Overrides */
+        [data-theme="red"] {
+            --bg-color-start: #000000;
+            --bg-color-mid: #0a0000;
+            --bg-color-end: #000000;
+            --surface-color: rgba(139, 0, 0, 0.08);
+            --surface-border: rgba(139, 0, 0, 0.2);
+            --primary-color: #a62828;
+            --primary-glow: rgba(166, 40, 40, 0.3);
+            --text-primary: #dd9999;
+            --text-secondary: #bb6666;
+            --success-color: #cc5555;
+            --danger-color: #991010;
+            --warning-bg: rgba(153, 16, 16, 0.1);
+            --info-bg: rgba(166, 40, 40, 0.1);
+        }
+
+        /* Dark Theme Overrides */
+        [data-theme="dark"] {
+            --bg-color-start: #0a0a0a;
+            --bg-color-mid: #0f0f0f;
+            --bg-color-end: #0a0a0a;
+            --surface-color: rgba(255, 255, 255, 0.03);
+            --surface-border: rgba(255, 255, 255, 0.08);
+            --primary-color: #3d7ab8;
+            --primary-glow: rgba(61, 122, 184, 0.25);
+            --text-primary: #e1e1e1;
+            --text-secondary: #a0a0a0;
+            --success-color: #3d8a7a;
+            --danger-color: #cf6679;
         }
 
         body {
@@ -61,6 +94,7 @@
             margin: 0;
             color: var(--text-primary);
             text-align: center;
+            transition: background 0.5s ease;
         }
 
         .container {
@@ -72,6 +106,7 @@
             box-shadow: var(--shadow-soft);
             max-width: 550px;
             width: 90%;
+            transition: all 0.3s ease;
         }
 
         h1 {
@@ -82,6 +117,14 @@
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             margin-bottom: 0.5rem;
+        }
+
+        /* Simplified title logic for non-gradient support/Red theme */
+        [data-theme="red"] h1,
+        [data-theme="dark"] h1 {
+            background: none;
+            -webkit-text-fill-color: var(--primary-color);
+            color: var(--primary-color);
         }
 
         p {
@@ -119,6 +162,7 @@
             padding: 1rem;
             background: rgba(0, 0, 0, 0.2);
             border-radius: 8px;
+            border: 1px solid var(--surface-border);
         }
 
         .version-item {
@@ -146,6 +190,11 @@
 
         esp-web-install-button {
             --esp-tools-button-color: var(--primary-color);
+            --esp-tools-button-text-color: #000;
+        }
+
+        /* Special case for dark primary button text */
+        [data-theme="default"] esp-web-install-button {
             --esp-tools-button-text-color: #0f0c29;
         }
 
@@ -161,52 +210,54 @@
             margin-top: 1.5rem;
             color: var(--primary-color);
             text-decoration: none;
+            font-weight: 500;
         }
 
         .back-link:hover {
             text-decoration: underline;
         }
 
-        #release-btn {
-            background: transparent;
-            border: 1px solid var(--primary-color);
-            color: var(--primary-color);
-            padding: 0.5rem 1rem;
-            border-radius: 4px;
+        .btn-primary {
+            width: 100%;
+            background: var(--primary-color);
+            color: #000;
+            border: none;
+            padding: 0.75rem 1rem;
+            border-radius: var(--radius-sm);
             cursor: pointer;
-            margin-bottom: 1rem;
+            font-weight: 600;
+            font-size: 1rem;
             font-family: var(--font-main);
+            transition: transform 0.2s;
         }
 
-        #release-btn:hover {
-            background: rgba(0, 210, 255, 0.1);
+        [data-theme="default"] .btn-primary {
+            color: #0f0c29;
         }
 
-        #release-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        #resume-btn {
-            background: transparent;
-            border: 1px solid var(--success-color);
-            color: var(--success-color);
-            padding: 0.5rem 1rem;
-            border-radius: 4px;
-            cursor: pointer;
-            margin-bottom: 1rem;
-            font-family: var(--font-main);
-        }
-
-        #resume-btn:hover {
-            background: rgba(76, 175, 80, 0.1);
-        }
-
-        #resume-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            filter: brightness(1.1);
         }
     </style>
+
+    <script>
+        // Apply theme early to prevent flash of unstyled content
+        (function () {
+            try {
+                // Main app uses localStorage key 'theme' (via Pinia/useStorage)
+                const savedTheme = localStorage.getItem('theme');
+                if (savedTheme) {
+                    // Remove quotes if present (localStorage from JSON.stringify)
+                    const theme = savedTheme.replace(/^"(.*)"$/, '$1');
+                    document.documentElement.setAttribute('data-theme', theme);
+                }
+            } catch (e) {
+                console.error('Failed to apply theme', e);
+            }
+        })();
+    </script>
+
     <script type="module" src="/flasher/js/install-button.js"></script>
 </head>
 
@@ -236,8 +287,7 @@
         <div class="warning">
             <strong>⚠️ Warning:</strong> This process will erase all existing data and settings on your device.
             <br><br>
-            <button onclick="backupConfig()"
-                style="width: 100%; background: var(--primary-color); color: #000; border: none; padding: 0.75rem 1rem; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 1rem;">
+            <button onclick="backupConfig()" class="btn-primary">
                 💾 Backup Now
             </button>
         </div>
