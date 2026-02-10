@@ -34,7 +34,7 @@
 6. **Edit config file directly**  
    If the Setup page is not accessible, you can [manually configure the port](./AscomAlpacaProxy/readme.md#manual-configuration-proxy_configjson):
    1. Close the proxy completely
-   2. Navigate to `%APPDATA%\SV241-AscomAlpacaProxy`
+   2. Navigate to `%APPDATA%\SV241AlpacaProxy`
    3. Edit `proxy_config.json` and set:
       ```json
       "serialPortName": "COM3",
