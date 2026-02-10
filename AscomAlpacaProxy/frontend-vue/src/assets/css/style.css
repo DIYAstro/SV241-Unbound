@@ -2,7 +2,7 @@
     color-scheme: dark;
     /* Forces native controls (scrollbars, selects) to dark mode */
 
-    /* Color Palette - Deep Space Dark (Default Theme) */
+    /* Color Palette - Deep Space (Default Theme) */
     --bg-color-start: #0f0c29;
     --bg-color-mid: #302b63;
     --bg-color-end: #24243e;
@@ -37,11 +37,11 @@
     color-scheme: dark;
 }
 
-/* Red Theme - Night Vision Friendly */
+/* Night Vision Theme - Night Vision Friendly */
 [data-theme="red"] {
     color-scheme: dark;
 
-    /* Color Palette - Red Theme */
+    /* Color Palette - Night Vision Theme */
     /* Pure black with subtle red tints for night vision preservation */
     --bg-color-start: #000000;
     --bg-color-mid: #0a0000;
