@@ -103,19 +103,13 @@ onMounted(loadSettings)
     <!-- Main Service Toggle & Settings -->
     <div class="config-group">
       <div class="settings-header">
-        <div class="title-with-icon">
-          <span class="sensor-icon">☁️</span>
-          <h3>Open-Meteo Weather Service</h3>
-        </div>
-        <div class="toggle-switch">
+        <label class="header-toggle" for="enable-weather">
           <input type="checkbox" id="enable-weather" v-model="config.enableWeatherService">
-          <label for="enable-weather"></label>
-          <span class="toggle-label">{{ config.enableWeatherService ? 'Active' : 'Disabled' }}</span>
-        </div>
+          <h3>Open-Meteo Weather Service</h3>
+        </label>
       </div>
       <p class="description">
-        Automatically fill missing hardware metrics with professional meteorological data. 
-        Highly recommended for observatory safety systems (Wind/Cloud protection).
+        Fetch supplemental meteorological data from Open-Meteo to provide missing metrics for ASCOM Observing Conditions.
       </p>
 
       <div class="settings-grid" :class="{ disabled: !config.enableWeatherService }">
@@ -124,8 +118,16 @@ onMounted(loadSettings)
           <div class="coord-inputs">
             <input type="number" v-model.number="config.weatherLatitude" step="0.000001" placeholder="Latitude">
             <input type="number" v-model.number="config.weatherLongitude" step="0.000001" placeholder="Longitude">
-            <button @click="detectLocation" class="btn-secondary compact" title="Detect from Browser">📍 Detect</button>
+            <button @click="detectLocation" class="btn-secondary compact center-btn" title="Detect from Browser">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="btn-icon">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+              </svg>
+              Detect
+            </button>
           </div>
+          <span class="input-hint">Convention: Latitude (+N / -S) | Longitude (+E / -W)</span>
         </div>
 
         <div class="setting-item">
@@ -150,7 +152,6 @@ onMounted(loadSettings)
     <!-- Priority Matrix -->
     <div class="config-group" :class="{ disabled: !config.enableWeatherService }">
       <div class="title-with-icon">
-          <span class="sensor-icon">📊</span>
           <h3>Metric Data Sourcing</h3>
       </div>
       <p class="description">Choose how each ObservingCondition property should be sourced.</p>
@@ -182,9 +183,7 @@ onMounted(loadSettings)
       </div>
     </div>
 
-    <div class="save-footer">
-      <button @click="saveSettings" class="btn-primary large">Save Weather Configuration</button>
-    </div>
+    <button @click="saveSettings" class="btn-primary full-width-btn">Save Weather Configuration</button>
   </div>
 </template>
 
@@ -195,25 +194,21 @@ onMounted(loadSettings)
     gap: 1.5rem;
 }
 
-.settings-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.5rem;
-}
-
-.title-with-icon {
+.header-toggle {
     display: flex;
     align-items: center;
     gap: 0.75rem;
+    cursor: pointer;
 }
 
-.title-with-icon h3 {
+.header-toggle h3 {
     margin: 0;
 }
 
-.sensor-icon {
-    font-size: 1.25rem;
+.header-toggle input[type="checkbox"] {
+    width: 1.25rem;
+    height: 1.25rem;
+    accent-color: var(--primary-color);
 }
 
 .description {
@@ -254,6 +249,18 @@ onMounted(loadSettings)
 
 .coord-inputs input {
     flex: 1;
+}
+
+.btn-icon {
+    width: 1.1rem;
+    height: 1.1rem;
+}
+
+.center-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
 }
 
 .interval-input {
@@ -332,15 +339,9 @@ onMounted(loadSettings)
     font-weight: 500;
 }
 
-.save-footer {
-    display: flex;
-    justify-content: flex-end;
+.full-width-btn {
     margin-top: 1rem;
-}
-
-.large {
-    padding: 0.75rem 2rem;
-    font-size: 1rem;
+    width: 100%;
 }
 
 .animate-in {

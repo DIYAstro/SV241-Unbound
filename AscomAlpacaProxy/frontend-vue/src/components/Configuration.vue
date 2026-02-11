@@ -14,8 +14,8 @@ const tabs = [
     { id: 'tab-heaters', label: 'Dew Heaters', component: HeaterConfig },
     { id: 'tab-sensors', label: 'Sensors/Auto-Dry', component: SensorConfig },
     { id: 'tab-weather', label: 'Weather Service', component: WeatherConfig },
-    { id: 'tab-system', label: 'System', component: SystemSettings },
     { id: 'tab-proxy', label: 'Proxy', component: ProxySettings },
+    { id: 'tab-system', label: 'System', component: SystemSettings },
 ]
 
 const isCollapsed = ref(true) // Default to collapsed
