@@ -40,6 +40,7 @@ The project also includes a standalone ASCOM Alpaca proxy driver written in Go. 
 *   Provides a web-based setup page for configuration, including network settings.
 *   Manages the connection to the device automatically.
 *   Desktop notifications for device connection and disconnection events.
+*   **Hardware-Internet Hybrid Sourcing:** Integrated Open-Meteo weather service to supplement or fallback for environmental metrics (Wind, Clouds, etc.) when hardware sensors are missing or initializing.
 *   Helper scripts for easy, automated ASCOM driver creation.
 
 ## Important Security Notice
@@ -159,6 +160,16 @@ Fine-tune sensor readings:
 *   **Averaging:** Set the number of samples to average (reduces noise).
 *   **Intervals:** Configure sensor polling frequency.
 *   **SHT40 Auto-Drying:** Enable automatic sensor heater activation at high humidity levels.
+
+#### Weather Service Tab
+Configure supplemental environmental data:
+*   **Enable Weather Service:** Fetch professional meteorological data from Open-Meteo.
+*   **Location Detection:** Automatically detect coordinates (Latitude/Longitude) via the browser's Geolocation API.
+*   **Sourcing Priority:** Choose how each metric (Temperature, Wind, Clouds, etc.) is sourced:
+    - *Hardware:* Exclusively use SV241 internal sensors.
+    - *Internet:* Exclusively use Open-Meteo data.
+    - *Hybrid:* Use hardware if available, fallback to Open-Meteo if hardware is initializing or missing.
+*   **Prediction Models:** Select from global (ECMWF, GFS) or regional (ICON) weather models.
 
 #### System Tab
 Maintenance and backup functions:
@@ -537,7 +548,16 @@ Here is an example of the `proxy_config.json` file structure:
     "pwm2": true
   },
   "alwaysShowLensTemp": true,
-  "lensTempName": "Box Ambient Temp"
+  "lensTempName": "Box Ambient Temp",
+  "enableWeatherService": true,
+  "weatherLatitude": 52.52,
+  "weatherLongitude": 13.40,
+  "weatherModel": "best_match",
+  "weatherInterval": 5,
+  "weatherSourcePriority": {
+    "temperature": "hybrid",
+    "cloudcover": "internet"
+  }
 }
 ```
 
