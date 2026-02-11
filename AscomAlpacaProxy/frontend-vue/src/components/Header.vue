@@ -28,8 +28,8 @@ const handleThemeChange = (event) => {
                   </svg>
               </label>
               <select id="theme-select" v-model="currentTheme" @change="handleThemeChange" class="theme-select">
-                  <option :value="THEMES.DEFAULT">Deep Space</option>
                   <option :value="THEMES.DARK">Material Dark</option>
+                  <option :value="THEMES.DEFAULT">Deep Space</option>
                   <option :value="THEMES.RED">Night Vision</option>
               </select>
           </div>
