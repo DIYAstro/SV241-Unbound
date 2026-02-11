@@ -171,6 +171,16 @@ Configure supplemental environmental data:
     - *Hybrid:* Use hardware if available, fallback to Open-Meteo if hardware is initializing or missing.
 *   **Prediction Models:** Select from global (ECMWF, GFS) or regional (ICON) weather models.
 
+> [!NOTE]
+> **Data Exposure:** Data from the Weather Service is exclusively exposed through the ASCOM Alpaca `ObservingConditions` interface and is not displayed as primary telemetry in the Web UI.
+
+#### Proxy Tab
+Configure the proxy application itself:
+*   **Connection:** Serial port settings, auto-detection toggle.
+*   **Network:** Listen address, port, and log level.
+*   **ASCOM Features:** Enable/disable voltage slider control, the virtual Master Power switch, and persistent exposure of the Lens Temperature sensor (even in manual mode).
+*   **Telemetry:** Configure history retention period.
+
 #### System Tab
 Maintenance and backup functions:
 *   **Manual Actions:** Trigger a sensor drying cycle manually.
@@ -180,13 +190,6 @@ Maintenance and backup functions:
         > **Note:** Flashing requires the browser to run on the same machine where the SV241-Box is connected via USB. Opening the flasher page remotely from another device will not work.
     *   **Reboot Device:** Performs a soft restart of the SV241 device.
     *   **Factory Reset:** Erases all saved settings on the device and restores factory defaults.
-
-#### Proxy Tab
-Configure the proxy application itself:
-*   **Connection:** Serial port settings, auto-detection toggle.
-*   **Network:** Listen address, port, and log level.
-*   **ASCOM Features:** Enable/disable voltage slider control, the virtual Master Power switch, and persistent exposure of the Lens Temperature sensor (even in manual mode).
-*   **Telemetry:** Configure history retention period.
 
 > [!IMPORTANT]
 > **ASCOM Client Reconnection Required:** Changes to the ASCOM Features settings (Master Power switch, Voltage Slider mode) also require your astronomy software to **disconnect and reconnect** to see the updated switch configuration.
