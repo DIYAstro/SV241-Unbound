@@ -120,7 +120,7 @@ This panel provides quick access to power output control:
 
 ### Configuration Tabs
 
-The collapsible "Configuration & Settings" section contains five tabs:
+The collapsible "Configuration & Settings" section contains six tabs:
 
 #### Switches Tab
 Configure power switch behavior:
@@ -165,10 +165,11 @@ Fine-tune sensor readings:
 Configure supplemental environmental data:
 *   **Enable Weather Service:** Fetch professional meteorological data from Open-Meteo.
 *   **Location Detection:** Automatically detect coordinates (Latitude/Longitude) via the browser's Geolocation API.
-*   **Sourcing Priority:** Choose how each metric (Temperature, Wind, Clouds, etc.) is sourced:
+*   **Sourcing Priority:** For metrics supported by SV241 hardware (Temperature, Humidity, Dew Point), choose the sourcing strategy:
     - *Hardware:* Exclusively use SV241 internal sensors.
     - *Internet:* Exclusively use Open-Meteo data.
     - *Hybrid:* Use hardware if available, fallback to Open-Meteo if hardware is initializing or missing.
+    - > **Note:** Metrics without hardware counterparts (Wind, Pressure, Clouds, Rain) are automatically sourced from Open-Meteo.
 *   **Prediction Models:** Select from global (ECMWF, GFS) or regional (ICON) weather models.
 
 > [!NOTE]
@@ -178,7 +179,10 @@ Configure supplemental environmental data:
 Configure the proxy application itself:
 *   **Connection:** Serial port settings, auto-detection toggle.
 *   **Network:** Listen address, port, and log level.
-*   **ASCOM Features:** Enable/disable voltage slider control, the virtual Master Power switch, and persistent exposure of the Lens Temperature sensor (even in manual mode).
+*   **ASCOM Features:**
+    - *Voltage Slider:* Enable/disable analog control for the adjustable output (0-15V).
+    - *Master Power:* Expose a virtual switch to control all outputs at once.
+    - *Persistent Lens Temp:* Keep the Lens Temperature sensor exposed to ASCOM even in manual mode (handy for monitoring without PID).
 *   **Telemetry:** Configure history retention period.
 
 #### System Tab
@@ -402,16 +406,22 @@ Invoke-WebRequest -Uri http://localhost:32241/api/v1/observingconditions/0/actio
 
 ### Reading Sensor Values (Sensor Switches)
 
-The power metrics (Voltage, Current, Power) are exposed as read-only ASCOM Switch devices at **fixed IDs 0, 1, and 2**. These can be used to display values in NINA gauges or any ASCOM client that supports analog switch values.
+The power metrics and environmental sensors are exposed as read-only ASCOM Switch devices at **fixed IDs 0 through 5**. These can be used to display values in NINA gauges or any ASCOM client that supports analog switch values.
 
 | ID | Name | Unit | Description |
 |----|------|------|-------------|
 | 0 | Input Voltage | V | Input voltage from power supply |
 | 1 | Total Current | A | Total current draw of all outputs |
 | 2 | Total Power | W | Total power consumption |
+| 3 | Lens Temperature | °C | Objective/lens temperature (DS18B20) |
+| 4 | Heater 1 Output | % | Current power level of PWM 1 |
+| 5 | Heater 2 Output | % | Current power level of PWM 2 |
 
 > [!NOTE]
-> **Sensor switch IDs are always fixed (0, 1, 2).** Unlike power switches, sensor IDs do not shift when switches are disabled. Power switches start at ID 3.
+> **PWM Dual-Exposure:** Dew heaters are exposed twice—once as a read-only sensor at IDs 4/5 (showing current power %) and once as a toggle at the end of the switch list (allowing manual override).
+
+> [!NOTE]
+> **Sensor switch IDs are always fixed (0-5).** Unlike power switches, sensor IDs do not shift when hardware switches are disabled. Power switches start at **ID 6**.
 
 **Reading Sensor Values via API:**
 
@@ -463,7 +473,7 @@ Invoke-RestMethod -Uri "http://localhost:32241/api/v1/switch/0/getswitchvalue?Id
 Beyond the custom actions, you can directly control individual switches using the standard ASCOM Alpaca `Switch` endpoints.
 
 > [!IMPORTANT]
-> **Switch ID Schema:** Sensor switches (Voltage, Current, Power) always occupy IDs 0, 1, 2. Power switches start at ID 3. When you disable a power switch in the configuration, it is removed from the ASCOM device list, causing subsequent power switch IDs to shift down. Sensor IDs remain fixed.
+> **Switch ID Schema:** Sensor switches (Voltage, Current, Power, Temp) always occupy IDs 0-5. Power switches start at ID 6. When you disable a power switch in the configuration, it is removed from the ASCOM device list, causing subsequent power switch IDs to shift down. Sensor IDs remain fixed.
 
 **Endpoints:**
 - `PUT /api/v1/switch/0/setswitch` – Set a switch on or off (parameters: `Id`, `State`)

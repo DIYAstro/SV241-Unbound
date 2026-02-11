@@ -13,15 +13,15 @@ const config = ref({
 })
 
 const metrics = [
-    { id: 'temperature', label: 'Temperature' },
-    { id: 'humidity', label: 'Humidity' },
-    { id: 'dewpoint', label: 'Dew Point' },
-    { id: 'pressure', label: 'Pressure' },
-    { id: 'windspeed', label: 'Wind Speed' },
-    { id: 'winddirection', label: 'Wind Direction' },
-    { id: 'windgust', label: 'Wind Gust' },
-    { id: 'cloudcover', label: 'Cloud Cover' },
-    { id: 'rainrate', label: 'Rain Rate' }
+    { id: 'temperature', label: 'Temperature', hasHardware: true },
+    { id: 'humidity', label: 'Humidity', hasHardware: true },
+    { id: 'dewpoint', label: 'Dew Point', hasHardware: true },
+    { id: 'pressure', label: 'Pressure', hasHardware: false },
+    { id: 'windspeed', label: 'Wind Speed', hasHardware: false },
+    { id: 'winddirection', label: 'Wind Direction', hasHardware: false },
+    { id: 'windgust', label: 'Wind Gust', hasHardware: false },
+    { id: 'cloudcover', label: 'Cloud Cover', hasHardware: false },
+    { id: 'rainrate', label: 'Rain Rate', hasHardware: false }
 ]
 
 const models = [
@@ -40,7 +40,10 @@ async function loadSettings() {
             // Initialize priorities if empty
             metrics.forEach(m => {
                 if (!config.value.weatherSourcePriority[m.id]) {
-                    config.value.weatherSourcePriority[m.id] = 'hybrid'
+                    config.value.weatherSourcePriority[m.id] = m.hasHardware ? 'hybrid' : 'internet'
+                } else if (!m.hasHardware) {
+                    // Force internet for metrics without hardware sensors
+                    config.value.weatherSourcePriority[m.id] = 'internet'
                 }
             })
         }
@@ -164,7 +167,7 @@ onMounted(loadSettings)
         <div v-for="m in metrics" :key="m.id" class="matrix-row">
           <div class="metric-col">{{ m.label }}</div>
           <div class="source-col">
-            <div class="radio-group">
+            <div v-if="m.hasHardware" class="radio-group">
                 <label class="radio-option">
                     <input type="radio" :name="'source-'+m.id" value="hybrid" v-model="config.weatherSourcePriority[m.id]">
                     <span class="radio-label">Hybrid</span>
@@ -177,6 +180,9 @@ onMounted(loadSettings)
                     <input type="radio" :name="'source-'+m.id" value="internet" v-model="config.weatherSourcePriority[m.id]">
                     <span class="radio-label">Internet</span>
                 </label>
+            </div>
+            <div v-else class="static-source">
+                <span class="badge internet">Open-Meteo (Internet Only)</span>
             </div>
           </div>
         </div>
@@ -337,6 +343,25 @@ onMounted(loadSettings)
 .radio-option input:checked + .radio-label {
     color: var(--primary-color);
     font-weight: 500;
+}
+
+.static-source {
+    display: flex;
+    align-items: center;
+}
+
+.badge {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.badge.internet {
+    background: rgba(0, 210, 255, 0.1);
+    color: var(--primary-color);
+    border: 1px solid rgba(0, 210, 255, 0.2);
 }
 
 .full-width-btn {
