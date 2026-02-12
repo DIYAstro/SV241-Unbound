@@ -76,13 +76,52 @@ If using the "Master Power" switch to turn on all devices, NINA may report a tim
 ### Web Flasher not working
 
 **Requirements:**
-- Use **Chrome** or **Edge** browser (Web Serial API required)
-- Firefox and Safari are not supported
+- Use **Chrome** or **Edge** browser (Web Serial API required).
+- Firefox and Safari are not supported.
 
-**If flashing fails:**
-1. Close any other applications that might be using the serial port
-2. Disconnect and reconnect the USB cable
-3. Try a different USB port (preferably directly on the computer, not a hub)
+**If flashing fails (Connect/Disconnect loop):**
+1. **Completely close the Alpaca Proxy** (Right-click tray icon -> Quit). If the proxy is running, it will fight the browser for the serial port.
+2. Disconnect and reconnect the USB cable.
+3. Try a different USB port (preferably directly on the computer, not a hub).
+4. **Use a shorter USB cable:** High-speed flashing can fail with long or low-quality cables.
+
+---
+
+### "Pro Level" (Recommended): Flashing & Debugging with VS Code
+
+If the web flasher fails or shows a "Connect/Disconnect" loop, we recommend using the professional developer method. While it requires a bit more setup, it is **far more robust** and allows you to see the "Internal Logs" of the device, which is essential for determining if a hardware sensor is failing.
+
+#### 1. Setup the Environment
+1.  **Download VS Code:** Visit [code.visualstudio.com](https://code.visualstudio.com/) and install Visual Studio Code.
+2.  **Add PlatformIO Extension:**
+    *   Open VS Code.
+    *   Click on the **Extensions** icon on the left (it looks like 4 squares).
+    *   Search for **"PlatformIO IDE"** and click **Install**. 
+    *   Wait until a small **Ant-Head Icon** appears in your left sidebar.
+3.  **Get the Source Code:**
+    *   Go to the [GitHub Repository](https://github.com/DIYAstro/SV241-Unbound).
+    *   Click the green **Code** button and select **Download ZIP**.
+    *   Extract the ZIP file to a folder on your computer (e.g., your Desktop).
+
+#### 2. Open the Project
+1.  In VS Code, go to `File` -> `Open Folder...`.
+2.  Select the folder you just extracted (ensure the file `platformio.ini` is visible inside that folder).
+3.  Click **Select Folder**. PlatformIO will take a minute to download the required ESP32 tools in the background.
+
+#### 3. Flash the Device
+1.  **IMPORTANT:** Completely **Close the Alpaca Proxy** (Right-click the icon in your system tray -> Quit).
+2.  Connect your SV241 to your PC via USB.
+3.  Look at the **bottom blue status bar** in VS Code. You will see several icons:
+    *   `✓` (Build): Compiles the code.
+    *   `→` (Upload): Compiles and sends the firmware to the device. **Click this!**
+4.  The terminal will open and show the progress. It should end with a green `[SUCCESS]` message.
+
+#### 4. The "Magic" Discovery: Serial Monitor
+If you want to know *why* something isn't working (e.g., a heater isn't turning on or a sensor isn't found):
+1.  Click the **Plug Icon** (Serial Monitor) in the bottom blue status bar.
+2.  A window will open showing the internal messages from the SV241.
+3.  If you see things like `[ERROR] SHT40 not found`, you know it's a hardware issue.
+4.  The correct baud rate (`115200`) is handled automatically by the project settings.
 
 ---
 
