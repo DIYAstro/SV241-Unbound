@@ -81,7 +81,8 @@ If using the "Master Power" switch to turn on all devices, NINA may report a tim
 
 **If flashing fails (Connect/Disconnect loop):**
 1. **Completely close the Alpaca Proxy** (Right-click tray icon -> Quit). If the proxy is running, it will fight the browser for the serial port.
-2. Disconnect and reconnect the USB cable.
+2. **Try the Online Flasher:** If the local flasher in the proxy app fails, try the official online version: [diyastro.github.io/SV241-Unbound](https://diyastro.github.io/SV241-Unbound/). This version is hosted on GitHub and uses the standard Web Tools integration which sometimes has better compatibility.
+3. Disconnect and reconnect the USB cable.
 3. Try a different USB port (preferably directly on the computer, not a hub).
 4. **Use a shorter USB cable:** High-speed flashing can fail with long or low-quality cables.
 
