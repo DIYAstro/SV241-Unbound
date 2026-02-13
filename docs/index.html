@@ -92,7 +92,7 @@
             font-size: 0.9rem;
         }
     </style>
-    <script type="module" src="https://unpkg.com/esp-web-tools@9/dist/web/install-button.js?module"></script>
+    <script type="module" src="https://unpkg.com/esp-web-tools@10.1.1/dist/web/install-button.js?module"></script>
 </head>
 
 <body>
@@ -140,6 +140,7 @@
             const manifestUrl = URL.createObjectURL(manifestBlob);
             installButton.manifest = manifestUrl;
             installButton.setAttribute('erase-first', '');
+            installButton.setAttribute('flash-baud-rate', '115200');
 
             statusEl.textContent = "Ready to flash. All data will be erased.";
         });

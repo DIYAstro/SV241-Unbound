@@ -338,6 +338,7 @@
         const manifestUrl = URL.createObjectURL(manifestBlob);
         installButton.manifest = manifestUrl;
         installButton.setAttribute('erase-first', '');
+        installButton.setAttribute('flash-baud-rate', '115200');
 
         // Intercept clicks on the install button to auto-release serial port first
         let isReleased = false;
@@ -361,14 +362,15 @@
                     return;
                 }
 
-                // Wait 5 seconds for the port to be fully released
-                statusEl.textContent = 'Port released. Waiting 2 seconds...';
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                // Wait for the port to be fully released
+                statusEl.textContent = 'Port released. Handling OS delay...';
+                await new Promise(resolve => setTimeout(resolve, 3000));
 
                 isReleased = true;
                 statusEl.textContent = 'Ready! Click CONNECT to select the COM port.';
 
                 // Automatically trigger the connect dialog
+                // In v10, the button inside shadowRoot is still the way to trigger it
                 installButton.shadowRoot?.querySelector('button')?.click();
             } catch (err) {
                 statusEl.textContent = 'Error releasing port: ' + err.message;
