@@ -1,5 +1,17 @@
 # Troubleshooting Guide
 
+## 0. USB Drivers (Critical First Step)
+
+If you encounter connection issues or timeouts, the very first step should always be to ensure you have the latest official drivers installed. Windows sometimes uses generic drivers that can be unstable with high-speed serial communication.
+
+**Solution:**
+Download and install the official CH340 drivers from the manufacturer:
+[WCH CH341SER (Official Driver)](https://www.wch-ic.com/downloads/ch341ser_zip.html)
+
+**Note:** Always restart your computer after installing the driver to ensure it is properly loaded by the system.
+
+---
+
 ## Proxy Issues
 
 ### "Serial port busy" Error
