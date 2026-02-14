@@ -193,14 +193,35 @@ func ProcessCommands() {
 			continue
 		}
 
-		// Use a simple byte-by-byte read to avoid buffering issues with bufio
-		// Use the command's specific timeout for reading
-		response, err := readLine(sv241Port, cmd.Timeout)
-		if err != nil {
-			logger.Error("Serial read failed: %v. Marking port as disconnected.", err)
+		// Read response with retry logic to tolerate transient timeouts.
+		// Some Windows USB stacks (especially CH340) can occasionally miss a response.
+		var response string
+		var readErr error
+		maxRetries := 2
+		for attempt := 0; attempt <= maxRetries; attempt++ {
+			if attempt > 0 {
+				logger.Warn("Retry %d/%d for command: %s", attempt, maxRetries, cmd.Command)
+				drainInputBuffer(sv241Port)
+				_, err = sv241Port.Write([]byte(cmd.Command + "\n"))
+				if err != nil {
+					logger.Error("Serial write failed on retry: %v. Marking port as disconnected.", err)
+					handleDisconnect()
+					portMutex.Unlock()
+					cmd.Error <- fmt.Errorf("failed to write to serial port: %w", err)
+					break
+				}
+			}
+			response, readErr = readLine(sv241Port, cmd.Timeout)
+			if readErr == nil {
+				break
+			}
+			logger.Warn("Serial read attempt %d/%d failed: %v", attempt+1, maxRetries+1, readErr)
+		}
+		if readErr != nil {
+			logger.Error("Serial read failed after %d attempts. Marking port as disconnected.", maxRetries+1)
 			handleDisconnect()
 			portMutex.Unlock()
-			cmd.Error <- fmt.Errorf("failed to read from serial port: %w", err)
+			cmd.Error <- fmt.Errorf("failed to read from serial port: %w", readErr)
 			continue
 		}
 		portMutex.Unlock()
@@ -220,28 +241,26 @@ func ProcessCommands() {
 	}
 }
 
-// drainInputBuffer reads from the port until no more data is available or a timeout occurs.
+// drainInputBuffer reads from the port until no more data is available.
+// This removes stale data (e.g., boot logs, unsolicited output) before sending a new command.
 func drainInputBuffer(port serial.Port) {
-	// Set a very short timeout for draining
-	port.SetReadTimeout(100 * time.Millisecond)
+	port.SetReadTimeout(50 * time.Millisecond)
 	buf := make([]byte, 1024)
 	for {
 		n, err := port.Read(buf)
 		if err != nil || n == 0 {
 			break
 		}
-		// Continue reading until empty
-		if n < len(buf) {
-			break
-		}
+		// Keep draining until the buffer is empty
 	}
 }
 
 // readLine reads from the port until a newline is encountered or timeout.
+// Uses chunk-based reading (256 bytes) instead of byte-by-byte to minimize syscall overhead.
 func readLine(port serial.Port, timeout time.Duration) (string, error) {
 	port.SetReadTimeout(timeout)
 	var result []byte
-	buf := make([]byte, 1) // Read byte by byte to avoid over-reading
+	buf := make([]byte, 256)
 	start := time.Now()
 
 	for {
@@ -254,18 +273,14 @@ func readLine(port serial.Port, timeout time.Duration) (string, error) {
 			return "", err
 		}
 		if n > 0 {
-			b := buf[0]
-			if b == '\n' {
-				break
+			for i := 0; i < n; i++ {
+				if buf[i] == '\n' {
+					return string(result), nil
+				}
+				result = append(result, buf[i])
 			}
-			result = append(result, b)
-		} else {
-			// No data yet, wait briefly? Serial.Read should block until data or timeout.
-			// If it returns 0 with no error, it might be non-blocking mode or just empty.
-			// With SetReadTimeout, it should block.
 		}
 	}
-	return string(result), nil
 }
 
 // ManageConnection is a background task that ensures the device stays connected.
@@ -471,9 +486,14 @@ func reconnect(newPortName string) {
 				}
 
 				// TRIGGER CONFIG SYNC
-				// We do this in a goroutine to avoid blocking the mutex or deadlocking with ProcessCommands
-				go SyncFirmwareConfig()
-				go FetchFirmwareVersion()
+				// Run sequentially in a single goroutine to avoid command storms
+				// on systems with slower USB stacks.
+				go func() {
+					time.Sleep(2 * time.Second)
+					FetchFirmwareVersion()
+					time.Sleep(1 * time.Second)
+					SyncFirmwareConfig()
+				}()
 			}
 		}
 	} else {
@@ -544,7 +564,7 @@ func periodicCacheUpdater(initDone chan struct{}) {
 
 	for {
 		performCacheUpdate()
-		time.Sleep(3 * time.Second)
+		time.Sleep(5 * time.Second)
 	}
 }
 
