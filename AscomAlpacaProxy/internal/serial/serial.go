@@ -43,6 +43,7 @@ var (
 	sv241Port            serial.Port
 	portMutex            = &sync.Mutex{}
 	firmwareVersion      = "unknown"
+	firmwareVersionMu    sync.RWMutex
 
 	// Caches are managed within the serial package
 	Status     = &StatusCache{RWMutex: &sync.RWMutex{}}
@@ -120,6 +121,8 @@ func IsConnected() bool {
 
 // GetFirmwareVersion returns the cached firmware version.
 func GetFirmwareVersion() string {
+	firmwareVersionMu.RLock()
+	defer firmwareVersionMu.RUnlock()
 	return firmwareVersion
 }
 
@@ -659,8 +662,10 @@ func FetchFirmwareVersion() {
 		logger.Warn("Could not parse firmware version response: %v", err)
 		return
 	}
+	firmwareVersionMu.Lock()
 	firmwareVersion = versionResponse.Version
-	logger.Info("Firmware version: %s", firmwareVersion)
+	firmwareVersionMu.Unlock()
+	logger.Info("Firmware version: %s", versionResponse.Version)
 }
 
 func logMemoryStatus(data map[string]interface{}) {

@@ -237,6 +237,7 @@ func handleSetFirmwareConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer r.Body.Close()
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB limit
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
@@ -331,6 +332,7 @@ func handleDeviceCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer r.Body.Close()
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB limit
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
@@ -451,6 +453,7 @@ func handleRestoreBackup(w http.ResponseWriter, r *http.Request) {
 	}
 	logger.Info("Restoring combined configuration from backup...")
 	defer r.Body.Close()
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB limit
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
