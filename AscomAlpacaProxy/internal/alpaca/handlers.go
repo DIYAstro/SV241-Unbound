@@ -332,7 +332,6 @@ func (a *API) HandleSwitchGetSwitchValue(w http.ResponseWriter, r *http.Request)
 	key := config.SwitchIDMap[id]
 
 	// Handle sensor switches
-	// Handle sensor switches
 	if config.IsSensorSwitch(key) {
 		// All sensors (Voltage, Current, Power, LensTemp, PWM) live in Conditions cache (Telemetry)
 		// PWM in Status (e.g. "pwm1": false) is just the enabled state, not the duty cycle.
@@ -681,7 +680,6 @@ func (a *API) HandleSwitchSetSwitchValue(w http.ResponseWriter, r *http.Request)
 
 }
 
-// restorePowerState determines the best command to enable a heater with a valid (>0) value.
 // restorePowerState determines the best command to enable a heater using the firmware configuration (mp).
 func restorePowerState(shortKey string, heaterIdx int, state bool) string {
 	// Simple Logic: Always use the firmware's configured "Manual Power" (mp) setting.

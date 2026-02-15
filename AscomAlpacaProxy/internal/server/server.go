@@ -218,6 +218,10 @@ func deviceMux(handlers map[string]http.HandlerFunc, api *alpaca.API) http.Handl
 // --- API Handlers ---
 
 func handleGetFirmwareConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	resp, err := serial.SendCommand(`{"get":"config"}`, false, 0)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -228,6 +232,10 @@ func handleGetFirmwareConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleSetFirmwareConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	defer r.Body.Close()
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -255,6 +263,10 @@ func handleSetFirmwareConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleGetPowerStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	serial.Status.RLock()
 	defer serial.Status.RUnlock()
 	if serial.Status.Data == nil {
@@ -266,6 +278,10 @@ func handleGetPowerStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleSetAllPower(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	defer r.Body.Close()
 	var payload struct {
 		State bool `json:"state"`
@@ -294,6 +310,10 @@ func handleSetAllPower(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleGetLiveStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	serial.Conditions.RLock()
 	defer serial.Conditions.RUnlock()
 	if serial.Conditions.Data == nil {
@@ -306,12 +326,16 @@ func handleGetLiveStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleDeviceCommand(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	defer r.Body.Close()
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
 
 	// We need to check the command type to see if we should wait for a response.
 	var commandPayload struct {
@@ -353,6 +377,10 @@ func handleDeviceCommand(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleDownloadLog(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	logPath := logger.GetLogFilePath()
 	if logPath == "" {
 		http.Error(w, "Log file path not available", http.StatusInternalServerError)
@@ -365,6 +393,10 @@ func handleDownloadLog(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleGetFirmwareVersion(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	response := struct {
 		Version string `json:"version"`
@@ -387,6 +419,10 @@ func handleGetProxyVersion(appVersion string) http.HandlerFunc {
 }
 
 func handleCreateBackup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	logger.Info("Creating combined configuration backup...")
 	firmwareConfigJSON, err := serial.SendCommand(`{"get":"config"}`, true, 0)
 	if err != nil {
@@ -409,13 +445,17 @@ func handleCreateBackup(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleRestoreBackup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	logger.Info("Restoring combined configuration from backup...")
+	defer r.Body.Close()
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
 
 	var backup config.CombinedConfig
 	if err := json.Unmarshal(body, &backup); err != nil {
