@@ -10,7 +10,11 @@ const masterPowerState = computed({
     get: () => {
         // If all visible switches are on, Master is on.
         if (Object.keys(powerStatus.value).length === 0) return false;
-        return visibleSwitches.value.every(s => isSwitchOn(s.key));
+        
+        // Guard against empty list (every() returns true on empty)
+        if (visibleSwitches.value.length === 0) return false; 
+
+        return visibleSwitches.value.every(s => isSwitchOn(s.shortKey));
     },
     set: (val) => {
         if (!isConnected.value) return;

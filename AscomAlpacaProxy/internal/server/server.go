@@ -303,9 +303,13 @@ func handleSetAllPower(w http.ResponseWriter, r *http.Request) {
 	}
 	var statusData map[string]map[string]interface{}
 	if json.Unmarshal([]byte(responseJSON), &statusData) == nil {
-		serial.Status.Lock()
-		serial.Status.Data = statusData["status"]
-		serial.Status.Unlock()
+		if statusData["status"] == nil {
+			logger.Warn("handleSetAllPower: device response did not contain 'status' key, skipping cache update")
+		} else {
+			serial.Status.Lock()
+			serial.Status.Data = statusData["status"]
+			serial.Status.Unlock()
+		}
 	}
 	w.WriteHeader(http.StatusOK)
 }

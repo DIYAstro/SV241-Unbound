@@ -638,8 +638,8 @@ func (a *API) HandleSwitchSetSwitchValue(w http.ResponseWriter, r *http.Request)
 				serial.SendCommand(cmd2, true, 0)
 
 				// Respond success immediately (the commands are queued)
-				w.WriteHeader(http.StatusOK)
 				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
 				fmt.Fprint(w, `{"status":"Master Power ON sequence initiated"}`)
 				return
 			} else {
