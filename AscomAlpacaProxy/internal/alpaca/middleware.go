@@ -40,19 +40,8 @@ func Handler(fn http.HandlerFunc) http.HandlerFunc {
 }
 
 // GetFormValueIgnoreCase retrieves the first value for a given key from the request form, case-insensitively.
-// The ASCOM conformance checker requires case-sensitivity for PUT parameters, so we handle that.
+// The Alpaca specification requires parameter names to be case-insensitive.
 func GetFormValueIgnoreCase(r *http.Request, key string) (string, bool) {
-	if r.Method == "PUT" {
-		if values, ok := r.Form[key]; ok {
-			if len(values) > 0 {
-				return values[0], true
-			}
-			return "", true // Key exists, but has no value.
-		}
-		return "", false // Key not found with correct case.
-	}
-
-	// For GET and other methods, be case-insensitive.
 	for k, values := range r.Form {
 		if strings.EqualFold(k, key) {
 			if len(values) > 0 {
@@ -78,13 +67,6 @@ func ParseSwitchID(w http.ResponseWriter, r *http.Request) (int, bool) {
 		ErrorResponse(w, r, http.StatusOK, 0x400, "Invalid or missing switch ID")
 		return 0, false
 	}
-	if _, ok := config.SwitchIDMap[id]; !ok {
-		ErrorResponse(w, r, http.StatusOK, 0x400, "Invalid switch ID")
-		return 0, false
-	}
-
-	// If ID is 10 (Master Power) and it's disabled, verify it's inaccessible
-	// Check if ID exists in the map
 	if _, ok := config.SwitchIDMap[id]; !ok {
 		ErrorResponse(w, r, http.StatusOK, 0x400, "Invalid switch ID")
 		return 0, false

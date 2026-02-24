@@ -10,6 +10,8 @@ import (
 	"sv241pro-alpaca-proxy/internal/config"
 	"sv241pro-alpaca-proxy/internal/logger"
 	"sv241pro-alpaca-proxy/internal/serial"
+	"sv241pro-alpaca-proxy/internal/weather"
+	"time"
 )
 
 // --- Management Handlers ---
@@ -32,13 +34,15 @@ type AlpacaConfiguredDevice struct {
 
 // API holds all dependencies for the Alpaca API handlers.
 type API struct {
-	appVersion string
+	appVersion      string
+	driverConnected bool
 }
 
 // NewAPI creates a new API instance.
 func NewAPI(appVersion string) *API {
 	return &API{
-		appVersion: appVersion,
+		appVersion:      appVersion,
+		driverConnected: false,
 	}
 }
 
@@ -117,17 +121,21 @@ func (a *API) HandleConnected(w http.ResponseWriter, r *http.Request) {
 			ErrorResponse(w, r, http.StatusOK, 0x400, fmt.Sprintf("Invalid value for Connected: '%s'", connectedStr))
 			return
 		}
-		// When client tries to connect, verify hardware is available
-		if connected && !serial.IsConnected() {
-			ErrorResponse(w, r, http.StatusOK, 0x400, "SV241 device not connected. Please check the USB connection.")
+		// Update our internal connection state
+		a.driverConnected = connected
+		// If connecting, we verify hardware is actually there
+		if a.driverConnected && !serial.IsConnected() {
+			// But ASCOM says we should try to connect or error if we can't.
+			// Reconnect is already handled in background, but if it's currently down, we error.
+			ErrorResponse(w, r, http.StatusOK, 0x40B, "SV241 device not connected. Please check the USB connection.")
 			return
 		}
-		// The connection is managed automatically, so we just acknowledge.
 		EmptyResponse(w, r)
 		return
 	}
-	// For GET, report the actual connection status.
-	BoolResponse(w, r, serial.IsConnected())
+	// For GET, report the internal connection status.
+	// Many clients depend on this being true only if hardware is also alive.
+	BoolResponse(w, r, a.driverConnected && serial.IsConnected())
 }
 
 func (a *API) HandleDeviceName(name string) http.HandlerFunc {
@@ -323,7 +331,6 @@ func (a *API) HandleSwitchGetSwitchValue(w http.ResponseWriter, r *http.Request)
 
 	key := config.SwitchIDMap[id]
 
-	// Handle sensor switches
 	// Handle sensor switches
 	if config.IsSensorSwitch(key) {
 		// All sensors (Voltage, Current, Power, LensTemp, PWM) live in Conditions cache (Telemetry)
@@ -631,8 +638,8 @@ func (a *API) HandleSwitchSetSwitchValue(w http.ResponseWriter, r *http.Request)
 				serial.SendCommand(cmd2, true, 0)
 
 				// Respond success immediately (the commands are queued)
-				w.WriteHeader(http.StatusOK)
 				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
 				fmt.Fprint(w, `{"status":"Master Power ON sequence initiated"}`)
 				return
 			} else {
@@ -673,7 +680,6 @@ func (a *API) HandleSwitchSetSwitchValue(w http.ResponseWriter, r *http.Request)
 
 }
 
-// restorePowerState determines the best command to enable a heater with a valid (>0) value.
 // restorePowerState determines the best command to enable a heater using the firmware configuration (mp).
 func restorePowerState(shortKey string, heaterIdx int, state bool) string {
 	// Simple Logic: Always use the firmware's configured "Manual Power" (mp) setting.
@@ -933,44 +939,110 @@ func (a *API) HandleSwitchAction(w http.ResponseWriter, r *http.Request) {
 // --- ObservingConditions Handlers ---
 
 func (a *API) HandleObsCondTemperature(w http.ResponseWriter, r *http.Request) {
-	serial.Conditions.RLock()
-	defer serial.Conditions.RUnlock()
-	if val, ok := serial.Conditions.Data["t_amb"]; ok && val != nil {
-		if floatVal, isFloat := val.(float64); isFloat {
-			FloatResponse(w, r, floatVal)
+	if val, impl, err := a.getWeatherValue("temperature", "t_amb"); impl {
+		if err == nil {
+			FloatResponse(w, r, val)
 		} else {
-			ErrorResponse(w, r, http.StatusOK, 0x401, "Invalid data type for temperature in cache.")
+			ErrorResponse(w, r, http.StatusOK, 0x40B, err.Error())
 		}
 	} else {
-		ErrorResponse(w, r, http.StatusOK, 0x401, "Sensor not available or failed to read.")
+		ErrorResponse(w, r, http.StatusOK, 0x40C, "Property not implemented")
 	}
 }
 
 func (a *API) HandleObsCondHumidity(w http.ResponseWriter, r *http.Request) {
-	serial.Conditions.RLock()
-	defer serial.Conditions.RUnlock()
-	if val, ok := serial.Conditions.Data["h_amb"]; ok && val != nil {
-		if floatVal, isFloat := val.(float64); isFloat {
-			FloatResponse(w, r, floatVal)
+	if val, impl, err := a.getWeatherValue("humidity", "h_amb"); impl {
+		if err == nil {
+			FloatResponse(w, r, val)
 		} else {
-			ErrorResponse(w, r, http.StatusOK, 0x401, "Invalid data type for humidity in cache.")
+			ErrorResponse(w, r, http.StatusOK, 0x40B, err.Error())
 		}
 	} else {
-		ErrorResponse(w, r, http.StatusOK, 0x401, "Sensor not available or failed to read.")
+		ErrorResponse(w, r, http.StatusOK, 0x40C, "Property not implemented")
 	}
 }
 
 func (a *API) HandleObsCondDewPoint(w http.ResponseWriter, r *http.Request) {
-	serial.Conditions.RLock()
-	defer serial.Conditions.RUnlock()
-	if val, ok := serial.Conditions.Data["d"]; ok && val != nil {
-		if floatVal, isFloat := val.(float64); isFloat {
-			FloatResponse(w, r, floatVal)
+	if val, impl, err := a.getWeatherValue("dewpoint", "d"); impl {
+		if err == nil {
+			FloatResponse(w, r, val)
 		} else {
-			ErrorResponse(w, r, http.StatusOK, 0x401, "Invalid data type for dew point in cache.")
+			ErrorResponse(w, r, http.StatusOK, 0x40B, err.Error())
 		}
 	} else {
-		ErrorResponse(w, r, http.StatusOK, 0x401, "Sensor not available or failed to read.")
+		ErrorResponse(w, r, http.StatusOK, 0x40C, "Property not implemented")
+	}
+}
+
+func (a *API) HandleObsCondPressure(w http.ResponseWriter, r *http.Request) {
+	if val, impl, err := a.getWeatherValue("pressure", ""); impl {
+		if err == nil {
+			FloatResponse(w, r, val)
+		} else {
+			ErrorResponse(w, r, http.StatusOK, 0x40B, err.Error())
+		}
+	} else {
+		ErrorResponse(w, r, http.StatusOK, 0x40C, "Property not implemented")
+	}
+}
+
+func (a *API) HandleObsCondWindSpeed(w http.ResponseWriter, r *http.Request) {
+	if val, impl, err := a.getWeatherValue("windspeed", ""); impl {
+		if err == nil {
+			FloatResponse(w, r, val)
+		} else {
+			ErrorResponse(w, r, http.StatusOK, 0x40B, err.Error())
+		}
+	} else {
+		ErrorResponse(w, r, http.StatusOK, 0x40C, "Property not implemented")
+	}
+}
+
+func (a *API) HandleObsCondWindDirection(w http.ResponseWriter, r *http.Request) {
+	if val, impl, err := a.getWeatherValue("winddirection", ""); impl {
+		if err == nil {
+			FloatResponse(w, r, val)
+		} else {
+			ErrorResponse(w, r, http.StatusOK, 0x40B, err.Error())
+		}
+	} else {
+		ErrorResponse(w, r, http.StatusOK, 0x40C, "Property not implemented")
+	}
+}
+
+func (a *API) HandleObsCondWindGust(w http.ResponseWriter, r *http.Request) {
+	if val, impl, err := a.getWeatherValue("windgust", ""); impl {
+		if err == nil {
+			FloatResponse(w, r, val)
+		} else {
+			ErrorResponse(w, r, http.StatusOK, 0x40B, err.Error())
+		}
+	} else {
+		ErrorResponse(w, r, http.StatusOK, 0x40C, "Property not implemented")
+	}
+}
+
+func (a *API) HandleObsCondCloudCover(w http.ResponseWriter, r *http.Request) {
+	if val, impl, err := a.getWeatherValue("cloudcover", ""); impl {
+		if err == nil {
+			FloatResponse(w, r, val)
+		} else {
+			ErrorResponse(w, r, http.StatusOK, 0x40B, err.Error())
+		}
+	} else {
+		ErrorResponse(w, r, http.StatusOK, 0x40C, "Property not implemented")
+	}
+}
+
+func (a *API) HandleObsCondRainRate(w http.ResponseWriter, r *http.Request) {
+	if val, impl, err := a.getWeatherValue("rainrate", ""); impl {
+		if err == nil {
+			FloatResponse(w, r, val)
+		} else {
+			ErrorResponse(w, r, http.StatusOK, 0x40B, err.Error())
+		}
+	} else {
+		ErrorResponse(w, r, http.StatusOK, 0x40C, "Property not implemented")
 	}
 }
 
@@ -985,12 +1057,62 @@ func (a *API) HandleObsCondAveragePeriod(w http.ResponseWriter, r *http.Request)
 			ErrorResponse(w, r, http.StatusOK, 0x400, "Missing required parameter 'AveragePeriod'.")
 			return
 		}
-		if _, err := strconv.ParseFloat(avgPeriodStr, 64); err != nil {
+		avg, err := strconv.ParseFloat(avgPeriodStr, 64)
+		if err != nil {
 			ErrorResponse(w, r, http.StatusOK, 0x401, fmt.Sprintf("Invalid value '%s' for AveragePeriod.", avgPeriodStr))
 			return
 		}
+		if avg < -1.0 {
+			// ASCOM requires error 0x401 for values out of range
+			ErrorResponse(w, r, http.StatusOK, 0x401, "AveragePeriod must be >= -1.0")
+			return
+		}
+		EmptyResponse(w, r)
+		return
 	}
-	ErrorResponse(w, r, http.StatusOK, 0x40C, "Property not implemented by this driver.")
+	FloatResponse(w, r, 0)
+}
+
+func (a *API) getGlobalLatestUpdate() time.Time {
+	var latest time.Time
+
+	// Check Hardware update time
+	serial.Conditions.RLock()
+	if !serial.Conditions.LastUpdate.IsZero() {
+		latest = serial.Conditions.LastUpdate
+	}
+	serial.Conditions.RUnlock()
+
+	// Check Weather Service update time
+	if data := weather.GetService().GetData(); data != nil {
+		if data.Timestamp.After(latest) {
+			latest = data.Timestamp
+		}
+	}
+
+	return latest
+}
+
+func (a *API) HandleObsCondLatestUpdateTime(w http.ResponseWriter, r *http.Request) {
+	latest := a.getGlobalLatestUpdate()
+
+	if latest.IsZero() {
+		// If no data ever arrived, use current time but return early if never connected
+		if !a.driverConnected {
+			ErrorResponse(w, r, http.StatusOK, 0x40B, "Driver not connected")
+			return
+		}
+		latest = time.Now()
+	}
+
+	// Convert to ASCOM DATE (serial date) for ASCOM.Double
+	// Days since 30.12.1899 00:00:00
+	// Unix epoch (1970) is 25569 days after ASCOM epoch.
+	// Use time.Sub for maximum sub-second precision.
+	baseDate := time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
+	daysSinceEpoch := float64(latest.Sub(baseDate).Nanoseconds()) / float64(24*time.Hour)
+
+	RawFloatResponse(w, r, daysSinceEpoch)
 }
 
 func (a *API) HandleObsCondSensorDescription(w http.ResponseWriter, r *http.Request) {
@@ -1003,11 +1125,28 @@ func (a *API) HandleObsCondSensorDescription(w http.ResponseWriter, r *http.Requ
 		ErrorResponse(w, r, http.StatusOK, 0x400, "Missing required parameter 'SensorName'.")
 		return
 	}
-	switch strings.ToLower(sensorName) {
-	case "temperature", "humidity", "dewpoint":
+
+	metric := strings.ToLower(sensorName)
+	hwKey := ""
+	switch metric {
+	case "temperature":
+		hwKey = "t_amb"
+	case "humidity":
+		hwKey = "h_amb"
+	case "dewpoint":
+		hwKey = "d"
+	case "pressure":
+		hwKey = "" // Future expansion
+	}
+
+	if a.isMetricImplemented(metric, hwKey) {
+		priority := config.Get().WeatherSourcePriority[metric]
+		if priority == "" {
+			priority = "hybrid"
+		}
+		StringResponse(w, r, fmt.Sprintf("Source: %s", priority))
+	} else {
 		ErrorResponse(w, r, http.StatusOK, 0x40C, "Property not implemented by this driver.")
-	default:
-		ErrorResponse(w, r, http.StatusOK, 0x401, fmt.Sprintf("Invalid SensorName: '%s'", sensorName))
 	}
 }
 
@@ -1016,16 +1155,42 @@ func (a *API) HandleObsCondTimeSinceLastUpdate(w http.ResponseWriter, r *http.Re
 		ErrorResponse(w, r, http.StatusMethodNotAllowed, 0x405, "Method PUT not allowed for timesincelastupdate.")
 		return
 	}
+
+	// ASCOM spec: If SensorName is empty string, return time since most recent update of ANY sensor.
 	sensorName, ok := GetFormValueIgnoreCase(r, "SensorName")
 	if !ok {
-		ErrorResponse(w, r, http.StatusOK, 0x400, "Missing required parameter 'SensorName'.")
+		// If parameter is completely missing, Alpaca clients often interpret this as empty string
+		// for properties that support it.
+		sensorName = ""
+	}
+
+	if sensorName == "" {
+		latest := a.getGlobalLatestUpdate()
+		if latest.IsZero() {
+			FloatResponse(w, r, 0)
+			return
+		}
+		FloatResponse(w, r, time.Since(latest).Seconds())
 		return
 	}
-	switch strings.ToLower(sensorName) {
-	case "temperature", "humidity", "dewpoint":
-		ErrorResponse(w, r, http.StatusOK, 0x40C, "Property not implemented by this driver.")
-	default:
-		ErrorResponse(w, r, http.StatusOK, 0x401, fmt.Sprintf("Invalid SensorName: '%s'", sensorName))
+
+	metric := strings.ToLower(sensorName)
+	hwKey := ""
+	switch metric {
+	case "temperature":
+		hwKey = "t_amb"
+	case "humidity":
+		hwKey = "h_amb"
+	case "dewpoint":
+		hwKey = "d"
+	}
+
+	if a.isMetricImplemented(metric, hwKey) {
+		// Treat as real-time for now (hot cache)
+		FloatResponse(w, r, 0)
+	} else {
+		logger.Warn("Alpaca: TimeSinceLastUpdate requested for unknown/unimplemented sensor '%s'", sensorName)
+		ErrorResponse(w, r, http.StatusOK, 0x40C, fmt.Sprintf("Sensor '%s' is not implemented.", sensorName))
 	}
 }
 
@@ -1038,6 +1203,104 @@ func (a *API) HandleObsCondRefresh(w http.ResponseWriter, r *http.Request) {
 }
 
 // --- Helper Logic ---
+
+// internetSupportedMetrics defines which metrics can be sourced from the internet (Open-Meteo).
+var internetSupportedMetrics = map[string]bool{
+	"temperature":   true,
+	"humidity":      true,
+	"dewpoint":      true,
+	"pressure":      true,
+	"windspeed":     true,
+	"winddirection": true,
+	"windgust":      true,
+	"cloudcover":    true,
+	"rainrate":      true,
+}
+
+func (a *API) isMetricImplemented(metric string, hwKey string) bool {
+	conf := config.Get()
+	priority := conf.WeatherSourcePriority[metric]
+	if priority == "" {
+		priority = "hybrid"
+	}
+
+	// 1. Hardware implementation
+	if (priority == "hybrid" || priority == "hardware") && hwKey != "" {
+		return true
+	}
+
+	// 2. Internet implementation (mapped to supported Open-Meteo metrics)
+	if (priority == "hybrid" || priority == "internet") && conf.EnableWeatherService {
+		if internetSupportedMetrics[metric] {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *API) getWeatherValue(metric string, hwKey string) (float64, bool, error) {
+	if !a.isMetricImplemented(metric, hwKey) {
+		return 0, false, fmt.Errorf("property not implemented")
+	}
+
+	conf := config.Get()
+	priority := conf.WeatherSourcePriority[metric]
+	if priority == "" {
+		priority = "hybrid"
+	}
+
+	// 1. Try Hardware if priority is 'hybrid' or 'hardware'
+	if priority == "hybrid" || priority == "hardware" {
+		if hwKey != "" {
+			serial.Conditions.RLock()
+			val, ok := serial.Conditions.Data[hwKey]
+			serial.Conditions.RUnlock()
+			if ok && val != nil {
+				if floatVal, isFloat := val.(float64); isFloat {
+					return floatVal, true, nil
+				}
+			}
+		}
+		// If hardware-only
+		if priority == "hardware" {
+			return 0, true, fmt.Errorf("hardware sensor missing/initialising")
+		}
+	}
+
+	// 2. Try Internet (Open-Meteo) if priority is 'hybrid' or 'internet'
+	if priority == "hybrid" || priority == "internet" {
+		if !conf.EnableWeatherService {
+			return 0, true, fmt.Errorf("weather service disabled")
+		}
+
+		data := weather.GetService().GetData()
+		// Cache validity check: Double the interval as grace period
+		if data != nil && time.Since(data.Timestamp) < time.Duration(conf.WeatherInterval*2+1)*time.Minute {
+			switch metric {
+			case "temperature":
+				return data.Temperature, true, nil
+			case "humidity":
+				return data.Humidity, true, nil
+			case "dewpoint":
+				return data.DewPoint, true, nil
+			case "pressure":
+				return data.Pressure, true, nil
+			case "windspeed":
+				return data.WindSpeed, true, nil
+			case "winddirection":
+				return data.WindDir, true, nil
+			case "windgust":
+				return data.WindGust, true, nil
+			case "cloudcover":
+				return data.CloudCover, true, nil
+			case "rainrate":
+				return data.Precipitation, true, nil
+			}
+		}
+	}
+
+	return 0, true, fmt.Errorf("data not available (initialising)")
+}
 
 func handleHeaterInteractions(id int, state bool) {
 	// This logic checks for heater inter-dependencies (PID leader/follower).

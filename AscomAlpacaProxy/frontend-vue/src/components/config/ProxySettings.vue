@@ -172,7 +172,7 @@ async function save() {
           </div>
       </div>
       
-      <button @click="save" class="btn-primary save-btn" :disabled="!hasChanges">Save Proxy Settings</button>
+      <button @click="save" class="btn-primary full-width-btn" :disabled="!hasChanges">Save Proxy Settings</button>
   </div>
 </template>
 
@@ -289,9 +289,9 @@ async function save() {
     margin: 0.5rem 0;
 }
 
-.save-btn {
-    align-self: flex-start;
-    margin-top: 0.5rem;
+.full-width-btn {
+    margin-top: 1rem;
+    width: 100%;
 }
 
 @media (max-width: 600px) {

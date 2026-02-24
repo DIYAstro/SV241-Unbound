@@ -201,7 +201,6 @@ func HandleDownloadCSV(w http.ResponseWriter, r *http.Request) {
 		// Need to match csv header keys used in legacy
 		// Legacy keys: timestamp,voltage,current,power,t_amb,h_amb,dew_point,t_lens,pwm1,pwm2,dc1...
 		// Let's split colsParam
-		// Let's split colsParam
 		parts := strings.Split(colsParam, ",")
 		for _, p := range parts {
 			p = strings.TrimSpace(p)

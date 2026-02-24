@@ -2,7 +2,37 @@
     color-scheme: dark;
     /* Forces native controls (scrollbars, selects) to dark mode */
 
-    /* Color Palette - Deep Space (Default Theme) */
+    /* Color Palette - Material Design Dark Theme (New Default) */
+    --bg-color-start: #0a0a0a;
+    --bg-color-mid: #0f0f0f;
+    --bg-color-end: #0a0a0a;
+
+    --surface-color: rgba(255, 255, 255, 0.03);
+    --surface-border: rgba(255, 255, 255, 0.08);
+    --surface-hover: rgba(255, 255, 255, 0.05);
+
+    --primary-color: #3d7ab8;
+    --primary-glow: rgba(61, 122, 184, 0.25);
+
+    --accent-color: #3d8a7a;
+    --text-primary: #e1e1e1;
+    --text-secondary: #a0a0a0;
+
+    --success-color: #3d8a7a;
+    --warning-color: #ffb74d;
+    --danger-color: #cf6679;
+
+    --modal-overlay: rgba(0, 0, 0, 0.8);
+    --font-main: 'Outfit', sans-serif;
+    --radius-lg: 16px;
+    --radius-sm: 8px;
+
+    --glass-blur: blur(12px);
+    --shadow-soft: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+/* Deep Space Theme (Previously Default) */
+[data-theme="default"] {
     --bg-color-start: #0f0c29;
     --bg-color-mid: #302b63;
     --bg-color-end: #24243e;
@@ -23,18 +53,6 @@
     --danger-color: #ff4b4b;
 
     --modal-overlay: rgba(0, 0, 0, 0.7);
-    --font-main: 'Outfit', sans-serif;
-    --radius-lg: 16px;
-    --radius-sm: 8px;
-
-    --glass-blur: blur(12px);
-    --shadow-soft: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-}
-
-/* Default Theme (Explicit) - Uses root variables */
-[data-theme="default"] {
-    /* Inherits all root variables */
-    color-scheme: dark;
 }
 
 /* Night Vision Theme - Night Vision Friendly */
@@ -66,33 +84,9 @@
     --modal-overlay: rgba(40, 0, 0, 0.8);
 }
 
-/* Material Dark Theme */
+/* Material Dark Theme (Inherits from :root) */
 [data-theme="dark"] {
     color-scheme: dark;
-
-    /* Color Palette - Material Design Dark Theme */
-    /* Based on Material Design 3 dark color scheme - Extra Dark */
-    --bg-color-start: #0a0a0a;
-    --bg-color-mid: #0f0f0f;
-    --bg-color-end: #0a0a0a;
-
-    --surface-color: rgba(255, 255, 255, 0.03);
-    --surface-border: rgba(255, 255, 255, 0.08);
-    --surface-hover: rgba(255, 255, 255, 0.05);
-
-    /* Subdued colors for dark mode */
-    --primary-color: #3d7ab8;
-    --primary-glow: rgba(61, 122, 184, 0.25);
-
-    --accent-color: #3d8a7a;
-    --text-primary: #e1e1e1;
-    --text-secondary: #a0a0a0;
-
-    /* Material Design status colors */
-    --success-color: #3d8a7a;
-    --warning-color: #ffb74d;
-    --danger-color: #cf6679;
-    --modal-overlay: rgba(0, 0, 0, 0.8);
 }
 
 body {

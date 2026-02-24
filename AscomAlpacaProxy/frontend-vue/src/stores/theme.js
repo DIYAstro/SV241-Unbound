@@ -10,7 +10,7 @@ export const useThemeStore = defineStore('theme', () => {
     }
 
     // Initialize from localStorage or default to DEFAULT
-    const currentTheme = ref(localStorage.getItem('theme') || THEMES.DEFAULT)
+    const currentTheme = ref(localStorage.getItem('theme') || THEMES.DARK)
 
     // Apply theme to document root
     const applyTheme = (theme) => {
@@ -32,7 +32,7 @@ export const useThemeStore = defineStore('theme', () => {
 
     // Toggle between themes
     const toggleTheme = () => {
-        const themeOrder = [THEMES.DEFAULT, THEMES.DARK, THEMES.RED]
+        const themeOrder = [THEMES.DARK, THEMES.DEFAULT, THEMES.RED]
         const currentIndex = themeOrder.indexOf(currentTheme.value)
         const nextIndex = (currentIndex + 1) % themeOrder.length
         currentTheme.value = themeOrder[nextIndex]

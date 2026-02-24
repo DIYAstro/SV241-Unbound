@@ -115,8 +115,20 @@ func IntResponse(w http.ResponseWriter, r *http.Request, value int) {
 func FloatResponse(w http.ResponseWriter, r *http.Request, value float64) {
 	// Round to 2 decimal places to avoid IEEE 754 floating-point precision issues
 	// (e.g., 3.4 showing as 3.4000000000000004)
+	// IMPORTANT: Use RawFloatResponse for high-precision dates!
 	value = math.Round(value*100) / 100
 
+	resp := ValueResponse{
+		Response: Response{
+			ClientTransactionID: atomic.LoadUint32(&ClientTransactionID),
+			ServerTransactionID: atomic.AddUint32(&ServerTransactionID, 1),
+		},
+		Value: value,
+	}
+	writeResponse(w, r, resp)
+}
+
+func RawFloatResponse(w http.ResponseWriter, r *http.Request, value float64) {
 	resp := ValueResponse{
 		Response: Response{
 			ClientTransactionID: atomic.LoadUint32(&ClientTransactionID),

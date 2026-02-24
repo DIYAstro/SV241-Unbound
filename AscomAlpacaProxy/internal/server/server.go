@@ -37,7 +37,24 @@ func Start(frontendFS fs.FS, appVersion string) {
 	// Initialize CSV Telemetry Logger
 	telemetry.Init()
 
-	if err := http.Serve(listener, nil); err != nil {
+	// Global HTTP handler with route normalization and logging
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Log incoming requests at Debug level
+		logger.Debug("Global HTTP: %s %s (from %s)", r.Method, r.URL.Path, r.RemoteAddr)
+
+		// Normalize Alpaca/Management paths to lowercase for case-insensitive routing
+		lowered := strings.ToLower(r.URL.Path)
+		if strings.HasPrefix(lowered, "/api/v1/") ||
+			strings.HasPrefix(lowered, "/management/v1/") ||
+			strings.HasPrefix(lowered, "/setup/v1/") ||
+			strings.HasPrefix(lowered, "/management/apiversions") {
+
+			r.URL.Path = lowered
+		}
+		http.DefaultServeMux.ServeHTTP(w, r)
+	})
+
+	if err := http.Serve(listener, handler); err != nil {
 		logger.Fatal("HTTP server failed: %v", err)
 	}
 }
@@ -158,16 +175,18 @@ func setupAlpacaDeviceRoutes(api *alpaca.API) {
 		"sensordescription":   api.HandleObsCondSensorDescription,
 		"timesincelastupdate": api.HandleObsCondTimeSinceLastUpdate,
 		"refresh":             api.HandleObsCondRefresh,
-		"cloudcover":          api.HandleObsCondNotImplemented,
-		"pressure":            api.HandleObsCondNotImplemented,
-		"rainrate":            api.HandleObsCondNotImplemented,
+		"cloudcover":          api.HandleObsCondCloudCover,
+		"pressure":            api.HandleObsCondPressure,
+		"rainrate":            api.HandleObsCondRainRate,
+		"latestupdatetime":    api.HandleObsCondLatestUpdateTime,
+		"latestupdate":        api.HandleObsCondLatestUpdateTime, // Alias
 		"skybrightness":       api.HandleObsCondNotImplemented,
 		"skyquality":          api.HandleObsCondNotImplemented,
 		"skytemperature":      api.HandleObsCondNotImplemented,
 		"starfwhm":            api.HandleObsCondNotImplemented,
-		"winddirection":       api.HandleObsCondNotImplemented,
-		"windgust":            api.HandleObsCondNotImplemented,
-		"windspeed":           api.HandleObsCondNotImplemented,
+		"winddirection":       api.HandleObsCondWindDirection,
+		"windgust":            api.HandleObsCondWindGust,
+		"windspeed":           api.HandleObsCondWindSpeed,
 	}
 	for k, v := range commonHandlers {
 		obsCondHandlers[k] = v
@@ -185,11 +204,13 @@ func deviceMux(handlers map[string]http.HandlerFunc, api *alpaca.API) http.Handl
 			return
 		}
 		method := strings.ToLower(path[lastSlash+1:])
+		logger.Debug("Alpaca DeviceMux: Routing method '%s' (Path: %s)", method, r.URL.Path)
 
 		if handler, ok := handlers[method]; ok {
 			handler(w, r)
 		} else {
-			alpaca.ErrorResponse(w, r, http.StatusNotFound, 0x404, fmt.Sprintf("Method '%s' not found on this device.", method))
+			logger.Warn("Alpaca DeviceMux: Method '%s' not found on this device (Path: %s)", method, r.URL.Path)
+			alpaca.ErrorResponse(w, r, http.StatusNotFound, 0x40C, fmt.Sprintf("Method '%s' not found on this device.", method))
 		}
 	}
 }
@@ -197,6 +218,10 @@ func deviceMux(handlers map[string]http.HandlerFunc, api *alpaca.API) http.Handl
 // --- API Handlers ---
 
 func handleGetFirmwareConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	resp, err := serial.SendCommand(`{"get":"config"}`, false, 0)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -207,7 +232,12 @@ func handleGetFirmwareConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleSetFirmwareConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	defer r.Body.Close()
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB limit
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
@@ -234,6 +264,10 @@ func handleSetFirmwareConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleGetPowerStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	serial.Status.RLock()
 	defer serial.Status.RUnlock()
 	if serial.Status.Data == nil {
@@ -245,6 +279,10 @@ func handleGetPowerStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleSetAllPower(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	defer r.Body.Close()
 	var payload struct {
 		State bool `json:"state"`
@@ -265,14 +303,22 @@ func handleSetAllPower(w http.ResponseWriter, r *http.Request) {
 	}
 	var statusData map[string]map[string]interface{}
 	if json.Unmarshal([]byte(responseJSON), &statusData) == nil {
-		serial.Status.Lock()
-		serial.Status.Data = statusData["status"]
-		serial.Status.Unlock()
+		if statusData["status"] == nil {
+			logger.Warn("handleSetAllPower: device response did not contain 'status' key, skipping cache update")
+		} else {
+			serial.Status.Lock()
+			serial.Status.Data = statusData["status"]
+			serial.Status.Unlock()
+		}
 	}
 	w.WriteHeader(http.StatusOK)
 }
 
 func handleGetLiveStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	serial.Conditions.RLock()
 	defer serial.Conditions.RUnlock()
 	if serial.Conditions.Data == nil {
@@ -285,12 +331,17 @@ func handleGetLiveStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleDeviceCommand(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	defer r.Body.Close()
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB limit
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
 
 	// We need to check the command type to see if we should wait for a response.
 	var commandPayload struct {
@@ -332,6 +383,10 @@ func handleDeviceCommand(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleDownloadLog(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	logPath := logger.GetLogFilePath()
 	if logPath == "" {
 		http.Error(w, "Log file path not available", http.StatusInternalServerError)
@@ -344,6 +399,10 @@ func handleDownloadLog(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleGetFirmwareVersion(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	response := struct {
 		Version string `json:"version"`
@@ -366,6 +425,10 @@ func handleGetProxyVersion(appVersion string) http.HandlerFunc {
 }
 
 func handleCreateBackup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	logger.Info("Creating combined configuration backup...")
 	firmwareConfigJSON, err := serial.SendCommand(`{"get":"config"}`, true, 0)
 	if err != nil {
@@ -388,13 +451,18 @@ func handleCreateBackup(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleRestoreBackup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	logger.Info("Restoring combined configuration from backup...")
+	defer r.Body.Close()
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB limit
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
 
 	var backup config.CombinedConfig
 	if err := json.Unmarshal(body, &backup); err != nil {

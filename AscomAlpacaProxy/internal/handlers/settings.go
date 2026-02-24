@@ -81,6 +81,17 @@ func HandlePostSettings(w http.ResponseWriter, r *http.Request) {
 	conf.LensTempName = newConfig.LensTempName
 	conf.FirstRunComplete = newConfig.FirstRunComplete
 
+	// Update Weather Service Settings
+	conf.EnableWeatherService = newConfig.EnableWeatherService
+	conf.WeatherLatitude = newConfig.WeatherLatitude
+	conf.WeatherLongitude = newConfig.WeatherLongitude
+	conf.WeatherModel = newConfig.WeatherModel
+	conf.WeatherInterval = newConfig.WeatherInterval
+	if conf.WeatherInterval < 1 {
+		conf.WeatherInterval = 5
+	}
+	conf.WeatherSourcePriority = newConfig.WeatherSourcePriority
+
 	// Apply log level immediately
 	logger.SetLevelFromString(conf.LogLevel)
 

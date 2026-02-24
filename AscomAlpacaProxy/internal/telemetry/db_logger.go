@@ -70,8 +70,9 @@ func loggingLoop() {
 		// Daily cleanup check
 		if time.Now().After(nextPruneTime) {
 			logger.Info("Running scheduled daily database cleanup...")
-			if conf.HistoryRetentionNights > 0 {
-				if err := database.PruneOldTelemetry(conf.HistoryRetentionNights); err != nil {
+			retentionNights := config.Get().HistoryRetentionNights
+			if retentionNights > 0 {
+				if err := database.PruneOldTelemetry(retentionNights); err != nil {
 					logger.Error("Failed to prune old telemetry: %v", err)
 				} else {
 					logger.Info("Daily database cleanup completed successfully.")

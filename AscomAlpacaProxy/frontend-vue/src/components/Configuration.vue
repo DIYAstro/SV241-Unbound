@@ -5,6 +5,7 @@ import HeaterConfig from './config/HeaterConfig.vue'
 import SensorConfig from './config/SensorConfig.vue'
 import SystemSettings from './config/SystemSettings.vue'
 import ProxySettings from './config/ProxySettings.vue'
+import WeatherConfig from './config/WeatherConfig.vue'
 
 const activeTab = ref('tab-switches')
 
@@ -12,8 +13,9 @@ const tabs = [
     { id: 'tab-switches', label: 'Switches', component: SwitchConfig },
     { id: 'tab-heaters', label: 'Dew Heaters', component: HeaterConfig },
     { id: 'tab-sensors', label: 'Sensors/Auto-Dry', component: SensorConfig },
-    { id: 'tab-system', label: 'System', component: SystemSettings },
+    { id: 'tab-weather', label: 'Weather Service', component: WeatherConfig },
     { id: 'tab-proxy', label: 'Proxy', component: ProxySettings },
+    { id: 'tab-system', label: 'System', component: SystemSettings },
 ]
 
 const isCollapsed = ref(true) // Default to collapsed

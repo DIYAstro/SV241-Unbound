@@ -157,9 +157,3 @@ func SyncFirmwareConfig() {
 
 	logger.Info("Switch configuration sync complete. Total Switches: %d", len(newIDMap))
 }
-
-func resetSwitchMaps() {
-	// Not strictly needed if we fully rebuild, but good for fallback
-	// We'll leave it empty or doing nothing as SyncFirmwareConfig rebuilds from scratch.
-	// Actually, let's just make it do nothing or reset to full default if called manually.
-}
