@@ -10,6 +10,11 @@ import (
 // RespondToDiscovery listens for Alpaca discovery packets on UDP port 32227
 // and responds with the server's listening port.
 func RespondToDiscovery() {
+	if !config.Get().EnableAlpacaDiscovery {
+		logger.Info("Alpaca Discovery Responder disabled via config.")
+		return
+	}
+
 	listenAddr := config.Get().ListenAddress
 	udpAddress := fmt.Sprintf("%s:32227", listenAddr)
 

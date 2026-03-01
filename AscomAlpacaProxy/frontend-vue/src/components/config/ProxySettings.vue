@@ -75,9 +75,18 @@ async function save() {
                       <option v-for="ip in availableIps" :key="ip" :value="ip">{{ ip }}</option>
                   </select>
               </div>
-              <div class="form-group">
-                  <label>Network Port</label>
-                  <input type="number" v-model.number="localConfig.networkPort" @input="onChange" placeholder="32241">
+              <div class="split-row">
+                  <div class="form-group">
+                      <label>Network Port</label>
+                      <input type="number" v-model.number="localConfig.networkPort" @input="onChange" placeholder="32241">
+                  </div>
+                  <div class="form-group">
+                      <label>Discovery Service</label>
+                      <select v-model="localConfig.enableAlpacaDiscovery" @change="onChange">
+                          <option :value="true">Enabled</option>
+                          <option :value="false">Disabled</option>
+                      </select>
+                  </div>
               </div>
           </div>
       </div>
@@ -212,6 +221,12 @@ async function save() {
     gap: 1rem;
 }
 
+.split-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
 .form-group {
     display: flex;
     flex-direction: column;
@@ -295,7 +310,7 @@ async function save() {
 }
 
 @media (max-width: 600px) {
-    .card-grid, .master-power-row {
+    .card-grid, .master-power-row, .split-row {
         grid-template-columns: 1fr;
     }
     .full-width {

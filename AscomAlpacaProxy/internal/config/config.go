@@ -22,6 +22,7 @@ type ProxyConfig struct {
 	HistoryRetentionNights     int    `json:"historyRetentionNights"`
 	TelemetryInterval          int    `json:"telemetryInterval"`          // Seconds
 	EnableAlpacaVoltageControl bool   `json:"enableAlpacaVoltageControl"` // Allow voltage control via Alpaca
+	EnableAlpacaDiscovery      bool   `json:"enableAlpacaDiscovery"`      // Respond to Alpaca UDP discovery packets
 	EnableMasterPower          bool   `json:"enableMasterPower"`          // Show Master Power switch
 	EnableNotifications        bool   `json:"enableNotifications"`        // Show Windows toast notifications
 	AlwaysShowLensTemp         bool   `json:"alwaysShowLensTemp"`         // Always expose Lens Temp switch regardless of PID mode
@@ -163,6 +164,7 @@ func Load() error {
 				},
 				HistoryRetentionNights: 10,   // Default to 10 nights
 				TelemetryInterval:      10,   // Default to 10 seconds
+				EnableAlpacaDiscovery:  true, // Default to discovery enabled
 				EnableNotifications:    true, // Default to notifications enabled
 				WeatherInterval:        5,    // Default to 5 minutes
 				WeatherModel:           "best_match",
@@ -183,6 +185,16 @@ func Load() error {
 		// Don't overwrite the global config if unmarshalling fails.
 		return fmt.Errorf("failed to unmarshal proxy config: %w", err)
 	}
+
+	// Unmarshal into a map to check for missing boolean keys (which default to false)
+	var rawMap map[string]interface{}
+	if err := json.Unmarshal(file, &rawMap); err == nil {
+		if _, exists := rawMap["enableAlpacaDiscovery"]; !exists {
+			logger.Info("Configuration key 'enableAlpacaDiscovery' not found, defaulting to true.")
+			tempConfig.EnableAlpacaDiscovery = true
+		}
+	}
+
 	proxyConfig = &tempConfig
 
 	// --- Validate and set defaults for missing fields ---

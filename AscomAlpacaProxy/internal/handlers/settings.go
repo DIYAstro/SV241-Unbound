@@ -75,6 +75,7 @@ func HandlePostSettings(w http.ResponseWriter, r *http.Request) {
 	conf.HistoryRetentionNights = newConfig.HistoryRetentionNights
 	conf.TelemetryInterval = newConfig.TelemetryInterval
 	conf.EnableAlpacaVoltageControl = newConfig.EnableAlpacaVoltageControl
+	conf.EnableAlpacaDiscovery = newConfig.EnableAlpacaDiscovery
 	conf.EnableMasterPower = newConfig.EnableMasterPower
 	conf.EnableNotifications = newConfig.EnableNotifications
 	conf.AlwaysShowLensTemp = newConfig.AlwaysShowLensTemp
