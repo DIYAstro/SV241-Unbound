@@ -179,6 +179,7 @@ Configure supplemental environmental data:
 Configure the proxy application itself:
 *   **Connection:** Serial port settings, auto-detection toggle.
 *   **Network:** Listen address, port, and log level.
+*   **Discovery Service:** Enable or disable the Alpaca discovery responder (UDP port 32227). Recommended to keep enabled unless multiple Alpaca servers are running on the same machine and causing port conflicts.
 *   **ASCOM Features:**
     - *Voltage Slider:* Enable/disable analog control for the adjustable output (0-15V).
     - *Master Power:* Expose a virtual switch to control all outputs at once.
@@ -542,6 +543,7 @@ Here is an example of the `proxy_config.json` file structure:
   "historyRetentionNights": 10,
   "telemetryInterval": 10,
   "enableAlpacaVoltageControl": false,
+  "enableAlpacaDiscovery": true,
   "enableMasterPower": false,
   "switchNames": {
     "adj_conv": "Adjustable Voltage",
@@ -588,6 +590,7 @@ Here is an example of the `proxy_config.json` file structure:
 *   `telemetryInterval` (integer): The interval in seconds between telemetry log entries. Default is `10`.
 *   `enableAlpacaVoltageControl` (boolean): When `true`, the adjustable voltage output can be controlled as a slider (0-15V) via ASCOM. When `false`, it behaves as a simple on/off switch. Default is `false`.
     > **Caution:** If this setting is `false` (Switch Mode), ensure that the Adjustable Output has a pre-configured voltage > 0V (e.g., set via Web Interface or Startup Config). If the port is at 0V, switching it "ON" via ASCOM will technically succeed but remain at 0V, potentially causing ASCOM clients to time out or report failure because they don't see a voltage increase.
+*   `enableAlpacaDiscovery` (boolean): When `true`, the proxy responds to Alpaca discovery packets on UDP port 32227. This allows astronomy software like NINA to find the device automatically. If you have other Alpaca servers on the same PC, you may need to disable this to avoid port conflicts. Default is `true`.
 *   `enableMasterPower` (boolean): When `true`, a "Master Power" switch is exposed via ASCOM that controls all outputs simultaneously. Default is `false`.
 *   `switchNames` (object): A map that allows you to assign custom, user-friendly names to the internal switch identifiers. The `key` is the internal name (e.g., `"dc1"`) and the `value` is the custom name you want to see in ASCOM clients and the web interface.
 *   `heaterAutoEnableLeader` (object): Controls automatic leader activation for PID-Sync mode. When a follower heater (in mode 3) is enabled, the proxy can automatically enable its leader heater. Keys are `"pwm1"` and `"pwm2"`, values are `true`/`false`.
