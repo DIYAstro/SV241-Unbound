@@ -63,7 +63,7 @@ REM 5. Generate Resources
 echo [5/6] Generating Windows Resources (Icon/Manifest)...
 REM Run from Project Root so "AscomAlpacaProxy/icon.ico" path in json is valid
 pushd "%PROJECT_ROOT%"
-"%USERPROFILE%\go\bin\goversioninfo.exe" -o AscomAlpacaProxy/resource.syso AscomAlpacaProxy/versioninfo.json
+"%USERPROFILE%\go\bin\goversioninfo.exe" -64 -o AscomAlpacaProxy/resource.syso AscomAlpacaProxy/versioninfo.json
 if %ERRORLEVEL% NEQ 0 (
     echo Error generating resources!
     popd
