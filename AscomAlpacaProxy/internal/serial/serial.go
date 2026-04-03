@@ -470,6 +470,18 @@ func reconnect(newPortName string) {
 		if err != nil {
 			logger.Error("reconnect: Failed to open port %s: %v", newPortName, err)
 		} else {
+			// Disable DTR and RTS immediately after opening the port.
+			// On Linux, the serial driver may assert these lines by default when a port is opened.
+			// The typical ESP32 auto-reset circuit uses a combination of DTR and RTS (via
+			// transistors and capacitors) to trigger a reset. Disabling both prevents the
+			// ESP32 from rebooting on every connection attempt.
+			// On Windows, these lines are not asserted by default, so this has no effect.
+			if err := p.SetDTR(false); err != nil {
+				logger.Warn("Could not disable DTR on port %s: %v", newPortName, err)
+			}
+			if err := p.SetRTS(false); err != nil {
+				logger.Warn("Could not disable RTS on port %s: %v", newPortName, err)
+			}
 			sv241Port = p
 			conf := config.Get()
 			conf.SerialPortName = newPortName // Update config with the valid port
