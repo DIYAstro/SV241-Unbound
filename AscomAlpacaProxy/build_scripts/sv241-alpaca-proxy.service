@@ -1,0 +1,16 @@
+[Unit]
+Description=SV241 ASCOM Alpaca Proxy
+Documentation=https://github.com/DIYAstro-Obs/SV241-Unbound
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/AscomAlpacaProxy
+Restart=on-failure
+RestartSec=5
+# The user that will run the service. Must be a member of the 'dialout' group
+# for serial port access. Replace 'astro' with your username during installation.
+User=astro
+
+[Install]
+WantedBy=multi-user.target

@@ -1,3 +1,5 @@
+//go:build windows
+
 package icon
 
 import _ "embed"

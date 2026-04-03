@@ -2,7 +2,9 @@ package main
 
 import (
 	"embed"
+	"fmt"
 	"io/fs"
+	"os"
 	"sv241pro-alpaca-proxy/internal/alpaca"
 	"sv241pro-alpaca-proxy/internal/config"
 	"sv241pro-alpaca-proxy/internal/events"
@@ -10,34 +12,23 @@ import (
 	"sv241pro-alpaca-proxy/internal/logstream"
 	"sv241pro-alpaca-proxy/internal/serial"
 	"sv241pro-alpaca-proxy/internal/server"
-	"sv241pro-alpaca-proxy/internal/systray"
 	"sv241pro-alpaca-proxy/internal/weather"
 )
-
-//go:embed icon.ico
-var iconData []byte
 
 //go:embed frontend-vue/dist
 var embeddedFS embed.FS
 
 var frontendFS fs.FS
 
-// AppVersion wird zur Build-Zeit durch ldflags gesetzt.
-// Der Standardwert "dev" wird verwendet, wenn das Programm ohne die ldflags kompiliert wird (z.B. bei `go run`).
+// AppVersion is set at build time via ldflags.
+// The default "dev" is used when the program is compiled without ldflags (e.g. 'go run').
 var AppVersion string = "dev"
 
-func main() {
-	var err error
-	frontendFS, err = fs.Sub(embeddedFS, "frontend-vue/dist")
-	if err != nil {
-		// This is a critical error at startup. A message box is appropriate.
-		systray.ShowMessageBox("Fatal Error", "Failed to load embedded frontend files. The application will exit.", 0x10)
-		return
-	}
-
-	// Systray.Run is blocking and will handle the application lifecycle.
-	// It calls startApp from its OnReady callback.
-	systray.Run(startApp, iconData)
+// fatalNotify displays a fatal error to the user.
+// On Windows, this is overridden to show a MessageBox via the systray package.
+// On Linux, it defaults to stderr output.
+var fatalNotify = func(title, message string) {
+	fmt.Fprintf(os.Stderr, "FATAL: %s: %s\n", title, message)
 }
 
 // startApp initializes and starts all the application's components.
@@ -48,9 +39,7 @@ func startApp() {
 
 	// 2. Initialize the logger to use the hub as a writer.
 	if err := logger.Setup(&logstream.Broadcaster{}); err != nil {
-		// If logger fails, we can't do much else.
-		// A message box might be appropriate for GUI mode.
-		systray.ShowMessageBox("Fatal Error", "Failed to initialize file logger. The application will exit.", 0x10)
+		fatalNotify("Fatal Error", "Failed to initialize file logger. The application will exit.")
 		return
 	}
 
@@ -61,11 +50,9 @@ func startApp() {
 
 	// 4. Start background tasks for serial communication and cache updates.
 	// This will perform the initial connection attempt.
-	// 4. Start background tasks for serial communication and cache updates.
-	// This will perform the initial connection attempt.
 	serial.StartManager()
 
-	// Ensure the systray listener is ready. This call is safe to make here.
+	// Ensure the event listener is ready. This call is safe to make here.
 	events.StartListener(func() {}) // This just ensures the 'once.Do' is triggered if it hasn't been already.
 
 	// 5. Start the Alpaca discovery responder.

@@ -5,9 +5,20 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sv241pro-alpaca-proxy/internal/logger"
 	"sync"
 )
+
+// defaultListenAddress returns the platform-specific default listen address.
+// On Linux (typically headless servers/Astro-Pi), we default to 0.0.0.0 for network access.
+// On Windows, we default to 127.0.0.1 (localhost only) for security.
+func defaultListenAddress() string {
+	if runtime.GOOS == "linux" {
+		return "0.0.0.0"
+	}
+	return "127.0.0.1"
+}
 
 // ProxyConfig stores configuration specific to the Go proxy itself.
 type ProxyConfig struct {
@@ -155,7 +166,7 @@ func Load() error {
 			proxyConfig = &ProxyConfig{
 				AutoDetectPort: true, // Standardmäßig ist der Autoscan an
 				NetworkPort:    32241,
-				ListenAddress:  "127.0.0.1", // Default to localhost only
+				ListenAddress:  defaultListenAddress(),
 				LogLevel:       "INFO",
 				SwitchNames:    make(map[string]string),
 				HeaterAutoEnableLeader: map[string]bool{
@@ -202,8 +213,9 @@ func Load() error {
 		proxyConfig.NetworkPort = 32241
 	}
 	if proxyConfig.ListenAddress == "" {
-		logger.Warn("Configuration key 'ListenAddress' not found, using default '127.0.0.1'.")
-		proxyConfig.ListenAddress = "127.0.0.1"
+		defAddr := defaultListenAddress()
+		logger.Warn("Configuration key 'ListenAddress' not found, using default '%s'.", defAddr)
+		proxyConfig.ListenAddress = defAddr
 	}
 	if proxyConfig.LogLevel == "" {
 		logger.Warn("Configuration key 'LogLevel' not found, using default 'INFO'.")
