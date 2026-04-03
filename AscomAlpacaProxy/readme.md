@@ -2,7 +2,7 @@
 
 The project also includes a standalone ASCOM Alpaca proxy driver written in Go. This application connects to the SV241 device via its serial port and exposes it to the ASCOM ecosystem as standard `Switch` and `ObservingConditions` devices.
 
-> **Note:** While the proxy is written in Go and could theoretically run on other platforms, it is currently only tested and supported on **Windows**. The system tray integration and installer are Windows-specific.
+> **Note:** While the proxy is written in Go and supports both **Windows** and **Linux**, the system tray integration and the graphical installer are Windows-specific. On Linux, the proxy runs as a command-line application or a `systemd` service.
 
 ## Table of Contents
 
@@ -19,6 +19,7 @@ The project also includes a standalone ASCOM Alpaca proxy driver written in Go. 
 - [Driver Installation](#driver-installation)
   - [Easy Driver Creation (Recommended)](#easy-driver-creation-recommended)
   - [Manual Driver Creation (Fallback)](#manual-driver-creation-fallback)
+- [Linux Installation](#linux-installation)
 - [REST API & Automation](#rest-api--automation)
   - [Custom ASCOM Actions](#custom-ascom-actions)
   - [Controlling Individual Switches via REST API](#controlling-individual-switches-via-rest-api)
@@ -349,6 +350,39 @@ If you prefer to set up the driver manually, or if the helper script fails for a
 
 > **Note:** Repeat this process for the `ObservingConditions` device to also add the environmental sensors manually.
 
+## Linux Installation
+
+> [!CAUTION]
+> **Experimental Support:** Linux support (amd64 and arm64/Raspberry Pi) is currently in an early stage and has not been as extensively tested as the Windows version.
+
+The SV241 Alpaca Proxy can be installed on most Linux distributions (Ubuntu, Debian, Raspberry Pi OS, etc.) using a simple one-line command.
+
+### One-Line Installer
+
+Open a terminal and run the following command:
+
+```bash
+curl -sSL https://github.com/DIYAstro/SV241-Unbound/releases/latest/download/install_linux.sh | sudo bash
+```
+
+This script will:
+1. Detect your system architecture (PC or Raspberry Pi).
+2. Download the latest binary from GitHub.
+3. Install it to `/usr/local/bin/AscomAlpacaProxy`.
+4. Create and start a `systemd` service named `sv241-alpaca-proxy`.
+5. Add your user to the `dialout` group for serial port access.
+
+> [!IMPORTANT]
+> **Group Membership:** After installation, you must **log out and log back in** (or reboot) for the serial port permissions (`dialout` group) to take effect for the service.
+
+### Firmware Updates on Linux
+
+> [!WARNING]
+> **Web Serial API Requirement:** The integrated firmware flasher uses the **Web Serial API**. This requires that the web browser (Chrome or Edge) runs on the **same physical machine** where the SV241-Box is connected via USB.
+>
+> If you are running the proxy on a **headless** server or Raspberry Pi, you cannot flash the firmware remotely from another computer's browser. You must either:
+> 1. Connect a monitor and keyboard to the Pi and use a local browser.
+> 2. Momentarily connect the SV241-Box to a Windows PC to perform the update.
 
 ## REST API & Automation
 
