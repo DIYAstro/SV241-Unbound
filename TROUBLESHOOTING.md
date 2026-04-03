@@ -83,6 +83,28 @@ If using the "Master Power" switch to turn on all devices, NINA may report a tim
 
 ---
 
+## Sensor Issues
+
+### Sensors showing 0 or "null" (No Values)
+
+**Symptoms:**
+- Ambient Temperature, Humidity, Voltage, and Current all show `0.0` or are empty in the Web UI.
+- **Wait!** The Lens Temperature (DS18B20) might still show a correct value.
+- If you check the Debug Log, you see many `null` values: `{"v":null,"i":null,"p":null,"t_amb":null,...}`.
+
+**Cause:**  
+This is almost always an **I2C Bus Error**. Most internal sensors (SHT40 for ambient data, INA226 for power monitoring) share the same communication bus (I2C). If one sensor has a bad connection or is partially unplugged, it can "short" or block the entire bus, causing all other I2C sensors to fail as well.
+
+**Solution:**
+1.  **Disconnect the device from power.**
+2.  Check the **physical plug** of the external Temperature/Humidity sensor (SHT40). 
+3.  Ensure the plug is **fully clicked/seated** into the socket of the SV241 box. Even a half-millimeter gap can cause the I2C bus to hang.
+4.  Reconnect power and check the values again.
+
+> **Note:** The Lens Temperature sensor (DS18B20) uses a different protocol (1-Wire), which is why it often continues to work even if the I2C bus is blocked.
+
+---
+
 ## Firmware Issues
 
 ### Web Flasher not working
