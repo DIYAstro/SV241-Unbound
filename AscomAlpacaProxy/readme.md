@@ -106,6 +106,18 @@ This script will:
 >
 > Alternatively, you can use the **standalone Web Flasher** at [diyastro.github.io/SV241-Unbound](https://diyastro.github.io/SV241-Unbound/) from any compatible device that is physically connected to the box.
 
+### Service Management
+
+After installation, you can manage the proxy service using standard `systemd` commands:
+
+| Action | Command |
+|--------|---------|
+| **Check Status** | `sudo systemctl status sv241-alpaca-proxy` |
+| **View Proxy Logs** | `tail -f ~/.config/SV241AlpacaProxy/proxy.log` |
+| **Restart Service** | `sudo systemctl restart sv241-alpaca-proxy` |
+| **Stop Service** | `sudo systemctl stop sv241-alpaca-proxy` |
+| **Start Service** | `sudo systemctl start sv241-alpaca-proxy` |
+
 
 ## Accessing the Setup Page
 
