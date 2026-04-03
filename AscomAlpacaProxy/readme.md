@@ -102,7 +102,9 @@ This script will:
 >
 > If you are running the proxy on a **headless** server or Raspberry Pi, you cannot flash the firmware remotely from another computer's browser. You must either:
 > 1. Connect a monitor and keyboard to the Pi and use a local browser.
-> 2. Momentarily connect the SV241-Box to a Windows PC to perform the update.
+> 2. Momentarily connect the SV241-Box to **another computer (Laptop/PC)** to perform the update.
+>
+> Alternatively, you can use the **standalone Web Flasher** at [diyastro.github.io/SV241-Unbound](https://diyastro.github.io/SV241-Unbound/) from any compatible device that is physically connected to the box.
 
 
 ## Accessing the Setup Page
@@ -228,7 +230,7 @@ Maintenance and backup functions:
 *   **Backup & Restore:** Export or import the complete configuration (both proxy and firmware settings).
 *   **Danger Zone:** Contains critical device operations:
     *   **Update Firmware:** Opens the integrated web flasher to update the SV241 firmware directly from the browser using the Web Serial API—no additional tools required.
-        > **Note:** Flashing requires the browser to run on the same machine where the SV241-Box is connected via USB. Opening the flasher page remotely from another device will not work.
+        > **Note:** Flashing requires the browser (Chrome/Edge) to run on the **same machine** where the SV241-Box is connected via USB. Alternatively, use the [standalone Web Flasher](https://diyastro.github.io/SV241-Unbound/).
     *   **Reboot Device:** Performs a soft restart of the SV241 device.
     *   **Factory Reset:** Erases all saved settings on the device and restores factory defaults.
 
