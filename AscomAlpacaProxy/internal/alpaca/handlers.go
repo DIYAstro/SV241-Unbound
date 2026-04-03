@@ -1189,7 +1189,6 @@ func (a *API) HandleObsCondTimeSinceLastUpdate(w http.ResponseWriter, r *http.Re
 		// Treat as real-time for now (hot cache)
 		FloatResponse(w, r, 0)
 	} else {
-		logger.Warn("Alpaca: TimeSinceLastUpdate requested for unknown/unimplemented sensor '%s'", sensorName)
 		ErrorResponse(w, r, http.StatusOK, 0x40C, fmt.Sprintf("Sensor '%s' is not implemented.", sensorName))
 	}
 }
