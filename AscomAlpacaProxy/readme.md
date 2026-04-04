@@ -95,6 +95,13 @@ This script will:
 > [!IMPORTANT]
 > **Group Membership:** After installation, you must **log out and log back in** (or reboot) for the serial port permissions (`dialout` group) to take effect for the service.
 
+> [!NOTE]
+> **Linux Serial Reboots:** On Linux systems, the serial driver inherently pulses the DTR and RTS lines when a port is opened. This triggers the auto-reset circuit of the ESP32 microcontroller, meaning **the SV241 device will reboot** whenever the proxy service connects or is restarted.
+>
+> **Proxy Handling:** While the reboot is unavoidable at the operating system level, the proxy software is designed to gracefully absorb this restart. It waits for the ESP32 to finish booting before sending commands, preventing communication crashes.
+>
+> ⚠️ **Hardware Modification (For absolute zero reboots):** If you are running ultra-sensitive equipment and cannot tolerate proxy restarts triggering hardware reboots, you must solder a **10µF to 100µF capacitor** between the ESP32's `EN` pin and `GND` to physically block the Linux DTR pulse. *Note: this breaks the ability to flash new firmware via USB unless the capacitor is made removable (e.g., via a jumper/switch).*
+
 ### Firmware Updates on Linux
 
 > [!WARNING]

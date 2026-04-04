@@ -522,16 +522,30 @@ func reconnect(newPortName string, preOpenedPort serial.Port) {
 		if p != nil {
 			// Disable DTR and RTS immediately after opening the port.
 			// On Linux, the serial driver may assert these lines by default when a port is opened.
-			// The typical ESP32 auto-reset circuit uses a combination of DTR and RTS (via
-			// transistors and capacitors) to trigger a reset. Disabling both prevents the
-			// ESP32 from rebooting on every connection attempt.
-			// On Windows, these lines are not asserted by default, so this has no effect.
+			// Disabling both prevents the ESP32 from freezing or staying in bootloader mode.
 			if err := p.SetDTR(false); err != nil {
 				logger.Warn("Could not disable DTR on port %s: %v", newPortName, err)
 			}
 			if err := p.SetRTS(false); err != nil {
 				logger.Warn("Could not disable RTS on port %s: %v", newPortName, err)
 			}
+
+			if preOpenedPort == nil {
+				// We just opened the port fresh. Even with the HUPCL trick, the VERY FIRST connection
+				// after a Linux PC powers on will cause a hardware pulse. We must swallow the FreeRTOS 
+				// boot logs here so our subsequent JSON commands don't read garbage.
+				time.Sleep(1500 * time.Millisecond)
+				p.SetReadTimeout(100 * time.Millisecond)
+				drainBuf := make([]byte, 4096)
+				for {
+					n, _ := p.Read(drainBuf)
+					if n == 0 {
+						break
+					}
+				}
+				p.SetReadTimeout(2 * time.Second)
+			}
+
 			sv241Port = p
 			conf := config.Get()
 			conf.SerialPortName = newPortName // Update config with the valid port
