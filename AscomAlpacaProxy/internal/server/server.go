@@ -514,8 +514,11 @@ func handleRestoreBackup(w http.ResponseWriter, r *http.Request) {
 	time.Sleep(1 * time.Second)
 
 	logger.Info("Restore: attempting immediate auto-detection...")
-	foundPort, err := serial.FindPort()
+	foundPort, foundHandle, err := serial.FindPort()
 	if err == nil {
+		if foundHandle != nil {
+			foundHandle.Close() // Close it because Reconnect() below will open it anew, avoiding a leak
+		}
 		logger.Info("Restore: Immediate auto-detection found port '%s'. Reconnecting...", foundPort)
 		serial.Reconnect(foundPort)
 		fmt.Fprintf(w, "Configuration restored successfully. Connected to %s.", foundPort)

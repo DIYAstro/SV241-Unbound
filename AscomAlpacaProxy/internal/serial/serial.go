@@ -1,7 +1,6 @@
 package serial
 
 import (
-	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -83,17 +82,17 @@ func StartManager() {
 	if conf.SerialPortName != "" {
 		logger.Info("Initial Connection: Trying configured port '%s'.", conf.SerialPortName)
 		portMutex.Lock()
-		reconnect(conf.SerialPortName)
+		reconnect(conf.SerialPortName, nil)
 		portMutex.Unlock()
 	} else {
 		logger.Info("Initial Connection: Starting auto-detection...")
-		foundPort, err := FindPort()
+		foundPort, foundHandle, err := FindPort()
 		if err != nil {
 			logger.Warn("Initial Connection: Auto-detection failed: %v", err)
 		} else {
 			logger.Info("Auto-detection found device on port %s. Connecting...", foundPort)
 			portMutex.Lock()
-			reconnect(foundPort)
+			reconnect(foundPort, foundHandle)
 			portMutex.Unlock()
 		}
 	}
@@ -314,12 +313,12 @@ func ManageConnection(initDone chan struct{}) {
 			// Wenn Auto-Detect AUS ist, versuchen wir NUR den konfigurierten Port.
 			if !autoDetect && targetPort != "" {
 				logger.Info("Connection Manager: Trying configured port '%s' for reconnection.", targetPort)
-				reconnect(targetPort)
+				reconnect(targetPort, nil)
 			} else {
 				// Wenn Auto-Detect AN ist (oder kein Port konfiguriert ist), verhalten wir uns wie bisher.
 				if targetPort != "" {
 					logger.Info("Connection Manager: Trying configured port '%s' for reconnection.", targetPort)
-					reconnect(targetPort)
+					reconnect(targetPort, nil)
 					if sv241Port == nil {
 						logger.Warn("Connection Manager: Configured port '%s' failed. Falling back to auto-detection.", targetPort)
 						conf.SerialPortName = "" // Leeren, damit der nächste Versuch den Autoscan nutzt
@@ -330,12 +329,12 @@ func ManageConnection(initDone chan struct{}) {
 				// Wenn immer noch nicht verbunden, starte den Autoscan.
 				if sv241Port == nil {
 					logger.Info("Connection Manager: Starting auto-detection...")
-					foundPort, err := FindPort()
+					foundPort, foundHandle, err := FindPort()
 					if err != nil {
 						logger.Warn("Connection Manager: Auto-detection failed: %v", err)
 					} else {
 						logger.Info("Connection Manager: Auto-detection found device on port %s. Connecting...", foundPort)
-						reconnect(foundPort)
+						reconnect(foundPort, foundHandle)
 					}
 				}
 			}
@@ -347,13 +346,13 @@ func ManageConnection(initDone chan struct{}) {
 }
 
 // FindPort iterates through available serial ports to find the SV241 device.
-func FindPort() (string, error) {
+func FindPort() (string, serial.Port, error) {
 	ports, err := enumerator.GetDetailedPortsList()
 	if err != nil {
 		logger.Warn("FindPort: enumerator.GetDetailedPortsList returned an error: %v.", err)
 	}
 	if len(ports) == 0 {
-		return "", errors.New("no serial ports found on the system")
+		return "", nil, errors.New("no serial ports found on the system")
 	}
 
 	logger.Info("Found %d serial ports. Probing for SV241 device...", len(ports))
@@ -362,31 +361,38 @@ func FindPort() (string, error) {
 		if port.IsUSB {
 			logger.Info("Probing port: %s", port.Name)
 
-			if probePortWithTimeout(port.Name, 4*time.Second) {
-				return port.Name, nil
+			if p, success := probePortWithTimeout(port.Name, 4*time.Second); success {
+				return port.Name, p, nil
 			}
 		} else {
 			logger.Debug("Skipping port %s: Not a USB port.", port.Name)
 		}
 	}
-	return "", errors.New("could not find SV241 device on any USB serial port")
+	return "", nil, errors.New("could not find SV241 device on any USB serial port")
 }
 
 // probePortWithTimeout probes a port with a hard timeout that guarantees cleanup.
 // Uses a goroutine for the actual probe, but closes the port if timeout occurs.
-func probePortWithTimeout(portName string, timeout time.Duration) bool {
-	resultChan := make(chan bool, 1)
+func probePortWithTimeout(portName string, timeout time.Duration) (serial.Port, bool) {
+	type probeResult struct {
+		success bool
+		port    serial.Port
+	}
+	resultChan := make(chan probeResult, 1)
 
 	// Shared variable for port handle - allows cleanup on timeout
 	var probePort serial.Port
 	var probeMutex sync.Mutex
 
 	go func() {
-		mode := &serial.Mode{BaudRate: 115200}
+		mode := &serial.Mode{
+			BaudRate:          115200,
+			InitialStatusBits: &serial.ModemOutputBits{DTR: false, RTS: false},
+		}
 		p, err := serial.Open(portName, mode)
 		if err != nil {
 			logger.Warn("Could not open port %s to probe: %v", portName, err)
-			resultChan <- false
+			resultChan <- probeResult{false, nil}
 			return
 		}
 
@@ -395,47 +401,78 @@ func probePortWithTimeout(portName string, timeout time.Duration) bool {
 		probePort = p
 		probeMutex.Unlock()
 
+		// Disable DTR and RTS immediately after opening.
+		// On Linux, the serial driver asserts these lines by default when a port is opened.
+		// The ESP32 auto-reset circuit uses DTR/RTS to trigger a reboot. 
+		if err := p.SetDTR(false); err != nil {
+			logger.Debug("Port %s: Could not disable DTR during probe: %v", portName, err)
+		}
+		if err := p.SetRTS(false); err != nil {
+			logger.Debug("Port %s: Could not disable RTS during probe: %v", portName, err)
+		}
+
+		// Because the kernel pulse is usually enough to trigger the reboot anyway before we can disable it,
+		// we MUST wait for the ESP32 to finish its FreeRTOS boot before sending our command.
+		// The boot process takes about 1.5 seconds.
+		time.Sleep(1500 * time.Millisecond)
+
+		// Drain the boot-log bytes that arrived during the reboot
+		p.SetReadTimeout(100 * time.Millisecond)
+		drainBuf := make([]byte, 4096)
+		for {
+			n, _ := p.Read(drainBuf)
+			if n == 0 {
+				break
+			}
+		}
+
 		// Set read timeout
 		p.SetReadTimeout(2 * time.Second)
 
+		var success bool
 		_, err = p.Write([]byte("{\"get\":\"sensors\"}\n"))
 		if err != nil {
 			logger.Debug("Port %s: Write failed: %v", portName, err)
-			p.Close()
-			resultChan <- false
-			return
+		} else {
+			for i := 0; i < 5; i++ {
+				line, readErr := readLine(p, 2 * time.Second)
+				if readErr != nil {
+					logger.Debug("Port %s: Read failed or timed out: %v", portName, readErr)
+					break
+				}
+	
+				trimmed := strings.TrimSpace(line)
+				if trimmed == "" {
+					continue
+				}
+	
+				var js json.RawMessage
+				if json.Unmarshal([]byte(trimmed), &js) == nil {
+					logger.Info("Successfully probed port: %s", portName)
+					success = true
+					break
+				}
+				logger.Debug("Port %s: Line was not valid JSON: %s", portName, trimmed)
+			}
 		}
 
-		reader := bufio.NewReader(p)
-		line, err := reader.ReadString('\n')
-		p.Close() // Close immediately after read
-
-		// Clear the shared handle since we closed it
+		// Clear the shared handle since we are done with probing phase
 		probeMutex.Lock()
 		probePort = nil
 		probeMutex.Unlock()
 
-		if err != nil {
-			logger.Debug("Port %s: Read failed or timed out: %v", portName, err)
-			resultChan <- false
-			return
+		if success {
+			resultChan <- probeResult{true, p}
+		} else {
+			p.Close()
+			resultChan <- probeResult{false, nil}
 		}
-
-		var js json.RawMessage
-		if json.Unmarshal([]byte(line), &js) == nil {
-			logger.Info("Successfully probed port: %s", portName)
-			resultChan <- true
-			return
-		}
-
-		logger.Debug("Port %s: Response was not valid JSON: %s", portName, line)
-		resultChan <- false
 	}()
 
 	// Wait for result with hard timeout
 	select {
-	case success := <-resultChan:
-		return success
+	case res := <-resultChan:
+		return res.port, res.success
 	case <-time.After(timeout):
 		logger.Warn("Port %s: Probe timed out after %v. Forcing cleanup.", portName, timeout)
 
@@ -447,7 +484,7 @@ func probePortWithTimeout(portName string, timeout time.Duration) bool {
 		}
 		probeMutex.Unlock()
 
-		return false
+		return nil, false
 	}
 }
 
@@ -455,21 +492,34 @@ func probePortWithTimeout(portName string, timeout time.Duration) bool {
 func Reconnect(portName string) {
 	portMutex.Lock()
 	defer portMutex.Unlock()
-	reconnect(portName)
+	reconnect(portName, nil)
 }
 
 // reconnect attempts to close the current port and open a new one.
 // It MUST be called within a portMutex lock.
-func reconnect(newPortName string) {
+func reconnect(newPortName string, preOpenedPort serial.Port) {
 	handleDisconnect() // Close existing port if any
 
 	if newPortName != "" {
-		logger.Info("Attempting to open serial port: %s", newPortName)
-		mode := &serial.Mode{BaudRate: 115200}
-		p, err := serial.Open(newPortName, mode)
-		if err != nil {
-			logger.Error("reconnect: Failed to open port %s: %v", newPortName, err)
+		var p serial.Port
+		var err error
+
+		if preOpenedPort != nil {
+			logger.Info("Using auto-detected, pre-opened serial port: %s", newPortName)
+			p = preOpenedPort
 		} else {
+			logger.Info("Attempting to open serial port: %s", newPortName)
+			mode := &serial.Mode{
+				BaudRate:          115200,
+				InitialStatusBits: &serial.ModemOutputBits{DTR: false, RTS: false},
+			}
+			p, err = serial.Open(newPortName, mode)
+			if err != nil {
+				logger.Error("reconnect: Failed to open port %s: %v", newPortName, err)
+			}
+		}
+
+		if p != nil {
 			// Disable DTR and RTS immediately after opening the port.
 			// On Linux, the serial driver may assert these lines by default when a port is opened.
 			// The typical ESP32 auto-reset circuit uses a combination of DTR and RTS (via
