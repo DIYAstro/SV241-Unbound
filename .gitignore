@@ -1,4 +1,5 @@
 .pio
+compile_commands.json
 .vscode/
 media/
 AscomAlpacaProxy/resource.syso
