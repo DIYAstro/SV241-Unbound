@@ -114,7 +114,10 @@ void setup_sensors() {
   if (is_ina219_available) {
     // The Adafruit library's begin() function calls setCalibration_32V_2A(), which assumes a 0.1 Ohm shunt.
     // We must overwrite this with our custom calibration for the 0.005 Ohm shunt.
-    uint16_t config_value = INA219_CONFIG_BVOLTAGERANGE_32V |
+    // Explicit cast on the first operand: these constants come from separate unscoped enums
+    // in Adafruit_INA219.h, and combining values from different enum types via `|` is
+    // deprecated as of C++20. Casting here doesn't change the resulting bit pattern.
+    uint16_t config_value = (uint16_t)INA219_CONFIG_BVOLTAGERANGE_32V |
                       INA219_CONFIG_GAIN_8_320MV | INA219_CONFIG_BADCRES_12BIT |
                       INA219_CONFIG_SADCRES_12BIT_1S_532US |
                       INA219_CONFIG_MODE_SANDBVOLT_CONTINUOUS;
