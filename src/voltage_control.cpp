@@ -2,8 +2,9 @@
 #include "config_manager.h"
 #include "hardware_pins.h"
 
-// LEDC (PWM) channel settings
-#define LEDC_CHANNEL    0
+// LEDC (PWM) settings
+// Note: Arduino-ESP32 core 3.x manages LEDC channel assignment internally per pin
+// (ledcAttach/ledcWrite address the pin directly), so no explicit channel number is needed here.
 #define LEDC_FREQUENCY  50000 // 50 kHz - best balance within SC8903 VPWM range (20-100 kHz)
 #define LEDC_RESOLUTION 8      // 8-bit resolution (0-255) = ~59mV steps, sufficient for voltage control
 
@@ -71,11 +72,8 @@ float get_voltage_correction(float desired_voltage) {
 static float ram_voltage_target = -1.0f;
 
 void setup_voltage_control() {
-  // Configure the LEDC peripheral
-  ledcSetup(LEDC_CHANNEL, LEDC_FREQUENCY, LEDC_RESOLUTION);
-
-  // Attach the channel to the GPIO pin
-  ledcAttachPin(ADJUSTABLE_CONVERTER_PIN, LEDC_CHANNEL);
+  // Configure the LEDC peripheral and attach it to the GPIO pin in one call (core 3.x API)
+  ledcAttach(ADJUSTABLE_CONVERTER_PIN, LEDC_FREQUENCY, LEDC_RESOLUTION);
 
   xSemaphoreTake(config_mutex, portMAX_DELAY);
   bool startup_state = config.power_startup_states.adj_conv;
@@ -117,10 +115,10 @@ void set_adjustable_converter_state(bool on) {
     uint32_t max_duty = (1 << LEDC_RESOLUTION) - 1; // 255 for 8-bit
     uint32_t duty_cycle = (corrected_voltage / ADJUSTABLE_CONVERTER_MAX_VOLTAGE) * max_duty;
     
-    ledcWrite(LEDC_CHANNEL, duty_cycle);
+    ledcWrite(ADJUSTABLE_CONVERTER_PIN, duty_cycle);
   } else {
     // Set duty cycle to 0 to turn the output off
-    ledcWrite(LEDC_CHANNEL, 0);
+    ledcWrite(ADJUSTABLE_CONVERTER_PIN, 0);
   }
 }
 

@@ -225,8 +225,20 @@ void setup() {
     delay(10); // wait for serial port to connect.
   }
 
-  // Initialize the Task Watchdog Timer
-  esp_task_wdt_init(WDT_TIMEOUT, true); // true = panic and reboot on timeout
+  // Initialize the Task Watchdog Timer (core 3.x config-struct API)
+  esp_task_wdt_config_t twdt_config = {
+    .timeout_ms = WDT_TIMEOUT * 1000UL, // WDT_TIMEOUT is in seconds
+    .idle_core_mask = 0,                // Don't auto-monitor idle tasks - only tasks that
+                                         // explicitly call esp_task_wdt_add(), matching the
+                                         // original (legacy 2-arg) behavior.
+    .trigger_panic = true,              // Panic and reboot on timeout
+  };
+  esp_err_t wdt_init_result = esp_task_wdt_init(&twdt_config);
+  if (wdt_init_result == ESP_ERR_INVALID_STATE) {
+    // Some cores pre-initialize the TWDT before setup() runs. Reconfigure it to our
+    // desired timeout instead of silently keeping whatever default was already active.
+    esp_task_wdt_reconfigure(&twdt_config);
+  }
   esp_task_wdt_add(NULL); // Add the main loop task to the watchdog
   
   // Serial is now available, but we can't protect it until the mutex is created.

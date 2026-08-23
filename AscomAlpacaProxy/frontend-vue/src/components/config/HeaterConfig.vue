@@ -30,7 +30,8 @@ watch(() => config.value.dh, (newVal) => {
         // Deep copy safely AND convert `en` to boolean (firmware sends 0/1)
         localHeaters.value = newVal.map(h => ({
             ...h,
-            en: !!h.en  // Convert 1 -> true, 0 -> false
+            en: !!h.en,  // Convert 1 -> true, 0 -> false
+            xd: h.xd ?? 100  // Fall back to "no limit" for older firmware/backups without this field
         }));
         
         // Sync names and auto-enable if not already edited
@@ -110,7 +111,11 @@ async function save() {
             ed: parseFloat(h.ed) || 0,
             xp: parseFloat(h.xp) || 0,
             psf: parseFloat(h.psf) || 0,
-            mt: parseFloat(h.mt) || 0
+            mt: parseFloat(h.mt) || 0,
+            // Deliberately NOT the `parseX(h.x) || default` pattern used above: 0 is a valid,
+            // safety-relevant value here (fully blocks the heater), and `|| 100` would silently
+            // turn an intentional "0" into "no limit".
+            xd: Number.isFinite(parseInt(h.xd)) ? Math.min(100, Math.max(0, parseInt(h.xd))) : 100
         }))
     };
     
@@ -194,8 +199,16 @@ async function save() {
               </select>
           </div>
 
+          <!-- Max PWM Duty - hardware safety limit, applies in every mode -->
+          <div class="form-group" v-if="heater.m !== 5">
+              <label title="Hard safety limit on the actual PWM duty cycle output. Applies in every mode. Useful for heater bands rated below the 12V supply voltage - start conservatively low and verify with a multimeter or by monitoring temperature.">
+                  Max PWM Duty (%) &ndash; Hardware Safety Limit
+              </label>
+              <input type="number" v-model.number="heater.xd" min="0" max="100" @input="onChange">
+          </div>
+
           <!-- Settings Fields based on Mode -->
-          
+
           <!-- Mode 0: Manual -->
           <div v-if="heater.m == 0" class="mode-settings active">
               <label>Power (%)</label>

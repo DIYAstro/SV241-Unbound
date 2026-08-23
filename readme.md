@@ -223,6 +223,9 @@ This is an array that can contain up to two heater configuration objects. To upd
 | `n` | Name of the heater (e.g., "PWM1"). This is read-only. | `string` |
 | `en` | **En**abled on startup: `true` to enable the heater on boot. | `boolean` |
 | `m` | **M**ode: Sets the control mode for the heater (0: Manual, 1: PID, 2: Ambient Tracking, 3: PID-Sync, 4: Minimum Temperature, 5: Disabled). | `int` |
+| `xd` | **M**ax **D**uty: Hard safety limit (0-100%) on the raw PWM duty cycle, enforced in *every* mode. Default `100` (no limit). Useful for heater bands rated below the 12V supply voltage. | `int` (0-100) |
+
+> **Note on `xd`:** This limit acts on the raw electrical duty cycle, not on the "power %" values (`mp`, `xp`, PID output) used elsewhere in this API. Those values pass through a non-linear gamma curve before becoming a duty cycle, so a limit expressed in "power %" would not reliably cap the real voltage/power delivered to the heater. `xd` bypasses that curve and caps the hardware output directly. There is no fixed formula to translate a target voltage (e.g. "never exceed 5V on a 12V rail") into an exact `xd` percentage, since the real relationship depends on your heater's electrical characteristics — start conservatively low and verify with a multimeter or by monitoring temperature before relying on it unattended. In PID-Sync (Mode 3), the follower's `xd` is independent of the leader's `xd`.
 
 **Mode-Specific Properties:**
 

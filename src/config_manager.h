@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include "ArduinoJson.h"
 
-#define FIRMWARE_VERSION "0.9.12"
+#define FIRMWARE_VERSION "0.9.13"
 
 // Maximum number of supported dew heaters
 // Maximum number of supported dew heaters
@@ -69,6 +69,10 @@ struct DewHeaterConfig {
 
     // Minimum Temperature settings (for mode 4)
     float min_temp;        // Minimum temperature to maintain
+
+    // Hard safety cap on the raw PWM duty cycle (0-100%), enforced in ALL modes.
+    // Useful for heater bands rated below the 12V supply voltage. Default 100 = no limit.
+    int max_duty_percent;
 };
 
 // Configuration for the SHT40 automatic drying feature
