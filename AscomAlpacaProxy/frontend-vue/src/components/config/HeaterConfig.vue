@@ -2,11 +2,11 @@
 import { useDeviceStore } from '../../stores/device'
 import { useModalStore } from '../../stores/modal'
 import { storeToRefs } from 'pinia'
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 
 const store = useDeviceStore()
 const modal = useModalStore()
-const { config, proxyConfig, switchNames } = storeToRefs(store)
+const { config, proxyConfig, switchNames, liveStatus } = storeToRefs(store)
 
 const localHeaters = ref([])
 // We need local state for names and auto-enable settings to allow editing before saving
@@ -77,6 +77,18 @@ function getHeaterKey(index) {
 
 function updateHeader(index) {
     // Only used for display binding
+}
+
+// Estimates the equivalent constant voltage a max_duty_percent (xd) limit corresponds to,
+// given the currently measured input voltage. Assumes a purely resistive heating element
+// (average power ~ duty * V^2, so V_equivalent = V_measured * sqrt(duty)) - this is a rough
+// guide for the user, not a precise guarantee, and does not affect the actual firmware clamp.
+// Returns null when there's nothing meaningful to show (no limit set, or no live voltage yet).
+function estimatedVoltage(xd) {
+    const v = liveStatus.value.v;
+    if (!v || xd == null || xd >= 100) return null;
+    const duty = Math.min(100, Math.max(0, Number(xd))) / 100;
+    return v * Math.sqrt(duty);
 }
 
 function isOptionDisabled(heaterIndex, optionVal) {
@@ -205,6 +217,10 @@ async function save() {
                   Max PWM Duty (%) &ndash; Hardware Safety Limit
               </label>
               <input type="number" v-model.number="heater.xd" min="0" max="100" @input="onChange">
+              <small v-if="estimatedVoltage(heater.xd) !== null" class="duty-voltage-hint">
+                  &asymp; {{ estimatedVoltage(heater.xd).toFixed(1) }} V at current {{ liveStatus.v.toFixed(1) }} V input voltage
+                  (estimate, resistive heating elements only)
+              </small>
           </div>
 
           <!-- Settings Fields based on Mode -->
@@ -297,5 +313,13 @@ label {
 
 input[type="number"], select {
     width: 100%;
+}
+
+.duty-voltage-hint {
+    display: block;
+    margin-top: 0.35rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    opacity: 0.8;
 }
 </style>
