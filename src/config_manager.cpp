@@ -8,7 +8,19 @@ void createDefaultDewHeaterConfig(int index);
 // Global configuration instance
 Config config;
 
-const char* configFile = "/config.bin"; // Using a binary file now
+// JSON text instead of a raw struct dump: fields are identified by name, not by byte offset, so
+// adding a new field can never be silently misinterpreted as leftover struct padding from an
+// older firmware (a real failure mode found via hardware testing: a newly added int field landed
+// in previously-unused struct padding, keeping sizeof(Config) unchanged across a firmware
+// upgrade, so the old binary file was wrongly accepted as valid and its stale padding bytes were
+// silently read as the new field's value). Reusing serializeConfig()/updateConfig() - the same
+// functions already used for the live JSON wire protocol - means loading naturally applies
+// defaults to any field missing from an older saved file, the same way a partial "sc" update
+// already leaves untouched fields alone.
+// New filename (not /config.bin) is deliberate: any pre-existing binary-format file from older
+// firmware simply won't be found under this name, giving a clean, predictable one-time reset to
+// defaults on upgrade instead of any ambiguity about how to interpret old binary content.
+const char* configFile = "/config.json";
 
 // Populates the config struct with default values, but does not save.
 void populateDefaultConfig() {
@@ -42,7 +54,7 @@ bool initConfig() {
     return false; // Indicate existing config was loaded
 }
 
-// Loads the configuration from the binary file directly into the config struct.
+// Loads the configuration from the JSON file into the config struct.
 bool loadConfig() {
     // The `true` parameter formats the file system if it can't be mounted.
     // This ensures that even if the filesystem gets corrupted, we can recover.
@@ -55,23 +67,27 @@ bool loadConfig() {
         return false;
     }
 
-    // Sanity check: if the file size doesn't match the struct size, it's an old or corrupt file.
-    if (file.size() != sizeof(Config)) {
-        file.close();
-        return false;
-    }
-
-    size_t bytes_read = file.read((uint8_t*)&config, sizeof(Config));
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, file);
     file.close();
 
-    if (bytes_read != sizeof(Config)) {
+    if (error) {
+        // Missing/corrupt/old-format file. Same safety net as before: fall back to defaults
+        // (handled by the caller, initConfig(), via createDefaultConfig()).
         return false;
     }
+
+    // Populate every field with its compiled-in default first, then overlay whatever the saved
+    // JSON actually contains on top - exactly like a live "sc" update. Any field absent from the
+    // loaded file (e.g. one added by a newer firmware than whatever last saved this file) simply
+    // keeps its explicit, intentional default instead of being left as random struct memory.
+    populateDefaultConfig();
+    updateConfig(doc.as<JsonObject>());
 
     return true;
 }
 
-// Saves the current in-memory config to the binary file.
+// Saves the current in-memory config to the JSON file.
 bool saveConfig() {
     // The `true` parameter formats the file system if it can't be mounted.
     // This is the most robust way to ensure we can always write.
@@ -84,13 +100,12 @@ bool saveConfig() {
         return false;
     }
 
-    size_t bytes_written = file.write((uint8_t*)&config, sizeof(Config));
+    JsonDocument doc;
+    serializeConfig(doc);
+    size_t bytes_written = serializeJson(doc, file);
     file.close();
 
-    if (bytes_written != sizeof(Config)) {
-        return false;
-    }
-    return true;
+    return bytes_written > 0;
 }
 
 // Creates default values for a single dew heater config.
