@@ -27,7 +27,7 @@ before running it.
 
 ```sh
 cd AscomAlpacaProxy
-go test -tags hwtest ./test/hwtest/... -v
+go test -tags hwtest ./test/hwtest/... -v -count=1
 ```
 
 The suite captures a full config snapshot before the first test runs and restores it exactly
@@ -35,10 +35,17 @@ after the last one finishes (even on failure) - see `main_test.go`'s `TestMain`.
 also try to leave their own corner of state clean, but the snapshot restore is the actual safety
 net.
 
+**Always pass `-count=1`.** This suite has real side effects (it talks to physical hardware, and
+the Proxy E2E tests rebuild the proxy binary from whatever's currently in `frontend-vue/dist`) that
+Go's test result cache knows nothing about. Without `-count=1`, an unchanged `hwtest` package will
+make `go test` silently replay a *stale cached PASS* instead of actually touching the box or
+rebuilding the proxy - easy to miss, since the output looks identical except for `(cached)` next
+to the final `ok` line.
+
 Override the port:
 
 ```sh
-HWTEST_PORT=COM7 go test -tags hwtest ./test/hwtest/... -v
+HWTEST_PORT=COM7 go test -tags hwtest ./test/hwtest/... -v -count=1
 ```
 
 ## Burn-in test
@@ -49,11 +56,15 @@ project's manual heap-fragmentation investigation. It does **not** run by defaul
 
 ```sh
 # Quick 5-minute smoke test
-BURNIN=1 go test -tags hwtest -run TestBurnIn ./test/hwtest/... -v
+BURNIN=1 go test -tags hwtest -run TestBurnIn ./test/hwtest/... -v -count=1
 
 # Longer run before a firmware release (recommended: 30-60+ minutes)
-BURNIN=1 BURNIN_DURATION=1h go test -tags hwtest -run TestBurnIn ./test/hwtest/... -v -timeout 2h
+BURNIN=1 BURNIN_DURATION=1h go test -tags hwtest -run TestBurnIn ./test/hwtest/... -v -count=1 -timeout 2h
 ```
+
+(`-count=1` matters here too - `BURNIN_DURATION` is read via `os.Getenv` at runtime, which Go's
+test cache doesn't track, so a second run with a different duration could otherwise be silently
+skipped and replayed from cache.)
 
 Note the `-timeout` flag: `go test`'s default overall timeout (10 minutes) will otherwise kill a
 long burn-in run before it finishes.
