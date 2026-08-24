@@ -79,16 +79,25 @@ function updateHeader(index) {
     // Only used for display binding
 }
 
-// Estimates the equivalent constant voltage a max_duty_percent (xd) limit corresponds to,
-// given the currently measured input voltage. Assumes a purely resistive heating element
-// (average power ~ duty * V^2, so V_equivalent = V_measured * sqrt(duty)) - this is a rough
-// guide for the user, not a precise guarantee, and does not affect the actual firmware clamp.
+// Estimates the average (DC-mean) voltage a max_duty_percent (xd) limit corresponds to, given
+// the currently measured input voltage: V_equivalent = V_measured * duty. This is what a
+// standard multimeter in DC-voltage mode reads on a switched PWM signal (0V/V_peak at the
+// given duty ratio) - matching what the user can actually verify empirically, per the README's
+// "verify with a multimeter" recommendation. This is a rough guide only, not a precise
+// guarantee, and does not affect the actual firmware clamp (which operates on raw duty cycle).
+//
+// Note this is deliberately NOT the RMS/power-equivalent voltage (V_measured * sqrt(duty)),
+// which would be the physically relevant quantity for average heating power - but it doesn't
+// match what a DC multimeter shows, which is what people actually check against a voltage
+// rating in practice. Also note the PEAK voltage during the "on" portion of every PWM pulse is
+// always the full measured input voltage, regardless of xd - this estimate does not represent
+// a hard instantaneous-voltage ceiling, only an average one.
 // Returns null when there's nothing meaningful to show (no limit set, or no live voltage yet).
 function estimatedVoltage(xd) {
     const v = liveStatus.value.v;
     if (!v || xd == null || xd >= 100) return null;
     const duty = Math.min(100, Math.max(0, Number(xd))) / 100;
-    return v * Math.sqrt(duty);
+    return v * duty;
 }
 
 function isOptionDisabled(heaterIndex, optionVal) {
@@ -218,8 +227,8 @@ async function save() {
               </label>
               <input type="number" v-model.number="heater.xd" min="0" max="100" @input="onChange">
               <small v-if="estimatedVoltage(heater.xd) !== null" class="duty-voltage-hint">
-                  &asymp; {{ estimatedVoltage(heater.xd).toFixed(1) }} V at current {{ liveStatus.v.toFixed(1) }} V input voltage
-                  (estimate, resistive heating elements only)
+                  &asymp; {{ estimatedVoltage(heater.xd).toFixed(1) }} V average at current {{ liveStatus.v.toFixed(1) }} V input voltage
+                  (estimate, matches a DC multimeter reading - peak voltage during each pulse is still the full input voltage)
               </small>
           </div>
 
