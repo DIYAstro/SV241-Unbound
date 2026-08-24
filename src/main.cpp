@@ -60,6 +60,15 @@ void serial_command_task(void *pvParameters) {
   static char input_buffer[MAX_INPUT_SIZE];
   static size_t input_pos = 0;
   static JsonDocument doc;  // Static to reduce heap fragmentation
+  // The following were previously freshly constructed on every single command (including the
+  // status/sensors polling that runs continuously every few seconds for the device's entire
+  // uptime) - repeatedly allocating/freeing differently-sized JsonDocuments is exactly the
+  // pattern that can fragment the ESP32 heap over time. Made static + .clear()-before-use to
+  // match the one JsonDocument (above) that already used this pattern.
+  static JsonDocument status_doc;
+  static JsonDocument config_doc;
+  static JsonDocument sensors_doc;
+  static JsonDocument version_doc;
 
   for (;;) {
     while (Serial.available() > 0) {
@@ -98,7 +107,7 @@ void serial_command_task(void *pvParameters) {
             dry_sht40_sensor();
           } else if (doc["get"].is<const char*>() && strcmp(doc["get"], "status") == 0) {
             String output_buffer;
-            JsonDocument status_doc;
+            status_doc.clear();
             get_power_status_json(status_doc);
             
             // Piggyback Dew Heater Modes onto status for lightweight detection
@@ -119,7 +128,7 @@ void serial_command_task(void *pvParameters) {
             // Respond with the updated power status directly to the serial port for performance.
             // This is safe because get_power_status_json() does not take other mutexes.
             xSemaphoreTake(serial_mutex, portMAX_DELAY);
-            JsonDocument status_doc;
+            status_doc.clear();
             get_power_status_json(status_doc);
             serializeJson(status_doc, Serial);
             Serial.println();
@@ -127,7 +136,7 @@ void serial_command_task(void *pvParameters) {
 
           } else if (doc["get"].is<const char*>() && strcmp(doc["get"], "config") == 0) {
             String output_buffer;
-            JsonDocument config_doc;
+            config_doc.clear();
             xSemaphoreTake(config_mutex, portMAX_DELAY);
             serializeConfig(config_doc);
             xSemaphoreGive(config_mutex);
@@ -140,7 +149,7 @@ void serial_command_task(void *pvParameters) {
 
           } else if (doc["get"].is<const char*>() && strcmp(doc["get"], "sensors") == 0) {
             String output_buffer;
-            JsonDocument sensors_doc;
+            sensors_doc.clear();
             get_sensor_values_json(sensors_doc); // This function is now safe
             serializeJson(sensors_doc, output_buffer);
 
@@ -150,7 +159,7 @@ void serial_command_task(void *pvParameters) {
 
           } else if (doc["get"].is<const char*>() && strcmp(doc["get"], "version") == 0) {
             String output_buffer;
-            JsonDocument version_doc;
+            version_doc.clear();
             version_doc["version"] = FIRMWARE_VERSION;
             serializeJson(version_doc, output_buffer);
 
@@ -166,7 +175,7 @@ void serial_command_task(void *pvParameters) {
             xSemaphoreTake(config_mutex, portMAX_DELAY);
             updateConfig(set_obj);
             saveConfig();
-            JsonDocument config_doc;
+            config_doc.clear();
             serializeConfig(config_doc);
             xSemaphoreGive(config_mutex);
 
