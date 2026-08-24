@@ -22,7 +22,24 @@ function getEdit(key) {
     return edits.value[key];
 }
 
-const hasChanges = computed(() => Object.keys(edits.value).length > 0);
+// Power-On Stagger Delay (psd) - a single global value, not per-switch, so it's tracked
+// separately from `edits` rather than shoehorned into the per-row structure above. Used both
+// during boot startup and the Master Power On / "all" switch (see power_control.cpp).
+const psdEdit = ref(undefined) // undefined = no pending change
+
+const psdDisplayValue = computed(() => {
+    if (psdEdit.value !== undefined) return psdEdit.value;
+    return config.value.psd ?? 500;
+});
+
+function onPsdChange(val) {
+    // Deliberately NOT the `parseX(val) || default` pattern: 0 is a valid, meaningful value
+    // here (staggering disabled), and `|| 500` would silently turn an intentional "0" into 500.
+    const parsed = parseInt(val);
+    psdEdit.value = Number.isFinite(parsed) ? Math.min(5000, Math.max(0, parsed)) : 500;
+}
+
+const hasChanges = computed(() => Object.keys(edits.value).length > 0 || psdEdit.value !== undefined);
 
 function getDefaultName(key) {
     const map = {
@@ -137,11 +154,15 @@ async function save() {
     
     const newPs = config.value.ps ? { ...config.value.ps } : {};
     let newAv = config.value.av;
-    
+
     const newNames = { ...store.proxyConfig.switchNames };
-    
+
     let psChanged = false;
     let namesChanged = false;
+
+    if (psdEdit.value !== undefined) {
+        psChanged = true; // Send together with ps/av in the same saveConfig() call below
+    }
 
     // Apply edits to reconstructed config objects
     for (const key of Object.keys(edits.value)) {
@@ -173,8 +194,10 @@ async function save() {
     }
 
     if (psChanged) {
+        const payload = { ps: newPs, av: newAv };
+        if (psdEdit.value !== undefined) payload.psd = psdEdit.value;
         try {
-            await store.saveConfig({ ps: newPs, av: newAv });
+            await store.saveConfig(payload);
             saved = true;
         } catch (e) {
             modal.error('Error saving startup states: ' + e.message);
@@ -196,6 +219,7 @@ async function save() {
     if (saved) {
         modal.success('Configuration saved.');
         edits.value = {}; // Clear edits on success
+        psdEdit.value = undefined;
     } else {
         modal.info('No changes detected.');
     }
@@ -241,6 +265,16 @@ async function save() {
                   </tr>
               </tbody>
           </table>
+      </div>
+
+      <div class="form-group" style="margin-top: 1rem;">
+          <label title="Delay between switching on individual outputs, both during boot (using the startup states above) and when using Master Power On / the 'all' switch. 0 = disabled (all at once, as before). Helps avoid simultaneous inrush current spikes from multiple devices powering on together.">
+              Power-On Stagger Delay (ms)
+          </label>
+          <input type="number" :value="psdDisplayValue" @input="e => onPsdChange(e.target.value)" min="0" max="5000" style="width: 120px;">
+          <small style="display: block; color: var(--text-secondary); margin-top: 0.3rem; opacity: 0.8;">
+              Applies to both boot-time startup and Master Power On / "all" switch (including dew heater outputs).
+          </small>
       </div>
 
       <button @click="save" class="btn-primary" style="margin-top: 1rem; width: 100%;" :disabled="!hasChanges">Save Switch Configuration</button>
