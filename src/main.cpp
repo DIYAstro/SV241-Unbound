@@ -29,6 +29,21 @@ void sensor_update_task(void *pvParameters) {
   }
 }
 
+// Task function to service the staggered "all" master-power-on queue (see power_control.cpp).
+// Kept as its own small task rather than piggybacked onto sensor_update_task to keep sensing
+// and power sequencing cleanly separate - the cost is negligible (RAM usage is well under 15%).
+void power_stagger_task(void *pvParameters) {
+  esp_task_wdt_add(NULL); // Register this task with the watchdog
+  xSemaphoreTake(serial_mutex, portMAX_DELAY);
+  Serial.println("Power stagger task started.");
+  xSemaphoreGive(serial_mutex);
+  for (;;) {
+    service_power_stagger_queue();
+    vTaskDelay(pdMS_TO_TICKS(100));
+    esp_task_wdt_reset(); // Feed the watchdog
+  }
+}
+
 // Task function to monitor memory usage
 void memory_monitor_task(void *pvParameters) {
   esp_task_wdt_add(NULL); // Register this task with the watchdog
@@ -326,6 +341,15 @@ void setup() {
   xTaskCreatePinnedToCore(
       memory_monitor_task,  // Task function
       "MemoryMonitorTask",  // Name of the task
+      2048,                 // Stack size of the task
+      NULL,                 // Parameter of the task
+      1,                    // Priority of the task
+      NULL,                 // Task handle to keep track of the task
+      1);                   // Pin to core 1
+
+  xTaskCreatePinnedToCore(
+      power_stagger_task,   // Task function
+      "PowerStaggerTask",   // Name of the task
       2048,                 // Stack size of the task
       NULL,                 // Parameter of the task
       1,                    // Priority of the task

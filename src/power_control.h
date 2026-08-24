@@ -37,4 +37,8 @@ void handle_set_power_command(JsonVariant set_command);
 // Get the current state of a specific power output
 bool get_power_output_state(PowerOutput output);
 
+// Processes one pending item (if due) from the staggered "all" master-power-on queue.
+// Call periodically (e.g. every ~100ms) from a background task. Non-blocking.
+void service_power_stagger_queue();
+
 #endif // POWER_CONTROL_H

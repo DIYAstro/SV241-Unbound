@@ -29,6 +29,7 @@ void populateDefaultConfig() {
     config.power_startup_states = {false, false, false, false, false, false, false, false};
     config.averaging_counts = {5, 5, 5, 5, 5};
     config.adj_conv_preset_v = 1.0f;
+    config.poweron_stagger_delay_ms = 500;
 
     // Default settings for SHT40 auto-dry feature
     config.sht40_auto_dry = {true, 99.0f, 300000}; // enabled, 99.0% threshold, 5 minutes duration
@@ -184,6 +185,7 @@ void serializeConfig(JsonDocument& doc) {
     averaging_counts["ic"] = config.averaging_counts.ina219_current;
 
     doc["av"] = config.adj_conv_preset_v;
+    doc["psd"] = config.poweron_stagger_delay_ms;
 
     JsonObject auto_dry_obj = doc["ad"].to<JsonObject>();
     auto_dry_obj["en"] = (int)config.sht40_auto_dry.enabled;
@@ -251,6 +253,12 @@ void updateConfig(const JsonObject& doc) {
 
     if (!doc["av"].isNull()) {
         config.adj_conv_preset_v = doc["av"] | config.adj_conv_preset_v;
+    }
+
+    if (!doc["psd"].isNull()) {
+        unsigned long delay_ms = doc["psd"].as<unsigned long>();
+        if (delay_ms > 5000) delay_ms = 5000; // sanity cap
+        config.poweron_stagger_delay_ms = delay_ms;
     }
 
     if (!doc["ad"].isNull()) {

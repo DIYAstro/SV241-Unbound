@@ -36,7 +36,24 @@ const char* const power_output_names[POWER_OUTPUT_COUNT] = {
 // Array to track the current state of each power output
 static bool power_output_states[POWER_OUTPUT_COUNT];
 
+// --- Staggered "all" power-on (soft-start) ---
+// Queue used by the live {"set":{"all":true}} command, serviced asynchronously by
+// service_power_stagger_queue() so handle_set_power_command() never blocks (see
+// power_control.cpp's handle_set_power_command() and main.cpp's power_stagger_task()).
+// Access to these is synchronized via stagger_mutex, not `volatile` - a mutex already provides
+// the necessary memory visibility/ordering guarantees between the task that queues (in
+// handle_set_power_command()) and the task that drains the queue (service_power_stagger_queue()).
+static PowerOutput stagger_queue[POWER_OUTPUT_COUNT];
+static int stagger_queue_len = 0;
+static int stagger_queue_pos = 0;
+static unsigned long stagger_due_at_ms = 0;
+static SemaphoreHandle_t stagger_mutex = NULL;
+
 void setup_power_outputs() {
+  if (stagger_mutex == NULL) {
+    stagger_mutex = xSemaphoreCreateMutex();
+  }
+
   xSemaphoreTake(config_mutex, portMAX_DELAY);
   // Load startup states from the global config struct
   // Using uint8_t to support 0=Off, 1=On, 2=Disabled
@@ -52,8 +69,15 @@ void setup_power_outputs() {
     (uint8_t)(config.dew_heaters[0].enabled_on_startup ? 1 : 0),
     (uint8_t)(config.dew_heaters[1].enabled_on_startup ? 1 : 0)
   };
+  unsigned long stagger_delay_ms = config.poweron_stagger_delay_ms;
   xSemaphoreGive(config_mutex);
 
+  // This runs in setup(), before any FreeRTOS tasks are created (setup_power_outputs() is
+  // called ahead of every xTaskCreatePinnedToCore() in main.cpp), so a blocking vTaskDelay()
+  // here cannot stall anything else - unlike the live "all" command below, which needs the
+  // async queue instead. Delay before each enable except the first one, so multiple DC/USB
+  // outputs configured to power on at boot don't all inrush-current-spike simultaneously.
+  bool first_enable = true;
   for (int i = 0; i < POWER_OUTPUT_COUNT; i++) {
     // Outputs managed by other modules are skipped here
     if ((PowerOutput)i == POWER_ADJ_CONV || (PowerOutput)i == POWER_PWM1 || (PowerOutput)i == POWER_PWM2) {
@@ -64,9 +88,15 @@ void setup_power_outputs() {
     }
 
     pinMode(power_output_pins[i], OUTPUT);
-    
+
     // Logic: 0 -> Off, 1 -> On, 2 -> Disabled (Off)
     bool physical_state = (startup_states[i] == 1);
+    if (physical_state && stagger_delay_ms > 0) {
+        if (!first_enable) {
+            vTaskDelay(pdMS_TO_TICKS(stagger_delay_ms));
+        }
+        first_enable = false;
+    }
     set_power_output((PowerOutput)i, physical_state);
   }
 }
@@ -177,7 +207,7 @@ void handle_set_power_command(JsonVariant set_command) {
     // Check for the special "all" key first
     if (set_obj["all"].is<bool>() || set_obj["all"].is<int>()) {
         bool all_state = set_obj["all"].as<bool>();
-        
+
         // Build array of disabled states from config (inside mutex)
         xSemaphoreTake(config_mutex, portMAX_DELAY);
         bool is_disabled[POWER_OUTPUT_COUNT] = {
@@ -193,11 +223,35 @@ void handle_set_power_command(JsonVariant set_command) {
             config.dew_heaters[1].mode == DEW_MODE_DISABLED
         };
         xSemaphoreGive(config_mutex);
-        
-        for (int i = 0; i < POWER_OUTPUT_COUNT; i++) {
-            // Skip outputs that are configured as Disabled
-            if (is_disabled[i]) continue;
-            set_power_output((PowerOutput)i, all_state);
+
+        if (all_state) {
+            // Turning on: don't switch directly here (would block this task, and thus the
+            // {"set":{"all":true}} response, for up to several seconds - see
+            // service_power_stagger_queue()). Queue the non-disabled outputs instead; a
+            // background task enables them one at a time with the configured delay between.
+            xSemaphoreTake(stagger_mutex, portMAX_DELAY);
+            stagger_queue_len = 0;
+            stagger_queue_pos = 0;
+            for (int i = 0; i < POWER_OUTPUT_COUNT; i++) {
+                if (is_disabled[i]) continue;
+                stagger_queue[stagger_queue_len++] = (PowerOutput)i;
+            }
+            stagger_due_at_ms = millis(); // first queued output is due immediately
+            xSemaphoreGive(stagger_mutex);
+        } else {
+            // Turning off: no inrush-current concern, switch everything immediately as before.
+            // Also clear any still-pending staggered "on" queue, so a follower output from an
+            // earlier all:true doesn't switch back on seconds after the user just turned
+            // everything off.
+            xSemaphoreTake(stagger_mutex, portMAX_DELAY);
+            stagger_queue_len = 0;
+            stagger_queue_pos = 0;
+            xSemaphoreGive(stagger_mutex);
+
+            for (int i = 0; i < POWER_OUTPUT_COUNT; i++) {
+                if (is_disabled[i]) continue;
+                set_power_output((PowerOutput)i, false);
+            }
         }
         return; // Exit after handling the "all" command
     }
@@ -262,4 +316,27 @@ bool get_power_output_state(PowerOutput output) {
     return power_output_states[output];
   }
   return false;
+}
+
+void service_power_stagger_queue() {
+  PowerOutput output_to_enable = POWER_DC1; // placeholder, only used if should_enable is set true
+  bool should_enable = false;
+
+  xSemaphoreTake(stagger_mutex, portMAX_DELAY);
+  if (stagger_queue_pos < stagger_queue_len && millis() >= stagger_due_at_ms) {
+    output_to_enable = stagger_queue[stagger_queue_pos++];
+    should_enable = true;
+
+    xSemaphoreTake(config_mutex, portMAX_DELAY);
+    unsigned long delay_ms = config.poweron_stagger_delay_ms;
+    xSemaphoreGive(config_mutex);
+    stagger_due_at_ms = millis() + delay_ms;
+  }
+  xSemaphoreGive(stagger_mutex);
+
+  // Call set_power_output() outside the stagger_mutex critical section - it takes config_mutex
+  // internally, and there's no need to hold stagger_mutex while that happens.
+  if (should_enable) {
+    set_power_output(output_to_enable, true);
+  }
 }

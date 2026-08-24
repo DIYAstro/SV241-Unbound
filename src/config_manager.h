@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include "ArduinoJson.h"
 
-#define FIRMWARE_VERSION "0.9.15"
+#define FIRMWARE_VERSION "0.9.16"
 
 // Maximum number of supported dew heaters
 // Maximum number of supported dew heaters
@@ -92,6 +92,8 @@ struct Config {
     float adj_conv_preset_v;
     Sht40AutoDryConfig sht40_auto_dry;
     DewHeaterConfig dew_heaters[MAX_DEW_HEATERS];
+    unsigned long poweron_stagger_delay_ms; // Delay between staggered output enables during "all"
+                                             // master power on and at boot. 0 = disabled (instant).
 };
 
 // Global configuration instance
