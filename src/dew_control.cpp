@@ -10,7 +10,8 @@
 
 // --- Private State ---
 static bool heater_enabled[MAX_DEW_HEATERS];
-static int heater_power[MAX_DEW_HEATERS] = {0}; // Live power percentage (0-100)
+static int heater_power[MAX_DEW_HEATERS] = {0}; // Live power percentage (0-100), INCLUDING this heater's own max_duty_percent clamp - used for reporting/telemetry and hardware writes.
+static int heater_demand[MAX_DEW_HEATERS] = {0}; // Raw demand computed by this heater's own control logic, BEFORE its own max_duty_percent clamp. Used as the sync basis for PID-Sync followers, so a leader's own hardware limit never leaks into what a follower is allowed to output.
 static int ram_pwm_overrides[MAX_DEW_HEATERS] = {-1, -1}; // RAM overrides
 
 // Converts a "Max PWM Duty" hardware safety limit (0-100%, the raw electrical duty cycle)
@@ -192,6 +193,7 @@ void dew_control_task(void *pvParameters) {
         for (int i = 0; i < MAX_DEW_HEATERS; i++) {
             if (!heater_enabled[i] || HEATER_PINS[i] == -1) {
                 heater_power[i] = 0; // Store 0 if disabled
+                heater_demand[i] = 0;
                 continue; // Skip disabled or unused heaters
             }
 
@@ -223,6 +225,7 @@ void dew_control_task(void *pvParameters) {
                 // A sensor required for this automatic mode is disconnected or invalid.
                 // Turn off the heater as a safety measure.
                 heater_power[i] = 0;
+                heater_demand[i] = 0;
                 ledcWrite(HEATER_PINS[i], 0);
                 continue; // Skip to the next heater
             }
@@ -238,6 +241,7 @@ void dew_control_task(void *pvParameters) {
                         power_percentage = heater_config.manual_power;
                     }
 
+                    heater_demand[i] = power_percentage;
                     set_heater_power_output(i, power_percentage, duty_limit_to_power_percent(heater_config.max_duty_percent));
                     break;
                 }
@@ -250,18 +254,23 @@ void dew_control_task(void *pvParameters) {
                     // Update PID tunings in case they changed
                     int max_power_equiv = duty_limit_to_power_percent(heater_config.max_duty_percent);
                     heater_pids[i].SetTunings(heater_config.pid_kp, heater_config.pid_ki, heater_config.pid_kd);
-                    // Cap the PID's own output range to the max_duty_percent limit. This is essential -
-                    // it lets QuickPID's internal anti-windup clamp the integral term to the real ceiling,
-                    // instead of letting it wind up against an unreachable 100% and only clamping afterwards.
-                    heater_pids[i].SetOutputLimits(0, max_power_equiv);
+                    // Keep the PID's own output range fixed at its natural 0-100 (matching how
+                    // kp/ki/kd were tuned), rather than reducing it to max_duty_percent. That keeps
+                    // pid_output[i] a meaningful "raw demand" signal, decoupled from this heater's
+                    // own hardware limit - PID-Sync followers need that raw demand (see Phase 2
+                    // below), not a value already crushed by the leader's own max_duty_percent.
+                    // The hardware safety clamp is still applied unconditionally at the write stage
+                    // via set_heater_power_output() below, so this never risks exceeding max_duty_percent.
+                    heater_pids[i].SetOutputLimits(0, 100);
 
-                    heater_pids[i].Compute(); // pid_output[i] is now a value from 0-max_power_equiv
+                    heater_pids[i].Compute(); // pid_output[i] is the PID's raw 0-100 demand
 
                     int power_percentage = (int)pid_output[i];
+                    heater_demand[i] = constrain(power_percentage, 0, 100);
                     set_heater_power_output(i, power_percentage, max_power_equiv);
                     break;
                 }
-                
+
                 case 4: { // Minimum Temperature Mode
                     float lens_temp = sensor_values.ds18b20_temperature;
                     pid_input[i] = lens_temp;
@@ -273,12 +282,15 @@ void dew_control_task(void *pvParameters) {
                     // Update PID tunings in case they changed
                     int max_power_equiv = duty_limit_to_power_percent(heater_config.max_duty_percent);
                     heater_pids[i].SetTunings(heater_config.pid_kp, heater_config.pid_ki, heater_config.pid_kd);
-                    // See Mode 1 (PID) comment: caps PID's own output range for correct anti-windup.
-                    heater_pids[i].SetOutputLimits(0, max_power_equiv);
+                    // See Mode 1 (PID) comment: keep the PID's own output range fixed at 0-100 so
+                    // pid_output[i] stays a meaningful raw demand for PID-Sync followers; the
+                    // hardware safety clamp is applied separately below via set_heater_power_output().
+                    heater_pids[i].SetOutputLimits(0, 100);
 
                     heater_pids[i].Compute();
 
                     int power_percentage = (int)pid_output[i];
+                    heater_demand[i] = constrain(power_percentage, 0, 100);
                     set_heater_power_output(i, power_percentage, max_power_equiv);
                     break;
                 }
@@ -299,12 +311,14 @@ void dew_control_task(void *pvParameters) {
                     // Clamp the value just in case
                     power_percentage = constrain(power_percentage, 0, heater_config.max_power);
 
+                    heater_demand[i] = (int)power_percentage;
                     set_heater_power_output(i, (int)power_percentage, duty_limit_to_power_percent(heater_config.max_duty_percent));
                     break;
                 }
 
                 case 5: { // Disabled Mode (Hidden)
                     heater_power[i] = 0;
+                    heater_demand[i] = 0;
                     ledcWrite(HEATER_PINS[i], 0);
                     break;
                 }
@@ -334,11 +348,14 @@ void dew_control_task(void *pvParameters) {
             // Make sure the leader is actually in PID mode or MinTemp mode
             int follower_power_percentage;
             if (leader_mode == 1 || leader_mode == 4) {
-                // leader_power already reflects the leader's OWN max_duty_percent clamp (applied
-                // in Phase 1). The follower's max_duty_percent below is applied independently on
-                // top of that, so leader and follower are fully separately configurable (e.g. a
-                // 12V leader with no limit and a 5V follower with a low duty cap).
-                float leader_power = (float)heater_power[leader_index];
+                // Use heater_demand (the leader's raw PID output, BEFORE the leader's own
+                // max_duty_percent clamp), not heater_power (the leader's already-clamped actual
+                // output) - otherwise a low max_duty_percent on the leader would silently crush
+                // the follower too, even if the follower has no limit of its own. The follower's
+                // own max_duty_percent is applied independently below, so leader and follower are
+                // fully separately configurable in both directions (e.g. a 12V leader with no
+                // limit and a 5V follower with a low duty cap, or vice versa).
+                float leader_power = (float)heater_demand[leader_index];
                 float follower_power = leader_power * heater_config.pid_sync_factor;
 
                 follower_power_percentage = constrain((int)round(follower_power), 0, 100);
@@ -347,6 +364,7 @@ void dew_control_task(void *pvParameters) {
                 follower_power_percentage = 0;
             }
 
+            heater_demand[i] = follower_power_percentage;
             set_heater_power_output(i, follower_power_percentage, duty_limit_to_power_percent(heater_config.max_duty_percent));
         }
 
