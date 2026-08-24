@@ -14,19 +14,79 @@ static int heater_power[MAX_DEW_HEATERS] = {0}; // Live power percentage (0-100)
 static int heater_demand[MAX_DEW_HEATERS] = {0}; // Raw demand computed by this heater's own control logic, BEFORE its own max_duty_percent clamp. Used as the sync basis for PID-Sync followers, so a leader's own hardware limit never leaks into what a follower is allowed to output.
 static int ram_pwm_overrides[MAX_DEW_HEATERS] = {-1, -1}; // RAM overrides
 
-// Converts a "Max PWM Duty" hardware safety limit (0-100%, the raw electrical duty cycle)
-// into the equivalent "power %" ceiling in the pre-gamma-correction domain used by manual_power,
-// PID output, etc. This is the inverse of get_corrected_duty_cycle()'s gamma curve.
-// Truncates (never rounds up) so the resulting duty cycle never exceeds the configured limit.
-// No dependency on anything declared later in this file, so it's safe to define this early -
-// it's needed by get_heater_power() below, which sits above get_corrected_duty_cycle().
-static inline int duty_limit_to_power_percent(int max_duty_percent) {
+// PWM settings
+// Moved up (ahead of get_heater_power() below) because the duty-domain helper functions that
+// follow depend on PWM_MAX, and get_heater_power() needs those helpers for its immediate
+// RAM-override feedback path.
+const int PWM_FREQUENCY = 100; // 100 Hz. A good compromise for measurement while still being safe for MOSFETs.
+const int PWM_RESOLUTION = 10; // 10-bit (0-1023). Increased resolution for more stable PWM output.
+const int PWM_MAX = (1 << PWM_RESOLUTION) - 1;
+
+static inline uint32_t get_corrected_duty_cycle(int power_percentage) {
+    if (power_percentage <= 0) return 0;
+    if (power_percentage >= 100) return PWM_MAX;
+
+    // Use a calculated gamma curve instead of a lookup table.
+    // This avoids specific problematic duty cycle values that the LUT might contain
+    // and provides a smoother, more reliable output curve.
+    // To linearize a power curve (P ~ V^2), the duty cycle needs to be corrected
+    // with an exponent < 1. The previous attempts with gamma > 1 were incorrect.
+    // We use the reciprocal of a gamma value. A display has gamma ~2.2, so we'd use 1/2.2.
+    // After testing, a gamma of 2.2 is slightly too weak (power is ~11% too low).
+    // A gamma of 2.8 was too strong. The ideal value lies in between.
+    // We'll use 2.5 as the final value to center the power curve.
+    const float gamma = 1.0 / 2.5;
+    float power_ratio = power_percentage / 100.0f;
+    float corrected_ratio = pow(power_ratio, gamma);
+    return (uint32_t)(corrected_ratio * PWM_MAX);
+}
+
+// Converts a "Max PWM Duty" hardware safety limit (0-100%) directly into a raw duty-cycle
+// ceiling (0-PWM_MAX), linearly - no gamma curve involved. This is the actual electrical
+// quantity xd is documented to mean. Clamping here (rather than in the coarse 0-100
+// power-percent domain) avoids small-but-nonzero xd values rounding down to a power-percent
+// ceiling of 0, which would permanently disable the heater even though some real duty cycle
+// was configured and physically achievable. Truncates, so the ceiling never exceeds xd%.
+static inline uint32_t duty_limit_to_raw_duty(int max_duty_percent) {
     max_duty_percent = constrain(max_duty_percent, 0, 100);
-    if (max_duty_percent >= 100) return 100;
+    if (max_duty_percent >= 100) return PWM_MAX;
     if (max_duty_percent <= 0) return 0;
+    return (uint32_t)(max_duty_percent / 100.0f * PWM_MAX);
+}
+
+// Inverse of get_corrected_duty_cycle(): given a raw duty value, returns the "power %" that
+// would have produced it. Used only to keep the reported power percentage truthful when a
+// duty-domain clamp actually changed what's being output.
+static inline int raw_duty_to_power_percent(uint32_t duty) {
+    if (duty == 0) return 0;
+    if (duty >= (uint32_t)PWM_MAX) return 100;
     const float gamma = 2.5f; // inverse of get_corrected_duty_cycle's 1/2.5
-    float max_duty_ratio = max_duty_percent / 100.0f;
-    return (int)(pow(max_duty_ratio, gamma) * 100.0f); // truncate = never exceeds limit
+    float duty_ratio = duty / (float)PWM_MAX;
+    return (int)(pow(duty_ratio, gamma) * 100.0f);
+}
+
+// Single source of truth for turning a desired power percentage and a heater's own
+// max_duty_percent limit into (a) the raw duty cycle to actually write to hardware, and (b)
+// the power percentage to report/store - exact when nothing was clamped, truthfully reflects
+// the real clamped output otherwise (never optimistic). Used both by the control loop's write
+// path and by get_heater_power()'s immediate RAM-override feedback, so both stay consistent.
+struct HeaterOutput {
+    uint32_t duty;
+    int reported_power_percent;
+};
+
+static inline HeaterOutput compute_heater_output(int power_percentage, int max_duty_percent) {
+    power_percentage = constrain(power_percentage, 0, 100);
+    uint32_t desired_duty = get_corrected_duty_cycle(power_percentage);
+    uint32_t duty_ceiling = duty_limit_to_raw_duty(max_duty_percent);
+    uint32_t final_duty = min(desired_duty, duty_ceiling);
+
+    HeaterOutput out;
+    out.duty = final_duty;
+    out.reported_power_percent = (final_duty < desired_duty)
+        ? raw_duty_to_power_percent(final_duty)
+        : power_percentage; // unclamped: report the exact requested value, no round-trip rounding
+    return out;
 }
 
 // --- Public Helper ---
@@ -43,7 +103,7 @@ int get_heater_power(int heater_index) {
         int max_duty = config.dew_heaters[heater_index].max_duty_percent;
         xSemaphoreGive(config_mutex);
         if (mode == 0) {
-            return min(ram_pwm_overrides[heater_index], duty_limit_to_power_percent(max_duty));
+            return compute_heater_output(ram_pwm_overrides[heater_index], max_duty).reported_power_percent;
         }
     }
 
@@ -65,10 +125,6 @@ static QuickPID heater_pids[MAX_DEW_HEATERS] = {
     QuickPID(&pid_input[0], &pid_output[0], &pid_setpoint[0]),
     QuickPID(&pid_input[1], &pid_output[1], &pid_setpoint[1])};
 
-// PWM settings
-const int PWM_FREQUENCY = 100; // 100 Hz. A good compromise for measurement while still being safe for MOSFETs.
-const int PWM_RESOLUTION = 10; // 10-bit (0-1023). Increased resolution for more stable PWM output.
-const int PWM_MAX = (1 << PWM_RESOLUTION) - 1;
 const int HEATER_PINS[MAX_DEW_HEATERS] = {DEW_HEATER_1_PIN, DEW_HEATER_2_PIN};
 // Note: Arduino-ESP32 core 3.x manages LEDC channel assignment internally per pin
 // (ledcAttach/ledcWrite address the pin directly), so no explicit channel array is needed here.
@@ -144,34 +200,12 @@ bool get_dew_heater_state(int heater_index) {
 
 // --- Helper Functions ---
 
-static inline uint32_t get_corrected_duty_cycle(int power_percentage) {
-    if (power_percentage <= 0) return 0;
-    if (power_percentage >= 100) return PWM_MAX;
-    
-    // Use a calculated gamma curve instead of a lookup table.
-    // This avoids specific problematic duty cycle values that the LUT might contain
-    // and provides a smoother, more reliable output curve.
-    // To linearize a power curve (P ~ V^2), the duty cycle needs to be corrected
-    // with an exponent < 1. The previous attempts with gamma > 1 were incorrect.
-    // We use the reciprocal of a gamma value. A display has gamma ~2.2, so we'd use 1/2.2.
-    // After testing, a gamma of 2.2 is slightly too weak (power is ~11% too low).
-    // A gamma of 2.8 was too strong. The ideal value lies in between.
-    // We'll use 2.5 as the final value to center the power curve.
-    const float gamma = 1.0 / 2.5;
-    float power_ratio = power_percentage / 100.0f;
-    float corrected_ratio = pow(power_ratio, gamma);
-    return (uint32_t)(corrected_ratio * PWM_MAX);
-}
-
-// Centralized write path: clamps power_percentage to max_power_equiv (defense in depth - callers
-// are expected to already have applied the appropriate limit, either via duty_limit_to_power_percent()
-// for stateless modes or via the PID's own SetOutputLimits() for PID-based modes), updates the
-// reported live power percentage, and writes the resulting duty cycle to the hardware.
-static inline void set_heater_power_output(int heater_index, int power_percentage, int max_power_equiv) {
-    power_percentage = constrain(power_percentage, 0, max_power_equiv);
-    heater_power[heater_index] = power_percentage;
-    uint32_t duty_cycle = get_corrected_duty_cycle(power_percentage);
-    ledcWrite(HEATER_PINS[heater_index], duty_cycle);
+// Centralized write path: derives the actual duty cycle and the truthful reported power
+// percentage from compute_heater_output(), stores the latter, and writes the former to hardware.
+static inline void set_heater_power_output(int heater_index, int power_percentage, int max_duty_percent) {
+    HeaterOutput out = compute_heater_output(power_percentage, max_duty_percent);
+    heater_power[heater_index] = out.reported_power_percent;
+    ledcWrite(HEATER_PINS[heater_index], out.duty);
 }
 
 // --- Control Task ---
@@ -242,7 +276,7 @@ void dew_control_task(void *pvParameters) {
                     }
 
                     heater_demand[i] = power_percentage;
-                    set_heater_power_output(i, power_percentage, duty_limit_to_power_percent(heater_config.max_duty_percent));
+                    set_heater_power_output(i, power_percentage, heater_config.max_duty_percent);
                     break;
                 }
 
@@ -252,7 +286,6 @@ void dew_control_task(void *pvParameters) {
                     pid_setpoint[i] = dew_point + heater_config.target_offset;
 
                     // Update PID tunings in case they changed
-                    int max_power_equiv = duty_limit_to_power_percent(heater_config.max_duty_percent);
                     heater_pids[i].SetTunings(heater_config.pid_kp, heater_config.pid_ki, heater_config.pid_kd);
                     // Keep the PID's own output range fixed at its natural 0-100 (matching how
                     // kp/ki/kd were tuned), rather than reducing it to max_duty_percent. That keeps
@@ -267,7 +300,7 @@ void dew_control_task(void *pvParameters) {
 
                     int power_percentage = (int)pid_output[i];
                     heater_demand[i] = constrain(power_percentage, 0, 100);
-                    set_heater_power_output(i, power_percentage, max_power_equiv);
+                    set_heater_power_output(i, power_percentage, heater_config.max_duty_percent);
                     break;
                 }
 
@@ -280,7 +313,6 @@ void dew_control_task(void *pvParameters) {
                     pid_setpoint[i] = max(heater_config.min_temp, dew_point_target);
 
                     // Update PID tunings in case they changed
-                    int max_power_equiv = duty_limit_to_power_percent(heater_config.max_duty_percent);
                     heater_pids[i].SetTunings(heater_config.pid_kp, heater_config.pid_ki, heater_config.pid_kd);
                     // See Mode 1 (PID) comment: keep the PID's own output range fixed at 0-100 so
                     // pid_output[i] stays a meaningful raw demand for PID-Sync followers; the
@@ -291,7 +323,7 @@ void dew_control_task(void *pvParameters) {
 
                     int power_percentage = (int)pid_output[i];
                     heater_demand[i] = constrain(power_percentage, 0, 100);
-                    set_heater_power_output(i, power_percentage, max_power_equiv);
+                    set_heater_power_output(i, power_percentage, heater_config.max_duty_percent);
                     break;
                 }
 
@@ -312,7 +344,7 @@ void dew_control_task(void *pvParameters) {
                     power_percentage = constrain(power_percentage, 0, heater_config.max_power);
 
                     heater_demand[i] = (int)power_percentage;
-                    set_heater_power_output(i, (int)power_percentage, duty_limit_to_power_percent(heater_config.max_duty_percent));
+                    set_heater_power_output(i, (int)power_percentage, heater_config.max_duty_percent);
                     break;
                 }
 
@@ -365,7 +397,7 @@ void dew_control_task(void *pvParameters) {
             }
 
             heater_demand[i] = follower_power_percentage;
-            set_heater_power_output(i, follower_power_percentage, duty_limit_to_power_percent(heater_config.max_duty_percent));
+            set_heater_power_output(i, follower_power_percentage, heater_config.max_duty_percent);
         }
 
         esp_task_wdt_reset(); // Feed the watchdog
