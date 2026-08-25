@@ -400,6 +400,25 @@
             }
         });
 
+        // Returns true if version string a is older than version string b (simple "x.y.z" numeric
+        // comparison - this project's firmware versions have never used pre-release suffixes).
+        function isVersionOlder(a, b) {
+            const pa = a.split('.').map(Number);
+            const pb = b.split('.').map(Number);
+            for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+                const na = pa[i] || 0, nb = pb[i] || 0;
+                if (na !== nb) return na < nb;
+            }
+            return false;
+        }
+
+        // Firmware 0.9.15 switched the config storage format from a raw binary struct dump to
+        // JSON (different filename on the device's filesystem) - updating from an older version
+        // means the new firmware won't find its config file and resets to defaults regardless of
+        // whether the flash was erased. Not a bug, just an unavoidable one-time transition; only
+        // worth a heads-up so the choice in the (optional) native erase prompt is an informed one.
+        const CONFIG_FORMAT_CHANGE_VERSION = '0.9.15';
+
         // Fetch version info
         async function fetchVersions() {
             try {
@@ -426,7 +445,14 @@
                     statusMessageEl.style.display = 'block';
                 } else if (installedVersion !== 'Unknown') {
                     installedVersionEl.classList.add('mismatch');
-                    statusMessageEl.innerHTML = '⚠ Firmware version mismatch. Consider updating to ensure compatibility.';
+                    if (isVersionOlder(installedVersion, CONFIG_FORMAT_CHANGE_VERSION)) {
+                        statusMessageEl.innerHTML = `⚠ Your installed firmware (${installedVersion}) predates ${CONFIG_FORMAT_CHANGE_VERSION}, ` +
+                            `which changed how settings are stored on the device. This update will reset your settings ` +
+                            `to defaults either way - checking "Erase device" if the installer asks makes no difference ` +
+                            `for that, it would just also clean up the old, now-unused settings file left on the device.`;
+                    } else {
+                        statusMessageEl.innerHTML = '⚠ Firmware version mismatch. Consider updating to ensure compatibility.';
+                    }
                     statusMessageEl.className = 'warning';
                     statusMessageEl.style.display = 'block';
                 }
