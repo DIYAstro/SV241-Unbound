@@ -11,12 +11,51 @@ echo --- Building SV241 Ascom Alpaca Proxy EXE ---
 
 REM 0. Cleanup previous build
 if exist "..\build\AscomAlpacaProxy.exe" (
-    echo [0/5] Cleaning previous build...
+    echo [0/8] Cleaning previous build...
     del "..\build\AscomAlpacaProxy.exe"
 )
 
-REM 1. Build Frontend
-echo [1/6] Building Frontend...
+REM 1. Sync versions from release_version.json into versioninfo.json and config_manager.h.
+REM    Single source of truth for both version numbers - edit release_version.json only, this
+REM    script keeps every other spot (the 4 redundant fields goversioninfo needs in
+REM    versioninfo.json, plus the firmware's own FIRMWARE_VERSION define) in sync automatically.
+echo [1/8] Syncing versions from release_version.json...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%\sync_versions.ps1" -ProjectRoot "%PROJECT_ROOT%" -ProxyRoot "%PROXY_ROOT%"
+if %ERRORLEVEL% NEQ 0 (
+    echo Error syncing versions!
+    exit /b 1
+)
+
+REM 2. Build Firmware (PlatformIO) and copy the flashable artifacts into the in-app flasher's
+REM    asset folder - replaces the previous manual "compile, then copy 3 files by hand" step.
+echo [2/8] Building Firmware...
+set "PIO_EXE=%USERPROFILE%\.platformio\penv\Scripts\pio.exe"
+if not exist "%PIO_EXE%" set "PIO_EXE=pio"
+pushd "%PROJECT_ROOT%"
+"%PIO_EXE%" run
+if %ERRORLEVEL% NEQ 0 (
+    echo Error building firmware! ^(is PlatformIO installed? PIO_EXE=%PIO_EXE%^)
+    popd
+    exit /b 1
+)
+popd
+
+echo Copying firmware artifacts to in-app flasher...
+set "FW_BUILD_DIR=%PROJECT_ROOT%\.pio\build\Firmware_ESP32"
+set "FLASHER_FW_DIR=%PROXY_ROOT%\frontend-vue\public\flasher\firmware"
+if not exist "%FLASHER_FW_DIR%" mkdir "%FLASHER_FW_DIR%"
+for %%F in (bootloader.bin partitions.bin firmware.bin) do (
+    copy /Y "%FW_BUILD_DIR%\%%F" "%FLASHER_FW_DIR%\%%F" >nul
+    if !ERRORLEVEL! NEQ 0 (
+        echo Error copying %%F from PlatformIO build output!
+        exit /b 1
+    )
+)
+REM Note: docs/firmware/ (the separate GitHub Pages flasher) is deliberately NOT touched here -
+REM publishing there is a distinct, manual release step.
+
+REM 3. Build Frontend
+echo [3/8] Building Frontend...
 pushd "%PROXY_ROOT%\frontend-vue"
 call npm install
 if %ERRORLEVEL% NEQ 0 (
@@ -32,19 +71,19 @@ if %ERRORLEVEL% NEQ 0 (
 )
 popd
 
-REM 2. Extract Firmware Version
+REM 4. Extract Firmware Version
 set "CONFIG_H=%PROJECT_ROOT%\src\config_manager.h"
 set "VERSION_JSON_DIR=%PROXY_ROOT%\frontend-vue\dist\flasher\firmware"
 set "VERSION_JSON=%VERSION_JSON_DIR%\version.json"
 
 if not exist "%VERSION_JSON_DIR%" mkdir "%VERSION_JSON_DIR%"
 
-echo [2/6] Extracting Firmware Version from config_manager.h...
+echo [4/8] Extracting Firmware Version from config_manager.h...
 powershell -Command "$line = Get-Content -Path '%CONFIG_H%' | Select-String 'FIRMWARE_VERSION'; if($line) { $parts = $line.ToString().Split([char]34); if($parts.Length -ge 2) { $v = $parts[1]; Write-Host 'Found Firmware Version:' $v; $j = '{\"version\": \"' + $v + '\"}'; Set-Content -Path '%VERSION_JSON%' -Value $j -Encoding UTF8 } else { Write-Host 'Warning: Could not parse version from line.' } } else { Write-Host 'Warning: FIRMWARE_VERSION not found in header!' }"
 
-REM 3. Get Product Version for Go Build
+REM 5. Get Product Version for Go Build
 set "VERSION_INFO=%PROXY_ROOT%\versioninfo.json"
-echo [3/6] Reading ProductVersion from versioninfo.json...
+echo [5/8] Reading ProductVersion from versioninfo.json...
 for /f "usebackq delims=" %%I in (`powershell -Command "$json = Get-Content -Raw -Path '%VERSION_INFO%'; $obj = ConvertFrom-Json -InputObject $json; $obj.StringFileInfo.ProductVersion"`) do set "APP_VERSION=%%I"
 
 if "%APP_VERSION%"=="" (
@@ -53,14 +92,14 @@ if "%APP_VERSION%"=="" (
 )
 echo App Version: %APP_VERSION%
 
-REM 4. Prepare Go Environment
-echo [4/6] Installing/Updating goversioninfo...
+REM 6. Prepare Go Environment
+echo [6/8] Installing/Updating goversioninfo...
 pushd "%PROXY_ROOT%"
 go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
 popd
 
-REM 5. Generate Resources
-echo [5/6] Generating Windows Resources (Icon/Manifest)...
+REM 7. Generate Resources
+echo [7/8] Generating Windows Resources (Icon/Manifest)...
 REM Run from Project Root so "AscomAlpacaProxy/icon.ico" path in json is valid
 pushd "%PROJECT_ROOT%"
 "%USERPROFILE%\go\bin\goversioninfo.exe" -64 -o AscomAlpacaProxy/resource.syso AscomAlpacaProxy/versioninfo.json
@@ -71,8 +110,8 @@ if %ERRORLEVEL% NEQ 0 (
 )
 popd
 
-REM 6. Build EXE
-echo [6/6] Compiling Go executable...
+REM 8. Build EXE
+echo [8/8] Compiling Go executable...
 pushd "%PROXY_ROOT%"
 if not exist "build" mkdir build
 go build -ldflags="-H=windowsgui -X main.AppVersion=%APP_VERSION%" -o build/AscomAlpacaProxy.exe .
