@@ -2,7 +2,7 @@
 
 The project also includes a standalone ASCOM Alpaca proxy driver written in Go. This application connects to the SV241 device via its serial port and exposes it to the ASCOM ecosystem as standard `Switch` and `ObservingConditions` devices.
 
-> **Note:** While the proxy is written in Go and supports both **Windows** and **Linux**, the system tray integration and the graphical installer are Windows-specific. On Linux, the proxy runs as a command-line application or a `systemd` service.
+> **Note:** The proxy is written in Go with cross-platform support in mind, and includes build scripts and an installer for Linux. That said, the maintainer doesn't use Linux day-to-day, so it isn't actively tested there - it should work, but it hasn't seen the same real-world mileage as the Windows build. Pull requests improving Linux support are very welcome; just note that the maintainer won't be able to actively chase down Linux-specific issues, since testing them isn't realistically possible on this end.
 
 ## Table of Contents
 
