@@ -321,32 +321,44 @@
         // Construct the base URL from the current page's location
         const baseUrl = window.location.origin + '/flasher/';
 
-        const manifest = {
-            name: "SV241-Unbound",
-            // Lets esp-web-tools' own install dialog ask the user whether to erase, instead of
-            // silently erasing by default. Without this flag, esp-web-tools 10.x's dashboard
-            // logic (bundled in install-dialog-*.js) skips straight to an unconditional erase
-            // whenever the installed firmware differs from this manifest's version - there's no
-            // separate "erase-first" HTML attribute that controls this in this version; this
-            // manifest property is the actual switch. Its own dialog's checkbox defaults to
-            // unchecked, so a plain "Next" click keeps existing settings.
-            new_install_prompt_erase: true,
-            builds: [
-                {
-                    chipFamily: "ESP32",
-                    parts: [
-                        { path: `${baseUrl}firmware/bootloader.bin`, offset: 0x1000 },
-                        { path: `${baseUrl}firmware/partitions.bin`, offset: 0x8000 },
-                        { path: `${baseUrl}firmware/firmware.bin`, offset: 0x10000 },
-                    ],
-                },
-            ],
-        };
+        // Builds the manifest and (re-)assigns it to the install button. new_install_prompt_erase
+        // lets esp-web-tools' own install dialog ask the user whether to erase, instead of
+        // silently erasing by default; without it, esp-web-tools 10.x's dashboard logic (bundled
+        // in install-dialog-*.js) skips straight to an unconditional erase whenever the installed
+        // firmware differs from this manifest's version - there's no separate "erase-first" HTML
+        // attribute that controls this in this version, this manifest property is the actual
+        // switch. Its own dialog's checkbox defaults to unchecked (no public API to change that),
+        // so a plain "Next" click keeps existing settings.
+        //
+        // promptErase is false for firmware older than CONFIG_FORMAT_CHANGE_VERSION on purpose:
+        // updating from those always resets settings to defaults anyway (different config
+        // filename, see the version-mismatch hint below), so the erase prompt would offer a
+        // choice with no real effect - skip the extra dialog and erase directly instead.
+        let currentManifestUrl = null;
+        function buildAndAssignManifest(promptErase) {
+            const manifest = {
+                name: "SV241-Unbound",
+                new_install_prompt_erase: promptErase,
+                builds: [
+                    {
+                        chipFamily: "ESP32",
+                        parts: [
+                            { path: `${baseUrl}firmware/bootloader.bin`, offset: 0x1000 },
+                            { path: `${baseUrl}firmware/partitions.bin`, offset: 0x8000 },
+                            { path: `${baseUrl}firmware/firmware.bin`, offset: 0x10000 },
+                        ],
+                    },
+                ],
+            };
+            const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+            if (currentManifestUrl) URL.revokeObjectURL(currentManifestUrl);
+            currentManifestUrl = URL.createObjectURL(manifestBlob);
+            installButton.manifest = currentManifestUrl;
+        }
 
-        const manifestString = JSON.stringify(manifest);
-        const manifestBlob = new Blob([manifestString], { type: 'application/json' });
-        const manifestUrl = URL.createObjectURL(manifestBlob);
-        installButton.manifest = manifestUrl;
+        // Safe default before fetchVersions() knows the installed version (e.g. device not yet
+        // connected/detected) - prompt rather than silently erase if we can't tell yet.
+        buildAndAssignManifest(true);
         installButton.setAttribute('flash-baud-rate', '115200');
 
         // Intercept clicks on the install button to auto-release serial port first
@@ -415,8 +427,9 @@
         // Firmware 0.9.15 switched the config storage format from a raw binary struct dump to
         // JSON (different filename on the device's filesystem) - updating from an older version
         // means the new firmware won't find its config file and resets to defaults regardless of
-        // whether the flash was erased. Not a bug, just an unavoidable one-time transition; only
-        // worth a heads-up so the choice in the (optional) native erase prompt is an informed one.
+        // whether the flash was erased. Not a bug, just an unavoidable one-time transition - see
+        // buildAndAssignManifest()'s promptErase argument and fetchVersions() below, which skip
+        // the (otherwise pointless) erase prompt for exactly this case.
         const CONFIG_FORMAT_CHANGE_VERSION = '0.9.15';
 
         // Fetch version info
@@ -443,21 +456,31 @@
                     statusMessageEl.textContent = '✓ Firmware is up to date. No update required.';
                     statusMessageEl.className = 'info';
                     statusMessageEl.style.display = 'block';
+                    statusEl.textContent = 'Ready to flash. Existing settings will be preserved.';
                 } else if (installedVersion !== 'Unknown') {
                     installedVersionEl.classList.add('mismatch');
-                    if (isVersionOlder(installedVersion, CONFIG_FORMAT_CHANGE_VERSION)) {
+                    const predatesFormatChange = isVersionOlder(installedVersion, CONFIG_FORMAT_CHANGE_VERSION);
+                    // Now that the installed version is known, rebuild the manifest with the
+                    // correct promptErase decision (see buildAndAssignManifest()'s doc comment).
+                    buildAndAssignManifest(!predatesFormatChange);
+
+                    if (predatesFormatChange) {
                         statusMessageEl.innerHTML = `⚠ Your installed firmware (${installedVersion}) predates ${CONFIG_FORMAT_CHANGE_VERSION}, ` +
                             `which changed how settings are stored on the device. This update will reset your settings ` +
-                            `to defaults either way - checking "Erase device" if the installer asks makes no difference ` +
-                            `for that, it would just also clean up the old, now-unused settings file left on the device.`;
+                            `to defaults and erase the device - that's expected for this one-time transition. Future ` +
+                            `updates will preserve your settings normally.`;
+                        statusEl.textContent = 'Ready to flash. This one-time update will reset settings to defaults.';
                     } else {
                         statusMessageEl.innerHTML = '⚠ Firmware version mismatch. Consider updating to ensure compatibility.';
+                        statusEl.textContent = 'Ready to flash. Existing settings will be preserved.';
                     }
                     statusMessageEl.className = 'warning';
                     statusMessageEl.style.display = 'block';
+                } else {
+                    // Installed version unknown (device not detected yet) - keep the safe
+                    // "prompt rather than silently erase" default set at page load.
+                    statusEl.textContent = 'Ready to flash. Existing settings will be preserved.';
                 }
-
-                statusEl.textContent = 'Ready to flash. Existing settings will be preserved.';
             } catch (e) {
                 installedVersionEl.textContent = 'Not connected';
                 bundledVersionEl.textContent = 'Unknown';
