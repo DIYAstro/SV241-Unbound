@@ -708,14 +708,20 @@ npm run build   # Output: dist/
 
 ### Building the Go Proxy (.exe only)
 ```bash
-pio run --target buildgoproxyexe --environment AscomAlpacaProxyWinExecutable
+build_scripts\build_exe.bat
 ```
+Syncs both version numbers from `build_scripts/release_version.json`, compiles the firmware,
+builds the frontend, then builds `build/AscomAlpacaProxy.exe`.
 
 ### Building the Windows Installer
 ```bash
-pio run --target buildgoproxyinstaller --environment AscomAlpacaProxyWinExecutable
+build_scripts\build_installer.bat
 ```
-> **Requires:** Inno Setup installed and `ISCC.exe` in PATH
+Runs `build_exe.bat`, then packages everything into a Windows installer with Inno Setup.
+> **Requires:** Inno Setup 6 installed at the default location (`C:\Program Files (x86)\Inno Setup 6\ISCC.exe`).
+
+See [`build_scripts/readme.md`](./build_scripts/readme.md) for the full breakdown of every build
+script, including the Linux cross-compile/native scripts and the version-sync mechanism.
 
 ### Development Mode (Hot Reload)
 ```bash
