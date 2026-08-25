@@ -284,8 +284,10 @@
 
         <div id="status-message" class="info" style="display: none;"></div>
 
-        <div class="warning">
-            <strong>⚠️ Warning:</strong> This process will erase all existing data and settings on your device.
+        <div class="info">
+            <strong>ℹ️ Note:</strong> Firmware updates preserve your existing settings (switch names, startup
+            states, heater config, etc.) by default. If the installer asks whether to erase the device, leave
+            the box unchecked to keep your settings - only check it for a complete reset.
             <br><br>
             <button onclick="backupConfig()" class="btn-primary">
                 💾 Backup Now
@@ -321,6 +323,14 @@
 
         const manifest = {
             name: "SV241-Unbound",
+            // Lets esp-web-tools' own install dialog ask the user whether to erase, instead of
+            // silently erasing by default. Without this flag, esp-web-tools 10.x's dashboard
+            // logic (bundled in install-dialog-*.js) skips straight to an unconditional erase
+            // whenever the installed firmware differs from this manifest's version - there's no
+            // separate "erase-first" HTML attribute that controls this in this version; this
+            // manifest property is the actual switch. Its own dialog's checkbox defaults to
+            // unchecked, so a plain "Next" click keeps existing settings.
+            new_install_prompt_erase: true,
             builds: [
                 {
                     chipFamily: "ESP32",
@@ -337,7 +347,6 @@
         const manifestBlob = new Blob([manifestString], { type: 'application/json' });
         const manifestUrl = URL.createObjectURL(manifestBlob);
         installButton.manifest = manifestUrl;
-        installButton.setAttribute('erase-first', '');
         installButton.setAttribute('flash-baud-rate', '115200');
 
         // Intercept clicks on the install button to auto-release serial port first
@@ -422,7 +431,7 @@
                     statusMessageEl.style.display = 'block';
                 }
 
-                statusEl.textContent = 'Ready to flash. All data will be erased.';
+                statusEl.textContent = 'Ready to flash. Existing settings will be preserved.';
             } catch (e) {
                 installedVersionEl.textContent = 'Not connected';
                 bundledVersionEl.textContent = 'Unknown';
