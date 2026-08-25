@@ -7,7 +7,8 @@ export const useModalStore = defineStore('modal', () => {
         icon: '',
         title: '',
         message: '',
-        buttons: []
+        buttons: [],
+        dismissible: true
     })
 
     function show(config) {
@@ -15,14 +16,15 @@ export const useModalStore = defineStore('modal', () => {
             icon: config.icon || '',
             title: config.title || '',
             message: config.message || '',
-            buttons: config.buttons || [{ text: 'OK', action: close, primary: true }]
+            buttons: config.buttons || [{ text: 'OK', action: close, primary: true }],
+            dismissible: config.dismissible !== false
         }
         isVisible.value = true
     }
 
     function close() {
         isVisible.value = false
-        modalConfig.value = { icon: '', title: '', message: '', buttons: [] }
+        modalConfig.value = { icon: '', title: '', message: '', buttons: [], dismissible: true }
     }
 
     // Convenience methods
@@ -50,6 +52,16 @@ export const useModalStore = defineStore('modal', () => {
             title,
             message,
             buttons: [{ text: 'OK', action: close, primary: true }]
+        })
+    }
+
+    function loading(message, title = 'Please Wait') {
+        show({
+            icon: '⏳',
+            title,
+            message,
+            buttons: [],
+            dismissible: false
         })
     }
 
@@ -81,6 +93,7 @@ export const useModalStore = defineStore('modal', () => {
         success,
         error,
         info,
+        loading,
         confirm
     }
 })

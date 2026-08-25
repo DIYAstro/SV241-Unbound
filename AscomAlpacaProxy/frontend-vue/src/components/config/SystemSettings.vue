@@ -64,6 +64,7 @@ async function onFileSelected(event) {
                 confirmText: 'Restore',
                 cancelText: 'Cancel',
                 onConfirm: async () => {
+                    modal.loading('Please wait while the configuration is restored to the device…', 'Restoring Configuration');
                     try {
                         const response = await fetch('/api/v1/backup/restore', {
                             method: 'POST',

@@ -12,14 +12,24 @@ function handleButtonClick(button) {
         modalStore.close()
     }
 }
+
+function handleBackdropClick() {
+    if (modalConfig.value.dismissible !== false) {
+        modalStore.close()
+    }
+}
 </script>
 
 <template>
     <Teleport to="body">
-        <div v-if="isVisible" class="modal-overlay" @click.self="modalStore.close">
+        <div v-if="isVisible" class="modal-overlay" @click.self="handleBackdropClick">
             <div class="modal-content">
                 <div class="modal-header">
-                    <span v-if="modalConfig.icon" class="modal-icon">{{ modalConfig.icon }}</span>
+                    <span
+                        v-if="modalConfig.icon"
+                        class="modal-icon"
+                        :class="{ 'modal-icon-spin': modalConfig.buttons.length === 0 }"
+                    >{{ modalConfig.icon }}</span>
                     <h3>{{ modalConfig.title }}</h3>
                 </div>
                 <p class="modal-message">{{ modalConfig.message }}</p>
@@ -79,6 +89,20 @@ function handleButtonClick(button) {
 
 .modal-icon {
     font-size: 1.5rem;
+}
+
+.modal-icon-spin {
+    display: inline-block;
+    animation: modalIconSpin 1.4s linear infinite;
+}
+
+@keyframes modalIconSpin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .modal-message {
