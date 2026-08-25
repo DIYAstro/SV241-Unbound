@@ -188,8 +188,18 @@ void serial_command_task(void *pvParameters) {
             String output_buffer;
             
             xSemaphoreTake(config_mutex, portMAX_DELAY);
+            // Only write to flash if something actually changed. Every "sc" previously triggered
+            // an unconditional LittleFS write regardless of whether any field was actually
+            // modified (e.g. an empty {"sc":{}} or an unrecognized key that updateConfig()
+            // correctly ignores) - flash has a finite erase/program cycle budget, so skipping a
+            // no-op write is a free win. Config has no pointers, so a byte-for-byte compare is
+            // safe and exact: any padding bytes are identical on both sides since updateConfig()
+            // only ever touches named fields, never padding.
+            Config config_before_update = config;
             updateConfig(set_obj);
-            saveConfig();
+            if (memcmp(&config_before_update, &config, sizeof(Config)) != 0) {
+              saveConfig();
+            }
             config_doc.clear();
             serializeConfig(config_doc);
             xSemaphoreGive(config_mutex);
