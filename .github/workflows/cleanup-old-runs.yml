@@ -1,0 +1,34 @@
+name: Cleanup Old Workflow Runs
+
+# Pure repo hygiene: the Actions run history (all workflows, not just this one) gets cluttered
+# over time otherwise. Deletes run log entries (and any short-lived internal build artifacts
+# still attached to them) older than 14 days. Does NOT touch GitHub Release assets - those live
+# on the Release itself, a separate feature entirely unrelated to workflow runs, so deleting old
+# runs never affects the actual downloadable binaries/installer.
+on:
+  schedule:
+    - cron: "0 3 * * 0" # every Sunday at 03:00 UTC
+  workflow_dispatch: {} # manual trigger any time
+
+permissions:
+  actions: write # needed for `gh run delete`
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete workflow runs older than 14 days
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CUTOFF=$(date -u -d '-14 days' +%Y-%m-%dT%H:%M:%SZ)
+          echo "Cutoff: runs created before $CUTOFF will be deleted"
+          IDS=$(gh run list --repo "${{ github.repository }}" --limit 1000 \
+            --json databaseId,createdAt --jq ".[] | select(.createdAt < \"$CUTOFF\") | .databaseId")
+          COUNT=$(echo "$IDS" | grep -c . || true)
+          echo "Found $COUNT run(s) older than 14 days"
+          echo "$IDS" | while read -r id; do
+            [ -z "$id" ] && continue
+            echo "Deleting run $id"
+            gh run delete "$id" --repo "${{ github.repository }}" || echo "  failed to delete $id, continuing"
+          done
