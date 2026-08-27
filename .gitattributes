@@ -6,3 +6,8 @@
 # where CRLF breaks the shebang and produces `$'\r': command not found` / `invalid option`
 # errors. Discovered exactly that way when testing the real published install_linux.sh.
 *.sh text eol=lf
+# GitHub Actions workflow YAML - same rationale, kept consistent for anything with embedded
+# shell (`run:` blocks) even though a normal `actions/checkout` on a Linux runner is unaffected
+# by this machine's autocrlf setting (only a manual out-of-band copy would ever hit this).
+*.yml text eol=lf
+*.yaml text eol=lf

@@ -1,0 +1,101 @@
+name: Build & Publish Linux Release Assets
+
+# Manual only, on purpose - see AscomAlpacaProxy/build_scripts/readme.md's "Linux (not actively
+# maintained)" section. Builds AscomAlpacaProxy-linux-amd64/-arm64 natively (no cross-compile
+# toolchain needed - see build_linux.sh, which this reuses as-is) and attaches them, plus
+# install_linux.sh, to a GitHub release.
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag to attach Linux assets to (blank = current 'latest' release)"
+        required: false
+        type: string
+
+permissions:
+  contents: write # needed for `gh release upload`
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: AscomAlpacaProxy/go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # internal/serial/ch340_linux.go (Linux-only) uses cgo to talk to the SV241's CH340 chip
+      # directly over libusb, bypassing the kernel's ch341 tty driver, which otherwise resets the
+      # ESP32 on every connect. Building it needs a C compiler and libusb-1.0's headers.
+      - name: Install cgo build dependencies (libusb-1.0)
+        run: sudo apt-get update && sudo apt-get install -y gcc libusb-1.0-0-dev
+
+      # Does everything: syncs versions from release_version.json, builds the frontend, extracts
+      # the firmware version, and compiles the Go binary as build/AscomAlpacaProxy-linux-<arch>.
+      # Nothing version-related happens in this workflow itself - see build_linux.sh.
+      - name: Build
+        run: AscomAlpacaProxy/build_scripts/build_linux.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.arch }}
+          path: AscomAlpacaProxy/build/AscomAlpacaProxy-linux-${{ matrix.arch }}
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          merge-multiple: true
+          path: release-assets
+
+      # Guards against the exact bug that made it onto the live release before this workflow
+      # existed: a Windows working-tree copy with CRLF line endings was uploaded by hand and
+      # crashed immediately when piped into bash on the target Linux system. .gitattributes
+      # (*.sh text eol=lf) should already prevent this in the working tree this checkout produces
+      # - this is a cheap, explicit belt-and-suspenders check right before it goes out the door.
+      - name: Sanity-check install_linux.sh has no CRLF line endings
+        run: |
+          if grep -qU $'\r' AscomAlpacaProxy/build_scripts/install_linux.sh; then
+            echo "::error::install_linux.sh has CRLF line endings - refusing to upload"
+            exit 1
+          fi
+
+      - name: Resolve target release tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ inputs.release_tag }}"
+          if [ -z "$TAG" ]; then
+            TAG=$(gh release view --json tagName -q .tagName)
+          fi
+          echo "Target release: $TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      # --clobber intentionally overwrites any existing same-named assets on the release.
+      - name: Upload assets to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ steps.tag.outputs.tag }}" \
+            release-assets/AscomAlpacaProxy-linux-amd64 \
+            release-assets/AscomAlpacaProxy-linux-arm64 \
+            AscomAlpacaProxy/build_scripts/install_linux.sh \
+            --clobber

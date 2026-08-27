@@ -8,6 +8,7 @@ compiling and bundling the matching ESP32 firmware.
 - [Single Source of Truth: `release_version.json`](#single-source-of-truth-release_versionjson)
 - [Windows (actively maintained)](#windows-actively-maintained)
 - [Linux (not actively maintained)](#linux-not-actively-maintained)
+- [GitHub Action: `release-linux.yml`](#github-action-release-linuxyml)
 - [Prerequisites](#prerequisites)
 
 ## Single Source of Truth: `release_version.json`
@@ -92,7 +93,9 @@ frontend-build steps as `build_exe.bat`, plus a step that ensures a CGO-capable 
 toolchain is present (see `ensure_linux_crosscompile_toolchain.ps1` below), then two `go build`
 passes: `GOOS=linux GOARCH=amd64` → `build/AscomAlpacaProxy-linux-amd64`, and
 `GOOS=linux GOARCH=arm64` (Raspberry Pi 4/5, 64-bit) → `build/AscomAlpacaProxy-linux-arm64`.
-This is the script actually used to produce the binaries attached to GitHub releases.
+Useful for a local, ad-hoc Linux build from a Windows machine; the actual GitHub release binaries
+are now produced by the [`release-linux.yml`](#github-action-release-linuxyml) GitHub Action
+instead, which builds natively on real Linux runners rather than cross-compiling.
 
 CGO is required because `internal/serial/ch340_linux.go` (Linux-only) talks to the SV241's CH340
 chip directly over libusb instead of going through the kernel's `ch341` tty driver, which
@@ -117,9 +120,11 @@ zero ESP32 reset-banner occurrences in the log.
 ### `build_linux.sh`
 A native build script, meant to run directly on a Linux host (it relies on the host's own default
 `GOOS`/`GOARCH` rather than setting them explicitly - running it via Git Bash on Windows will
-silently produce a Windows binary, not a Linux one). Outputs the plain, unqualified
-`build/AscomAlpacaProxy` - unlike `build_linux.ps1`'s `-linux-amd64`/`-linux-arm64` suffixed
-names, so it's not a drop-in replacement for producing release assets as-is.
+silently produce a Windows binary, not a Linux one). Detects its own architecture (`uname -m`,
+same `x86_64`→`amd64`/`aarch64`→`arm64` mapping `install_linux.sh` uses) and names its output
+`build/AscomAlpacaProxy-linux-<amd64|arm64>`, matching `build_linux.ps1`'s naming - this is what
+[`release-linux.yml`](#github-action-release-linuxyml) actually runs, on real `amd64`/`arm64`
+GitHub-hosted Linux runners, to produce the release binaries.
 
 Needs a C compiler and libusb-1.0's headers on the build host for the same CGO reason as
 `build_linux.ps1` above (e.g. `sudo apt-get install -y gcc libusb-1.0-0-dev` on
@@ -142,8 +147,29 @@ the SV241's CH340 chip directly via libusb (bypassing the kernel's ch341 tty dri
 Also makes sure the `libusb-1.0-0` runtime library is actually installed (via `apt-get` if
 missing) before starting the service, since that's a hard runtime requirement for the same reason
 and isn't guaranteed present on a minimal/headless image. Expects release assets named
-`AscomAlpacaProxy-linux-<amd64|arm64>` - i.e. `build_linux.ps1`'s output naming, not
-`build_linux.sh`'s.
+`AscomAlpacaProxy-linux-<amd64|arm64>`, matching both `build_linux.ps1`'s and `build_linux.sh`'s
+output naming.
+
+## GitHub Action: `release-linux.yml`
+
+`.github/workflows/release-linux.yml` - **manual only** (`workflow_dispatch`, no auto-trigger on
+release publish, matching the "not actively maintained" caution above). Run it from the repo's
+Actions tab ("Run workflow"), optionally giving a specific release tag to target (defaults to
+whatever the current `latest` release is).
+
+Builds `AscomAlpacaProxy-linux-amd64` and `-arm64` **natively** in parallel, on real
+`ubuntu-24.04` and `ubuntu-24.04-arm` GitHub-hosted runners (Linux arm64 hosted runners are free
+for public repos) - by just installing `gcc`/`libusb-1.0-0-dev` and running `build_linux.sh`
+unmodified on each. No cross-compile toolchain involved at all; that complexity is now specific to
+the optional local `build_linux.ps1` path. Both binaries plus `install_linux.sh` are then
+uploaded to the target release (`gh release upload ... --clobber`, so re-running it replaces
+existing same-named assets - useful for fixing a bad upload, not just adding new ones). Includes a
+CRLF line-ending sanity check on `install_linux.sh` right before upload, guarding against the
+exact bug (a Windows working-tree copy uploaded by hand, crashing immediately on Linux) that
+`.gitattributes` fixes at the source but this catches again just in case.
+
+Windows assets (`AscomAlpacaProxy.exe` / the installer) are **not** covered by this workflow and
+stay a manual `build_installer.bat` + manual upload step.
 
 ## Prerequisites
 

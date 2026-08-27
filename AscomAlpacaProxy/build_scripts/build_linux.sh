@@ -15,12 +15,32 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 PROXY_ROOT="$PROJECT_ROOT/AscomAlpacaProxy"
 
-echo "--- Building SV241 Ascom Alpaca Proxy (Linux) ---"
+# Detect the host's own architecture - same mapping install_linux.sh uses - so the output is
+# named the same way build_linux.ps1's cross-compiled binaries are (AscomAlpacaProxy-linux-amd64/
+# -arm64), not the old unqualified "AscomAlpacaProxy". Matters for anything that consumes this
+# output directly by that name, e.g. the release-linux.yml GitHub Action.
+ARCH=$(uname -m)
+case $ARCH in
+    x86_64)
+        ARCH_TAG="amd64"
+        ;;
+    aarch64)
+        ARCH_TAG="arm64"
+        ;;
+    *)
+        echo "Error: Unsupported architecture '$ARCH'."
+        echo "Supported: x86_64 (amd64), aarch64 (arm64)"
+        exit 1
+        ;;
+esac
+OUTPUT_BINARY="AscomAlpacaProxy-linux-$ARCH_TAG"
+
+echo "--- Building SV241 Ascom Alpaca Proxy (Linux, $ARCH_TAG) ---"
 
 # 0. Cleanup previous build
-if [ -f "$PROXY_ROOT/build/AscomAlpacaProxy" ]; then
+if [ -f "$PROXY_ROOT/build/$OUTPUT_BINARY" ]; then
     echo "[0/5] Cleaning previous build..."
-    rm "$PROXY_ROOT/build/AscomAlpacaProxy"
+    rm "$PROXY_ROOT/build/$OUTPUT_BINARY"
 fi
 
 # 1. Sync versions from release_version.json into versioninfo.json and config_manager.h.
@@ -68,6 +88,6 @@ echo "App Version: $APP_VERSION"
 # 4. Build Binary
 echo "[4/5] Compiling Go executable..."
 mkdir -p build
-go build -ldflags="-X main.AppVersion=$APP_VERSION" -o build/AscomAlpacaProxy .
+go build -ldflags="-X main.AppVersion=$APP_VERSION" -o "build/$OUTPUT_BINARY" .
 
-echo "--- Build Complete: build/AscomAlpacaProxy (v$APP_VERSION) ---"
+echo "--- Build Complete: build/$OUTPUT_BINARY (v$APP_VERSION) ---"
