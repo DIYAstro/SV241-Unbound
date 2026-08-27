@@ -30,6 +30,11 @@ ssh pi@<pi-ip-or-hostname>
 
 Default PINS credentials: user `pi`, password `pins`.
 
+**On Windows**, if you'd rather not use the `ssh` command (built into PowerShell/cmd on modern
+Windows), [PuTTY](https://www.putty.org/) works too and is what the PINS manual itself points to:
+open PuTTY, enter the Pi's IP or hostname under "Host Name", leave the port at `22`, click "Open",
+then log in as `pi` with the same password when prompted.
+
 First connection from this machine? SSH will ask you to confirm the Pi's host key fingerprint -
 type `yes` to continue.
 
