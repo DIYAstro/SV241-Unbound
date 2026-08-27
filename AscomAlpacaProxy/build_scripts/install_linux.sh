@@ -3,9 +3,9 @@
 # SV241 Alpaca Proxy - One-Line Installer
 # ==============================================================================
 # Usage:
-#   curl -sSL https://github.com/DIYAstro/SV241-Unbound/releases/latest/download/install.sh | sudo bash
+#   curl -sSL https://github.com/DIYAstro/SV241-Unbound/releases/latest/download/install_linux.sh | sudo bash
 # OR:
-#   wget -qO- https://github.com/DIYAstro/SV241-Unbound/releases/latest/download/install.sh | sudo bash
+#   wget -qO- https://github.com/DIYAstro/SV241-Unbound/releases/latest/download/install_linux.sh | sudo bash
 # ==============================================================================
 set -e
 
@@ -68,6 +68,19 @@ TMP_BINARY=$(mktemp)
 curl -sSfL "$DOWNLOAD_URL" -o "$TMP_BINARY"
 chmod 755 "$TMP_BINARY"
 
+# ------------------------------------------------------------------------------
+# Everything below this point through step [4/7] sets up prerequisites the proxy
+# needs to actually reach the SV241 over USB - deliberately done *before* the
+# systemd service is installed/started (steps [5/7]-[7/7]). Doing it in the other
+# order (as an earlier version of this script did) meant the service's very first
+# connection attempt could race a udev rule or group membership that had not been
+# applied yet, failing with "libusb: bad access" until the proxy's own built-in
+# reconnect logic retried a few seconds later. Not harmful (it always recovered on
+# its own), but not clean either - verified against real hardware that ordering
+# prerequisites first makes even a from-scratch install connect successfully on the
+# very first attempt, no retry needed.
+# ------------------------------------------------------------------------------
+
 # --- Runtime Dependency: libusb-1.0 ---
 # The proxy talks to the SV241's CH340 chip directly over libusb instead of going through the
 # kernel's ch341 tty driver (see internal/serial/ch340_linux.go and the udev rule step below for
@@ -86,17 +99,49 @@ else
     echo "     the service below will fail to start."
 fi
 
+# --- Serial Port Permissions ---
+echo "[3/7] Ensuring serial port access for user '$ACTUAL_USER'..."
+if ! groups "$ACTUAL_USER" | grep -q dialout; then
+    usermod -aG dialout "$ACTUAL_USER"
+    echo "  -> Added '$ACTUAL_USER' to 'dialout' group."
+    echo "  -> NOTE: the service started below picks this up immediately (it's a fresh process)."
+    echo "     Any *existing* login shell for '$ACTUAL_USER' still needs a fresh login to see it."
+else
+    echo "  -> User '$ACTUAL_USER' is already in the 'dialout' group. OK."
+fi
+
+# --- Raw USB Access (CH340 direct-libusb driver) ---
+# On Linux, the proxy talks to the SV241's CH340 (1a86:7523) chip directly over libusb
+# instead of going through the kernel's ch341 tty driver - this avoids resetting the ESP32
+# on every connect, which the tty layer can't be told to skip (see internal/serial/ch340_linux.go).
+# That means it needs read/write access to the raw /dev/bus/usb/BBB/DDD device node, which the
+# 'dialout' group above does not cover on its own (that group is scoped to /dev/ttyUSB* nodes).
+echo "[4/7] Installing udev rule for raw USB access to the SV241 (CH340 1a86:7523)..."
+UDEV_RULE_FILE="/etc/udev/rules.d/99-sv241-usb.rules"
+cat > "$UDEV_RULE_FILE" <<EOF
+# SV241 Alpaca Proxy - raw USB access for the CH340 direct-libusb driver (Linux only).
+# Installed by install_linux.sh. Safe to remove if the proxy is uninstalled.
+SUBSYSTEM=="usb", ATTR{idVendor}=="1a86", ATTR{idProduct}=="7523", MODE="0664", GROUP="dialout"
+EOF
+udevadm control --reload-rules
+udevadm trigger --subsystem-match=usb
+echo "  -> Installed $UDEV_RULE_FILE and reloaded udev rules."
+echo "  -> NOTE: if the SV241 is already plugged in, unplug and replug it once so the new rule applies."
+
 # --- Stop existing service ---
-echo "[3/7] Stopping existing service (if running)..."
+echo "[5/7] Stopping existing service (if running)..."
 systemctl stop "$SERVICE_NAME" 2>/dev/null || true
 
 # --- Install Binary ---
-echo "[4/7] Installing binary to $INSTALL_DIR/$BINARY_NAME..."
+echo "[6/7] Installing binary to $INSTALL_DIR/$BINARY_NAME..."
 mv "$TMP_BINARY" "$INSTALL_DIR/$BINARY_NAME"
 chmod 755 "$INSTALL_DIR/$BINARY_NAME"
 
 # --- Install systemd Service (inline) ---
-echo "[5/7] Installing systemd service..."
+# All of the prerequisites above (libusb, dialout group, udev rule) are already in place by the
+# time this starts the service, so even a from-scratch install's very first connection attempt
+# should succeed immediately - no dependency on the proxy's own reconnect/retry logic to recover.
+echo "[7/7] Installing systemd service..."
 cat > "$SERVICE_DIR/$SERVICE_NAME.service" <<EOF
 [Unit]
 Description=SV241 ASCOM Alpaca Proxy
@@ -117,34 +162,6 @@ EOF
 systemctl daemon-reload
 systemctl enable "$SERVICE_NAME"
 systemctl start "$SERVICE_NAME"
-
-# --- Serial Port Permissions ---
-echo "[6/7] Ensuring serial port access for user '$ACTUAL_USER'..."
-if ! groups "$ACTUAL_USER" | grep -q dialout; then
-    usermod -aG dialout "$ACTUAL_USER"
-    echo "  -> Added '$ACTUAL_USER' to 'dialout' group."
-    echo "  -> NOTE: Please log out and back in for this to take effect!"
-else
-    echo "  -> User '$ACTUAL_USER' is already in the 'dialout' group. OK."
-fi
-
-# --- Raw USB Access (CH340 direct-libusb driver) ---
-# On Linux, the proxy talks to the SV241's CH340 (1a86:7523) chip directly over libusb
-# instead of going through the kernel's ch341 tty driver - this avoids resetting the ESP32
-# on every connect, which the tty layer can't be told to skip (see internal/serial/ch340_linux.go).
-# That means it needs read/write access to the raw /dev/bus/usb/BBB/DDD device node, which the
-# 'dialout' group above does not cover on its own (that group is scoped to /dev/ttyUSB* nodes).
-echo "[7/7] Installing udev rule for raw USB access to the SV241 (CH340 1a86:7523)..."
-UDEV_RULE_FILE="/etc/udev/rules.d/99-sv241-usb.rules"
-cat > "$UDEV_RULE_FILE" <<EOF
-# SV241 Alpaca Proxy - raw USB access for the CH340 direct-libusb driver (Linux only).
-# Installed by install_linux.sh. Safe to remove if the proxy is uninstalled.
-SUBSYSTEM=="usb", ATTR{idVendor}=="1a86", ATTR{idProduct}=="7523", MODE="0664", GROUP="dialout"
-EOF
-udevadm control --reload-rules
-udevadm trigger --subsystem-match=usb
-echo "  -> Installed $UDEV_RULE_FILE and reloaded udev rules."
-echo "  -> NOTE: if the SV241 is already plugged in, unplug and replug it once so the new rule applies."
 
 # --- Done ---
 echo ""
