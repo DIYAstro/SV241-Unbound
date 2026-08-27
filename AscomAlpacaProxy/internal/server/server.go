@@ -514,13 +514,15 @@ func handleRestoreBackup(w http.ResponseWriter, r *http.Request) {
 	time.Sleep(1 * time.Second)
 
 	logger.Info("Restore: attempting immediate auto-detection...")
-	foundPort, foundHandle, err := serial.FindPort()
+	// FindAndConnect() finds and connects under the same lock the 5s watchdog uses for its own
+	// auto-detect, instead of calling the unlocked FindPort() directly - avoids racing the
+	// watchdog for the same USB port right after the disconnect above (harmless but noisy
+	// "port busy" contention otherwise). It also adopts the already-open, already boot-settled
+	// handle it finds instead of closing it and reopening from scratch, avoiding a redundant
+	// reset pulse to the device.
+	foundPort, err := serial.FindAndConnect()
 	if err == nil {
-		if foundHandle != nil {
-			foundHandle.Close() // Close it because Reconnect() below will open it anew, avoiding a leak
-		}
-		logger.Info("Restore: Immediate auto-detection found port '%s'. Reconnecting...", foundPort)
-		serial.Reconnect(foundPort)
+		logger.Info("Restore: Immediate auto-detection found and connected to port '%s'.", foundPort)
 		fmt.Fprintf(w, "Configuration restored successfully. Connected to %s.", foundPort)
 	} else {
 		logger.Warn("Restore: Immediate auto-detection failed: %v. Background task will retry.", err)

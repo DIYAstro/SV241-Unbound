@@ -490,9 +490,44 @@ func probePortWithTimeout(portName string, timeout time.Duration) (serial.Port, 
 
 // Reconnect is a public wrapper for reconnecting, intended to be called from other packages.
 func Reconnect(portName string) {
+	ReconnectWithHandle(portName, nil)
+}
+
+// ReconnectWithHandle is like Reconnect, but lets the caller pass an already-open, already
+// boot-settled port handle (e.g. one returned by FindPort()) to be adopted instead of forcing a
+// second open+boot-settle cycle - avoiding a redundant reset pulse to the device. Passing nil
+// behaves exactly like Reconnect.
+func ReconnectWithHandle(portName string, preOpenedPort serial.Port) {
 	portMutex.Lock()
 	defer portMutex.Unlock()
-	reconnect(portName, nil)
+	reconnect(portName, preOpenedPort)
+}
+
+// FindAndConnect probes for the SV241 device and, if found, connects to it - all while holding
+// portMutex for the whole operation. This is the same find-then-adopt pattern ManageConnection's
+// own auto-detect branch already uses internally; exposing it as its own function lets other
+// callers (e.g. handleRestoreBackup's "reconnect right now" flow) use it too, instead of calling
+// the unlocked FindPort() on their own. FindPort() itself takes no lock, so calling it outside of
+// portMutex let it race with the watchdog's own auto-detect probe for the same USB port - not
+// harmful (the loser just gets a clean "port busy" and backs off), but noisy and wasteful.
+// Returns the connected port name, or an error if no device could be found.
+func FindAndConnect() (string, error) {
+	portMutex.Lock()
+	defer portMutex.Unlock()
+
+	// Someone else (typically the watchdog) may have already connected while we were waiting for
+	// the lock - re-probing the port now would only collide with that already-open handle and
+	// fail with a spurious "port busy". Nothing to do in that case, we're already connected.
+	if sv241Port != nil {
+		return config.Get().SerialPortName, nil
+	}
+
+	foundPort, foundHandle, err := FindPort()
+	if err != nil {
+		return "", err
+	}
+	reconnect(foundPort, foundHandle)
+	return foundPort, nil
 }
 
 // reconnect attempts to close the current port and open a new one.
