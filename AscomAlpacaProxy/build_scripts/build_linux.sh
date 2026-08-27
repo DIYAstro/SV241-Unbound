@@ -1,6 +1,15 @@
 #!/bin/bash
 set -e
 
+# Prerequisites beyond Go/Node itself: internal/serial/ch340_linux.go uses cgo to talk to the
+# SV241's CH340 chip directly over libusb (bypasses the kernel's ch341 tty driver, which
+# otherwise resets the ESP32 on every connect - see that file for why). That needs a C compiler
+# and libusb-1.0's headers, e.g. on Debian/Raspberry Pi OS:
+#   sudo apt-get install -y gcc libusb-1.0-0-dev
+# Go's cgo is enabled by default whenever a C compiler is available, so no extra env vars are
+# needed here (unlike build_linux.ps1, which cross-compiles from Windows and has to set up its
+# own toolchain for this - see ensure_linux_crosscompile_toolchain.ps1).
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Two levels up: build_scripts/ -> AscomAlpacaProxy/ -> repo root.
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"

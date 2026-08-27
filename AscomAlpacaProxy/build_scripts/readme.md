@@ -88,10 +88,31 @@ The Inno Setup template. Worth knowing:
 
 ### `build_linux.ps1`
 Runs on Windows, cross-compiles for Linux (no installer, just raw binaries). Same version-sync +
-frontend-build steps as `build_exe.bat`, then two `go build` passes:
-`GOOS=linux GOARCH=amd64` → `build/AscomAlpacaProxy-linux-amd64`, and
+frontend-build steps as `build_exe.bat`, plus a step that ensures a CGO-capable cross-compile
+toolchain is present (see `ensure_linux_crosscompile_toolchain.ps1` below), then two `go build`
+passes: `GOOS=linux GOARCH=amd64` → `build/AscomAlpacaProxy-linux-amd64`, and
 `GOOS=linux GOARCH=arm64` (Raspberry Pi 4/5, 64-bit) → `build/AscomAlpacaProxy-linux-arm64`.
 This is the script actually used to produce the binaries attached to GitHub releases.
+
+CGO is required because `internal/serial/ch340_linux.go` (Linux-only) talks to the SV241's CH340
+chip directly over libusb instead of going through the kernel's `ch341` tty driver, which
+otherwise resets the ESP32 on every connect - see that file for the full story. This was **not**
+needed before that fix landed; a plain `CGO_ENABLED=0` cross-compile used to be enough.
+
+### `ensure_linux_crosscompile_toolchain.ps1`
+Helper called by `build_linux.ps1`, not meant to be run directly. On first run, downloads and
+caches (under `build/crosscompile-cache/`, gitignored) a real cross C compiler
+([Zig](https://ziglang.org/), used via `zig cc -target <arch>-linux-gnu.2.31`) plus libusb-1.0's
+header and linkable `.so`, extracted directly from the official Debian 12 "bookworm"
+`libusb-1.0-0-dev`/`libusb-1.0-0` packages, for both `amd64` and `arm64`. Later runs reuse the
+cache. Full rationale, exact package versions/URLs, and what to do if the pinned Debian package
+URL ever goes stale (old versions eventually get purged from the pool) are documented in the
+script's own header comment.
+
+**This path (Zig + the extracted sysroots) was verified end-to-end against real hardware**:
+binaries built through it were copied to a Raspberry Pi and passed the same test as a
+natively-built binary - an output left on, the process hard-killed and restarted, state preserved,
+zero ESP32 reset-banner occurrences in the log.
 
 ### `build_linux.sh`
 A native build script, meant to run directly on a Linux host (it relies on the host's own default
@@ -99,6 +120,11 @@ A native build script, meant to run directly on a Linux host (it relies on the h
 silently produce a Windows binary, not a Linux one). Outputs the plain, unqualified
 `build/AscomAlpacaProxy` - unlike `build_linux.ps1`'s `-linux-amd64`/`-linux-arm64` suffixed
 names, so it's not a drop-in replacement for producing release assets as-is.
+
+Needs a C compiler and libusb-1.0's headers on the build host for the same CGO reason as
+`build_linux.ps1` above (e.g. `sudo apt-get install -y gcc libusb-1.0-0-dev` on
+Debian/Raspberry Pi OS) - unlike the Windows script, no extra toolchain setup is needed here since
+Go's cgo just uses the host's own compiler directly.
 
 Its firmware-version extraction (`grep -oP`) needs a UTF-8 locale to work correctly; on a real
 Linux distro that's normally the default, but if you ever see a
@@ -108,8 +134,14 @@ running the script.
 ### `install_linux.sh`
 A one-line installer for end users (`curl ... | sudo bash`): downloads the latest GitHub release
 binary matching the host's architecture (`x86_64`→`amd64`, `aarch64`→`arm64`), installs it to
-`/usr/local/bin`, sets up a `systemd` service (`sv241-alpaca-proxy`), and adds the invoking user to
-the `dialout` group for serial port access. Expects release assets named
+`/usr/local/bin`, sets up a `systemd` service (`sv241-alpaca-proxy`), adds the invoking user to
+the `dialout` group for serial port access, and installs a udev rule
+(`/etc/udev/rules.d/99-sv241-usb.rules`) granting the raw USB access the proxy needs to talk to
+the SV241's CH340 chip directly via libusb (bypassing the kernel's ch341 tty driver - see
+`internal/serial/ch340_linux.go` - which is what stops the ESP32 resetting on every connect).
+Also makes sure the `libusb-1.0-0` runtime library is actually installed (via `apt-get` if
+missing) before starting the service, since that's a hard runtime requirement for the same reason
+and isn't guaranteed present on a minimal/headless image. Expects release assets named
 `AscomAlpacaProxy-linux-<amd64|arm64>` - i.e. `build_linux.ps1`'s output naming, not
 `build_linux.sh`'s.
 

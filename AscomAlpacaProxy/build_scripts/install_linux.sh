@@ -63,22 +63,40 @@ echo "Download URL: $DOWNLOAD_URL"
 
 # --- Download Binary ---
 echo ""
-echo "[1/5] Downloading binary ($ARCH_TAG)..."
+echo "[1/7] Downloading binary ($ARCH_TAG)..."
 TMP_BINARY=$(mktemp)
 curl -sSfL "$DOWNLOAD_URL" -o "$TMP_BINARY"
 chmod 755 "$TMP_BINARY"
 
+# --- Runtime Dependency: libusb-1.0 ---
+# The proxy talks to the SV241's CH340 chip directly over libusb instead of going through the
+# kernel's ch341 tty driver (see internal/serial/ch340_linux.go and the udev rule step below for
+# why) - that needs the real libusb-1.0.so.0 shared library present on the system at startup, or
+# the service will crash-loop immediately. Many systems already have it as some other package's
+# dependency, but it's not guaranteed on a minimal/headless image (e.g. Raspberry Pi OS Lite).
+echo "[2/7] Ensuring libusb-1.0 runtime library is installed..."
+if ldconfig -p 2>/dev/null | grep -q 'libusb-1\.0\.so\.0'; then
+    echo "  -> libusb-1.0 already present. OK."
+elif command -v apt-get >/dev/null 2>&1; then
+    apt-get update -qq && apt-get install -y -qq libusb-1.0-0
+    echo "  -> Installed libusb-1.0-0 via apt."
+else
+    echo "  -> WARNING: could not find libusb-1.0.so.0 and no 'apt-get' available to install it."
+    echo "     Install the 'libusb-1.0-0' (or equivalent) package for your distro manually, or"
+    echo "     the service below will fail to start."
+fi
+
 # --- Stop existing service ---
-echo "[2/5] Stopping existing service (if running)..."
+echo "[3/7] Stopping existing service (if running)..."
 systemctl stop "$SERVICE_NAME" 2>/dev/null || true
 
 # --- Install Binary ---
-echo "[3/5] Installing binary to $INSTALL_DIR/$BINARY_NAME..."
+echo "[4/7] Installing binary to $INSTALL_DIR/$BINARY_NAME..."
 mv "$TMP_BINARY" "$INSTALL_DIR/$BINARY_NAME"
 chmod 755 "$INSTALL_DIR/$BINARY_NAME"
 
 # --- Install systemd Service (inline) ---
-echo "[4/5] Installing systemd service..."
+echo "[5/7] Installing systemd service..."
 cat > "$SERVICE_DIR/$SERVICE_NAME.service" <<EOF
 [Unit]
 Description=SV241 ASCOM Alpaca Proxy
@@ -101,7 +119,7 @@ systemctl enable "$SERVICE_NAME"
 systemctl start "$SERVICE_NAME"
 
 # --- Serial Port Permissions ---
-echo "[5/5] Ensuring serial port access for user '$ACTUAL_USER'..."
+echo "[6/7] Ensuring serial port access for user '$ACTUAL_USER'..."
 if ! groups "$ACTUAL_USER" | grep -q dialout; then
     usermod -aG dialout "$ACTUAL_USER"
     echo "  -> Added '$ACTUAL_USER' to 'dialout' group."
@@ -109,6 +127,24 @@ if ! groups "$ACTUAL_USER" | grep -q dialout; then
 else
     echo "  -> User '$ACTUAL_USER' is already in the 'dialout' group. OK."
 fi
+
+# --- Raw USB Access (CH340 direct-libusb driver) ---
+# On Linux, the proxy talks to the SV241's CH340 (1a86:7523) chip directly over libusb
+# instead of going through the kernel's ch341 tty driver - this avoids resetting the ESP32
+# on every connect, which the tty layer can't be told to skip (see internal/serial/ch340_linux.go).
+# That means it needs read/write access to the raw /dev/bus/usb/BBB/DDD device node, which the
+# 'dialout' group above does not cover on its own (that group is scoped to /dev/ttyUSB* nodes).
+echo "[7/7] Installing udev rule for raw USB access to the SV241 (CH340 1a86:7523)..."
+UDEV_RULE_FILE="/etc/udev/rules.d/99-sv241-usb.rules"
+cat > "$UDEV_RULE_FILE" <<EOF
+# SV241 Alpaca Proxy - raw USB access for the CH340 direct-libusb driver (Linux only).
+# Installed by install_linux.sh. Safe to remove if the proxy is uninstalled.
+SUBSYSTEM=="usb", ATTR{idVendor}=="1a86", ATTR{idProduct}=="7523", MODE="0664", GROUP="dialout"
+EOF
+udevadm control --reload-rules
+udevadm trigger --subsystem-match=usb
+echo "  -> Installed $UDEV_RULE_FILE and reloaded udev rules."
+echo "  -> NOTE: if the SV241 is already plugged in, unplug and replug it once so the new rule applies."
 
 # --- Done ---
 echo ""
