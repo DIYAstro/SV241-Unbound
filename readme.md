@@ -24,6 +24,7 @@ This is a replacement firmware for the **Svbony SV241 Pro**.
 *   [The ASCOM Alpaca Proxy](#the-ascom-alpaca-proxy)
 *   [Advanced: Serial Command Interface](#advanced-serial-command-interface)
 *   [Troubleshooting](./TROUBLESHOOTING.md)
+*   [Linux/PINS Installation Guide](./PINS_INSTALL.md)
 
 ## Project Overview
 
