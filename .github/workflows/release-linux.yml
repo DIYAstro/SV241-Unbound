@@ -54,7 +54,10 @@ jobs:
       # Go binary as build/AscomAlpacaProxy-linux-<arch>. Nothing version-related happens in this
       # workflow itself - see build_linux.sh.
       - name: Build
-        run: AscomAlpacaProxy/build_scripts/build_linux.sh
+        # Invoked as `bash build_linux.sh` rather than `./build_linux.sh`: git's executable bit
+        # is easy to lose on a file that's ever edited from Windows (as this one has been) -
+        # this works regardless of it.
+        run: bash AscomAlpacaProxy/build_scripts/build_linux.sh
 
       - uses: actions/upload-artifact@v4
         with:

@@ -48,8 +48,11 @@ fi
 #    script keeps every other spot in sync automatically. PowerShell isn't guaranteed to be
 #    available on a native Linux host, so this uses the bash/sed equivalent sync_versions.sh
 #    rather than calling sync_versions.ps1.
+#    Invoked as `bash sync_versions.sh` rather than `./sync_versions.sh` on purpose: git's
+#    executable bit is easy to lose on a file that's ever edited from Windows (as this repo's
+#    scripts have been), and unlike relying on that bit, this works regardless of it.
 echo "[1/6] Syncing versions from release_version.json..."
-"$SCRIPT_DIR/sync_versions.sh" "$PROJECT_ROOT" "$PROXY_ROOT"
+bash "$SCRIPT_DIR/sync_versions.sh" "$PROJECT_ROOT" "$PROXY_ROOT"
 
 # 2. Build Firmware (PlatformIO) and copy the flashable artifacts into the in-app flasher's asset
 #    folder - mirrors build_exe.bat's step 2. Must happen after the version sync above (so the
