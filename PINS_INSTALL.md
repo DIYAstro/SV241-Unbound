@@ -6,7 +6,7 @@
 > test routine. It should work, but a regression could go unnoticed until someone hits it - if
 > you do, please [open an issue](https://github.com/DIYAstro/SV241-Unbound/issues) or a PR.
 
-Six steps, all from a terminal: log into the Raspberry Pi running PINS over SSH, then let one
+Seven steps, all from a terminal: log into the Raspberry Pi running PINS over SSH, then let one
 command download, install, and start the proxy as a background service.
 
 ## 1. Find the Pi's address
@@ -70,7 +70,12 @@ sudo systemctl status sv241-alpaca-proxy
 Look for `active (running)`. Then open the printed URL (port `32241`) in a browser on the same
 network to confirm the SV241's dashboard loads.
 
-## 6. Everyday commands
+## 6. Connect from PINS
+
+PINS should find the proxy automatically via Alpaca discovery. If it doesn't show up, try the
+reload button next to Switch and Weather in the pins-alpaca plugin.
+
+## 7. Everyday commands
 
 Keep these handy - no need to memorize, they're printed again at the end of every install:
 
