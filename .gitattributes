@@ -1,0 +1,8 @@
+# Force LF line endings for shell scripts regardless of the checking-out platform's
+# core.autocrlf setting. Without this, a Windows checkout (core.autocrlf=true is a very common
+# default there) silently converts these to CRLF on disk - harmless until someone uploads that
+# working-tree copy somewhere a shell actually has to run it (e.g. a GitHub release asset,
+# fetched and piped straight into `sudo bash` by install_linux.sh's own documented one-liner),
+# where CRLF breaks the shebang and produces `$'\r': command not found` / `invalid option`
+# errors. Discovered exactly that way when testing the real published install_linux.sh.
+*.sh text eol=lf
