@@ -10,9 +10,6 @@ import (
 	"sv241pro-alpaca-proxy/internal/logger"
 	"sync"
 	"time"
-
-	"go.bug.st/serial"
-	"go.bug.st/serial/enumerator"
 )
 
 // Command defines a command to be sent to the serial device.
@@ -39,7 +36,7 @@ type ConditionsCache struct {
 var (
 	highPriorityCommands = make(chan Command)
 	lowPriorityCommands  = make(chan Command)
-	sv241Port            serial.Port
+	sv241Port            Port
 	portMutex            = &sync.Mutex{}
 	firmwareVersion      = "unknown"
 	firmwareVersionMu    sync.RWMutex
@@ -263,7 +260,7 @@ func ProcessCommands() {
 
 // drainInputBuffer reads from the port until no more data is available.
 // This removes stale data (e.g., boot logs, unsolicited output) before sending a new command.
-func drainInputBuffer(port serial.Port) {
+func drainInputBuffer(port Port) {
 	port.SetReadTimeout(50 * time.Millisecond)
 	buf := make([]byte, 1024)
 	for {
@@ -277,7 +274,7 @@ func drainInputBuffer(port serial.Port) {
 
 // readLine reads from the port until a newline is encountered or timeout.
 // Uses chunk-based reading (256 bytes) instead of byte-by-byte to minimize syscall overhead.
-func readLine(port serial.Port, timeout time.Duration) (string, error) {
+func readLine(port Port, timeout time.Duration) (string, error) {
 	port.SetReadTimeout(timeout)
 	var result []byte
 	buf := make([]byte, 256)
@@ -364,50 +361,24 @@ func ManageConnection(initDone chan struct{}) {
 }
 
 // FindPort iterates through available serial ports to find the SV241 device.
-func FindPort() (string, serial.Port, error) {
-	ports, err := enumerator.GetDetailedPortsList()
-	if err != nil {
-		logger.Warn("FindPort: enumerator.GetDetailedPortsList returned an error: %v.", err)
-	}
-	if len(ports) == 0 {
-		return "", nil, errors.New("no serial ports found on the system")
-	}
-
-	logger.Info("Found %d serial ports. Probing for SV241 device...", len(ports))
-	for _, port := range ports {
-		logger.Debug("Checking port: %s (IsUSB: %t, VID: %s, PID: %s)", port.Name, port.IsUSB, port.VID, port.PID)
-		if port.IsUSB {
-			logger.Info("Probing port: %s", port.Name)
-
-			if p, success := probePortWithTimeout(port.Name, 4*time.Second); success {
-				return port.Name, p, nil
-			}
-		} else {
-			logger.Debug("Skipping port %s: Not a USB port.", port.Name)
-		}
-	}
-	return "", nil, errors.New("could not find SV241 device on any USB serial port")
-}
-
 // probePortWithTimeout probes a port with a hard timeout that guarantees cleanup.
 // Uses a goroutine for the actual probe, but closes the port if timeout occurs.
-func probePortWithTimeout(portName string, timeout time.Duration) (serial.Port, bool) {
+func probePortWithTimeout(portName string, timeout time.Duration) (Port, bool) {
 	type probeResult struct {
 		success bool
-		port    serial.Port
+		port    Port
 	}
 	resultChan := make(chan probeResult, 1)
 
 	// Shared variable for port handle - allows cleanup on timeout
-	var probePort serial.Port
+	var probePort Port
 	var probeMutex sync.Mutex
 
 	go func() {
-		mode := &serial.Mode{
-			BaudRate:          115200,
-			InitialStatusBits: &serial.ModemOutputBits{DTR: false, RTS: false},
-		}
-		p, err := serial.Open(portName, mode)
+		// openPort does whatever platform-specific reset/settle handling is needed and returns
+		// a port that's already ready for commands - see serial_platform_other.go (Windows) and
+		// ch340_linux.go (Linux) for what that actually involves.
+		p, err := openPort(portName)
 		if err != nil {
 			logger.Warn("Could not open port %s to probe: %v", portName, err)
 			resultChan <- probeResult{false, nil}
@@ -419,37 +390,6 @@ func probePortWithTimeout(portName string, timeout time.Duration) (serial.Port, 
 		probePort = p
 		probeMutex.Unlock()
 
-		// Clear DTR and RTS immediately after opening - this is REQUIRED, not optional.
-		// Linux's tty layer asserts both lines itself on every open (tty_port_raise_dtr_rts),
-		// and with both asserted the ESP32 is held in reset and stays completely silent
-		// (verified on real hardware: TIOCMGET shows DTR=1 RTS=1 right after open, and the
-		// device answers nothing until they are cleared). Clearing them releases the chip,
-		// which is what makes it boot - so the reset seen on connect is inherent to opening
-		// the port at all, and cannot be avoided by leaving these lines alone. See
-		// maxConsecutiveReadFailures for how we avoid the *repeat* resets that actually hurt.
-		if err := p.SetDTR(false); err != nil {
-			logger.Debug("Port %s: Could not disable DTR during probe: %v", portName, err)
-		}
-		if err := p.SetRTS(false); err != nil {
-			logger.Debug("Port %s: Could not disable RTS during probe: %v", portName, err)
-		}
-
-		// Because the kernel pulse is usually enough to trigger the reboot anyway before we can disable it,
-		// we MUST wait for the ESP32 to finish its FreeRTOS boot before sending our command.
-		// The boot process takes about 1.5 seconds.
-		time.Sleep(1500 * time.Millisecond)
-
-		// Drain the boot-log bytes that arrived during the reboot
-		p.SetReadTimeout(100 * time.Millisecond)
-		drainBuf := make([]byte, 4096)
-		for {
-			n, _ := p.Read(drainBuf)
-			if n == 0 {
-				break
-			}
-		}
-
-		// Set read timeout
 		p.SetReadTimeout(2 * time.Second)
 
 		var success bool
@@ -520,7 +460,7 @@ func Reconnect(portName string) {
 // boot-settled port handle (e.g. one returned by FindPort()) to be adopted instead of forcing a
 // second open+boot-settle cycle - avoiding a redundant reset pulse to the device. Passing nil
 // behaves exactly like Reconnect.
-func ReconnectWithHandle(portName string, preOpenedPort serial.Port) {
+func ReconnectWithHandle(portName string, preOpenedPort Port) {
 	portMutex.Lock()
 	defer portMutex.Unlock()
 	reconnect(portName, preOpenedPort)
@@ -555,11 +495,11 @@ func FindAndConnect() (string, error) {
 
 // reconnect attempts to close the current port and open a new one.
 // It MUST be called within a portMutex lock.
-func reconnect(newPortName string, preOpenedPort serial.Port) {
+func reconnect(newPortName string, preOpenedPort Port) {
 	handleDisconnect() // Close existing port if any
 
 	if newPortName != "" {
-		var p serial.Port
+		var p Port
 		var err error
 
 		if preOpenedPort != nil {
@@ -567,43 +507,16 @@ func reconnect(newPortName string, preOpenedPort serial.Port) {
 			p = preOpenedPort
 		} else {
 			logger.Info("Attempting to open serial port: %s", newPortName)
-			mode := &serial.Mode{
-				BaudRate:          115200,
-				InitialStatusBits: &serial.ModemOutputBits{DTR: false, RTS: false},
-			}
-			p, err = serial.Open(newPortName, mode)
+			// openPort does whatever platform-specific reset/settle handling is needed and
+			// returns a port that's already ready for commands - see serial_platform_other.go
+			// (Windows) and ch340_linux.go (Linux) for what that actually involves.
+			p, err = openPort(newPortName)
 			if err != nil {
 				logger.Error("reconnect: Failed to open port %s: %v", newPortName, err)
 			}
 		}
 
 		if p != nil {
-			// Clearing DTR/RTS is REQUIRED - Linux's tty layer asserts both on every open, and
-			// while they are asserted the ESP32 is held in reset and answers nothing. Clearing
-			// them is what releases (and thereby boots) the chip. See probePortWithTimeout().
-			if err := p.SetDTR(false); err != nil {
-				logger.Warn("Could not disable DTR on port %s: %v", newPortName, err)
-			}
-			if err := p.SetRTS(false); err != nil {
-				logger.Warn("Could not disable RTS on port %s: %v", newPortName, err)
-			}
-
-			if preOpenedPort == nil {
-				// We opened the port ourselves, so the device just went through the
-				// open-induced reset described above. Swallow the FreeRTOS boot log so our
-				// subsequent JSON commands don't read garbage.
-				time.Sleep(1500 * time.Millisecond)
-				p.SetReadTimeout(100 * time.Millisecond)
-				drainBuf := make([]byte, 4096)
-				for {
-					n, _ := p.Read(drainBuf)
-					if n == 0 {
-						break
-					}
-				}
-				p.SetReadTimeout(2 * time.Second)
-			}
-
 			sv241Port = p
 			conf := config.Get()
 			conf.SerialPortName = newPortName // Update config with the valid port
