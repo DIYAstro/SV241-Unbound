@@ -75,7 +75,7 @@ async function runOnboarding() {
         }
     } else {
         // No firmware detected
-        status.value = `⚠ Compatible firmware not detected.\nPlease flash SV241-Unbound to get started.`
+        status.value = `⚠ This device doesn't have SV241-Unbound firmware installed yet.\nClick below to flash it now.`
         actions.value = [
             { label: 'Flash Firmware', primary: true, handler: releaseAndFlash },
             { label: "I'll do it later", primary: false, handler: completeOnboarding }
