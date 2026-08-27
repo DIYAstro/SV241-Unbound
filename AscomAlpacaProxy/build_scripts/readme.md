@@ -88,11 +88,14 @@ The Inno Setup template. Worth knowing:
 > **unverified**. If you use these and find a bug, PRs are welcome.
 
 ### `build_linux.ps1`
-Runs on Windows, cross-compiles for Linux (no installer, just raw binaries). Same version-sync +
-frontend-build steps as `build_exe.bat`, plus a step that ensures a CGO-capable cross-compile
-toolchain is present (see `ensure_linux_crosscompile_toolchain.ps1` below), then two `go build`
-passes: `GOOS=linux GOARCH=amd64` → `build/AscomAlpacaProxy-linux-amd64`, and
-`GOOS=linux GOARCH=arm64` (Raspberry Pi 4/5, 64-bit) → `build/AscomAlpacaProxy-linux-arm64`.
+Runs on Windows, cross-compiles for Linux (no installer, just raw binaries). Same version-sync,
+firmware-build, and frontend-build steps as `build_exe.bat` (firmware via PlatformIO, copied into
+`frontend-vue/public/flasher/firmware/` - see `build_exe.bat`'s step 2 above; done here too so the
+in-app flasher this produces always embeds firmware matching the version it claims, not whatever
+happened to be last committed), plus a step that ensures a CGO-capable cross-compile toolchain is
+present (see `ensure_linux_crosscompile_toolchain.ps1` below), then two `go build` passes:
+`GOOS=linux GOARCH=amd64` → `build/AscomAlpacaProxy-linux-amd64`, and `GOOS=linux GOARCH=arm64`
+(Raspberry Pi 4/5, 64-bit) → `build/AscomAlpacaProxy-linux-arm64`.
 Useful for a local, ad-hoc Linux build from a Windows machine; the actual GitHub release binaries
 are now produced by the [`release-linux.yml`](#github-action-release-linuxyml) GitHub Action
 instead, which builds natively on real Linux runners rather than cross-compiling.
@@ -125,6 +128,11 @@ same `x86_64`→`amd64`/`aarch64`→`arm64` mapping `install_linux.sh` uses) and
 `build/AscomAlpacaProxy-linux-<amd64|arm64>`, matching `build_linux.ps1`'s naming - this is what
 [`release-linux.yml`](#github-action-release-linuxyml) actually runs, on real `amd64`/`arm64`
 GitHub-hosted Linux runners, to produce the release binaries.
+
+Also builds the firmware itself (via PlatformIO, installed automatically via `pip` if the `pio`
+CLI isn't already on `PATH`) and copies it into `frontend-vue/public/flasher/firmware/`, same as
+`build_exe.bat`/`build_linux.ps1` - so the in-app flasher this produces always matches whatever
+`release_version.json` currently says, not whatever `.bin` files happened to be last committed.
 
 Needs a C compiler and libusb-1.0's headers on the build host for the same CGO reason as
 `build_linux.ps1` above (e.g. `sudo apt-get install -y gcc libusb-1.0-0-dev` on
@@ -159,9 +167,11 @@ whatever the current `latest` release is).
 
 Builds `AscomAlpacaProxy-linux-amd64` and `-arm64` **natively** in parallel, on real
 `ubuntu-24.04` and `ubuntu-24.04-arm` GitHub-hosted runners (Linux arm64 hosted runners are free
-for public repos) - by just installing `gcc`/`libusb-1.0-0-dev` and running `build_linux.sh`
-unmodified on each. No cross-compile toolchain involved at all; that complexity is now specific to
-the optional local `build_linux.ps1` path. Both binaries plus `install_linux.sh` are then
+for public repos) - by installing `gcc`/`libusb-1.0-0-dev` and PlatformIO (`pip install
+platformio`), then running `build_linux.sh` unmodified on each (which, among other things, also
+compiles the actual firmware and bundles it into the flasher - see `build_linux.sh` above). No
+cross-compile toolchain involved at all; that complexity is now specific to the optional local
+`build_linux.ps1` path. Both binaries plus `install_linux.sh` are then
 uploaded to the target release (`gh release upload ... --clobber`, so re-running it replaces
 existing same-named assets - useful for fixing a bad upload, not just adding new ones). Includes a
 CRLF line-ending sanity check on `install_linux.sh` right before upload, guarding against the

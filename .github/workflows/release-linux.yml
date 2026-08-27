@@ -42,9 +42,17 @@ jobs:
       - name: Install cgo build dependencies (libusb-1.0)
         run: sudo apt-get update && sudo apt-get install -y gcc libusb-1.0-0-dev
 
-      # Does everything: syncs versions from release_version.json, builds the frontend, extracts
-      # the firmware version, and compiles the Go binary as build/AscomAlpacaProxy-linux-<arch>.
-      # Nothing version-related happens in this workflow itself - see build_linux.sh.
+      # build_linux.sh compiles the ESP32 firmware itself (via PlatformIO) and bundles it into
+      # the in-app web flasher - needs the pio CLI present. build_linux.sh would install it via
+      # pip on its own if missing, but doing it as its own step here keeps that cost visible and
+      # separately cacheable/attributable in the Actions UI instead of hiding inside "Build".
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      # Does everything: syncs versions from release_version.json, builds the firmware and bundles
+      # it into the flasher, builds the frontend, extracts the firmware version, and compiles the
+      # Go binary as build/AscomAlpacaProxy-linux-<arch>. Nothing version-related happens in this
+      # workflow itself - see build_linux.sh.
       - name: Build
         run: AscomAlpacaProxy/build_scripts/build_linux.sh
 

@@ -39,7 +39,7 @@ echo "--- Building SV241 Ascom Alpaca Proxy (Linux, $ARCH_TAG) ---"
 
 # 0. Cleanup previous build
 if [ -f "$PROXY_ROOT/build/$OUTPUT_BINARY" ]; then
-    echo "[0/5] Cleaning previous build..."
+    echo "[0/6] Cleaning previous build..."
     rm "$PROXY_ROOT/build/$OUTPUT_BINARY"
 fi
 
@@ -48,11 +48,36 @@ fi
 #    script keeps every other spot in sync automatically. PowerShell isn't guaranteed to be
 #    available on a native Linux host, so this uses the bash/sed equivalent sync_versions.sh
 #    rather than calling sync_versions.ps1.
-echo "[1/5] Syncing versions from release_version.json..."
+echo "[1/6] Syncing versions from release_version.json..."
 "$SCRIPT_DIR/sync_versions.sh" "$PROJECT_ROOT" "$PROXY_ROOT"
 
-# 2. Build Frontend
-echo "[2/5] Building Frontend..."
+# 2. Build Firmware (PlatformIO) and copy the flashable artifacts into the in-app flasher's asset
+#    folder - mirrors build_exe.bat's step 2. Must happen after the version sync above (so the
+#    compiled firmware embeds the just-synced FIRMWARE_VERSION) and before the version string
+#    gets extracted into version.json below - otherwise that file would claim a firmware version
+#    that doesn't match what's actually embedded in firmware.bin. (set -e above means a failed
+#    `pio run` or missing source file on the `cp` below already aborts this script - no separate
+#    error checks needed here, unlike the .bat/.ps1 equivalents.)
+echo "[2/6] Building Firmware..."
+if ! command -v pio >/dev/null 2>&1; then
+    echo "PlatformIO CLI not found on PATH - installing via pip..."
+    pip3 install --user --upgrade platformio
+    export PATH="$HOME/.local/bin:$PATH"
+fi
+(cd "$PROJECT_ROOT" && pio run)
+
+echo "Copying firmware artifacts to in-app flasher..."
+FW_BUILD_DIR="$PROJECT_ROOT/.pio/build/Firmware_ESP32"
+FLASHER_FW_DIR="$PROXY_ROOT/frontend-vue/public/flasher/firmware"
+mkdir -p "$FLASHER_FW_DIR"
+for f in bootloader.bin partitions.bin firmware.bin; do
+    cp "$FW_BUILD_DIR/$f" "$FLASHER_FW_DIR/$f"
+done
+# Note: docs/firmware/ (the separate GitHub Pages flasher) is deliberately NOT touched here -
+# publishing there is a distinct, manual release step (same as build_exe.bat).
+
+# 3. Build Frontend
+echo "[3/6] Building Frontend..."
 cd "$PROXY_ROOT/frontend-vue"
 npm install
 npm run build
@@ -76,7 +101,7 @@ else
 fi
 
 # 3. Get Product Version for Go Build
-echo "[3/5] Reading ProductVersion from versioninfo.json..."
+echo "[4/6] Reading ProductVersion from versioninfo.json..."
 cd "$PROXY_ROOT"
 APP_VERSION=$(grep -oP '"ProductVersion":\s*"\K[^"]+' versioninfo.json)
 if [ -z "$APP_VERSION" ]; then
@@ -86,7 +111,7 @@ fi
 echo "App Version: $APP_VERSION"
 
 # 4. Build Binary
-echo "[4/5] Compiling Go executable..."
+echo "[5/6] Compiling Go executable..."
 mkdir -p build
 go build -ldflags="-X main.AppVersion=$APP_VERSION" -o "build/$OUTPUT_BINARY" .
 
