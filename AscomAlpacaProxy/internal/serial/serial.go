@@ -66,6 +66,13 @@ var (
 	// reconnectPaused prevents the connection manager from auto-reconnecting.
 	// Used when the flasher releases the port for external access.
 	reconnectPaused = false
+
+	// consecutiveReadFailures counts commands that exhausted their retries without a response,
+	// in a row. Reset on the first successful command. Only once it reaches
+	// maxConsecutiveReadFailures do we actually tear the connection down - see that constant's
+	// definition (per-platform) for why closing the port is expensive on Linux.
+	// Guarded by portMutex.
+	consecutiveReadFailures = 0
 )
 
 // StartManager initializes all background tasks for serial communication.
@@ -220,12 +227,23 @@ func ProcessCommands() {
 			logger.Warn("Serial read attempt %d/%d failed: %v", attempt+1, maxRetries+1, readErr)
 		}
 		if readErr != nil {
-			logger.Error("Serial read failed after %d attempts. Marking port as disconnected.", maxRetries+1)
-			handleDisconnect()
+			consecutiveReadFailures++
+			if consecutiveReadFailures >= maxConsecutiveReadFailures {
+				logger.Error("Serial read failed after %d attempts, %d commands in a row. Marking port as disconnected.",
+					maxRetries+1, consecutiveReadFailures)
+				handleDisconnect()
+			} else {
+				// Keep the port open and just fail this one command. Reconnecting costs a device
+				// reset (and with it the user's live output states) on Linux, so a single missed
+				// response is not worth tearing the link down for.
+				logger.Warn("Serial read failed after %d attempts (%d/%d in a row). Keeping port open.",
+					maxRetries+1, consecutiveReadFailures, maxConsecutiveReadFailures)
+			}
 			portMutex.Unlock()
 			cmd.Error <- fmt.Errorf("failed to read from serial port: %w", readErr)
 			continue
 		}
+		consecutiveReadFailures = 0
 		portMutex.Unlock()
 
 		trimmedResponse := strings.TrimSpace(response)
@@ -401,9 +419,14 @@ func probePortWithTimeout(portName string, timeout time.Duration) (serial.Port, 
 		probePort = p
 		probeMutex.Unlock()
 
-		// Disable DTR and RTS immediately after opening.
-		// On Linux, the serial driver asserts these lines by default when a port is opened.
-		// The ESP32 auto-reset circuit uses DTR/RTS to trigger a reboot. 
+		// Clear DTR and RTS immediately after opening - this is REQUIRED, not optional.
+		// Linux's tty layer asserts both lines itself on every open (tty_port_raise_dtr_rts),
+		// and with both asserted the ESP32 is held in reset and stays completely silent
+		// (verified on real hardware: TIOCMGET shows DTR=1 RTS=1 right after open, and the
+		// device answers nothing until they are cleared). Clearing them releases the chip,
+		// which is what makes it boot - so the reset seen on connect is inherent to opening
+		// the port at all, and cannot be avoided by leaving these lines alone. See
+		// maxConsecutiveReadFailures for how we avoid the *repeat* resets that actually hurt.
 		if err := p.SetDTR(false); err != nil {
 			logger.Debug("Port %s: Could not disable DTR during probe: %v", portName, err)
 		}
@@ -555,9 +578,9 @@ func reconnect(newPortName string, preOpenedPort serial.Port) {
 		}
 
 		if p != nil {
-			// Disable DTR and RTS immediately after opening the port.
-			// On Linux, the serial driver may assert these lines by default when a port is opened.
-			// Disabling both prevents the ESP32 from freezing or staying in bootloader mode.
+			// Clearing DTR/RTS is REQUIRED - Linux's tty layer asserts both on every open, and
+			// while they are asserted the ESP32 is held in reset and answers nothing. Clearing
+			// them is what releases (and thereby boots) the chip. See probePortWithTimeout().
 			if err := p.SetDTR(false); err != nil {
 				logger.Warn("Could not disable DTR on port %s: %v", newPortName, err)
 			}
@@ -566,9 +589,9 @@ func reconnect(newPortName string, preOpenedPort serial.Port) {
 			}
 
 			if preOpenedPort == nil {
-				// We just opened the port fresh. Even with the HUPCL trick, the VERY FIRST connection
-				// after a Linux PC powers on will cause a hardware pulse. We must swallow the FreeRTOS 
-				// boot logs here so our subsequent JSON commands don't read garbage.
+				// We opened the port ourselves, so the device just went through the
+				// open-induced reset described above. Swallow the FreeRTOS boot log so our
+				// subsequent JSON commands don't read garbage.
 				time.Sleep(1500 * time.Millisecond)
 				p.SetReadTimeout(100 * time.Millisecond)
 				drainBuf := make([]byte, 4096)
@@ -617,6 +640,7 @@ func reconnect(newPortName string, preOpenedPort serial.Port) {
 
 // handleDisconnect closes the port and sets it to nil. MUST be called within a portMutex lock.
 func handleDisconnect() {
+	consecutiveReadFailures = 0
 	if sv241Port != nil {
 		// Send a disconnected event if the status changed from connected.
 		if lastSentStatus == events.Connected {
