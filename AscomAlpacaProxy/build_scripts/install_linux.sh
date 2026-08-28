@@ -18,9 +18,6 @@ INSTALL_DIR="/usr/local/bin"
 SERVICE_DIR="/etc/systemd/system"
 SERVICE_NAME="sv241-alpaca-proxy"
 
-echo "=== SV241 Alpaca Proxy - Linux Installer ==="
-echo ""
-
 # --- Check for root privileges ---
 if [ "$EUID" -ne 0 ]; then
     echo "Error: This script requires root privileges. Please run with sudo."
@@ -32,7 +29,8 @@ fi
 # override pattern as SV241_RELEASE_TAG above, for consistency (one invocation style to remember,
 # not a second one like `bash -s -- --uninstall`):
 #   curl -sSL .../install_linux.sh | sudo SV241_UNINSTALL=1 bash
-# Doesn't need architecture detection or a download - skip straight to it before any of that.
+# Doesn't need architecture detection or a download - skip straight to it before any of that, and
+# before the "Installer" banner below (this has its own banner instead).
 if [ -n "${SV241_UNINSTALL:-}" ]; then
     echo "=== SV241 Alpaca Proxy - Linux Uninstaller ==="
     echo ""
@@ -61,6 +59,9 @@ if [ -n "${SV241_UNINSTALL:-}" ]; then
     echo "  - saved config/logs at ~/.config/SV241AlpacaProxy/ - kept in case you reinstall later"
     exit 0
 fi
+
+echo "=== SV241 Alpaca Proxy - Linux Installer ==="
+echo ""
 
 # Get the actual user (not root when running with sudo)
 ACTUAL_USER="${SUDO_USER:-$USER}"
