@@ -73,57 +73,22 @@ This command adds an inbound rule specifically for the `AscomAlpacaProxy.exe` ap
 ## Linux Installation
 
 > [!CAUTION]
-> **Experimental Support:** Linux support (amd64 and arm64/Raspberry Pi) is currently in an early stage and has not been as extensively tested as the Windows version.
+> **Experimental Support:** Linux support (amd64 and arm64/Raspberry Pi) works, but isn't tested
+> as thoroughly or continuously as the Windows build - see
+> [PINS_INSTALL.md](../PINS_INSTALL.md) for the current testing status and details.
 
-The SV241 Alpaca Proxy can be installed on most Linux distributions (Ubuntu, Debian, Raspberry Pi OS, etc.) using a simple one-line command.
-
-### One-Line Installer
-
-Open a terminal and run the following command:
+The SV241 Alpaca Proxy can be installed on most Linux distributions (Ubuntu, Debian, Raspberry Pi
+OS, etc.) using a one-line command:
 
 ```bash
 curl -sSL https://github.com/DIYAstro/SV241-Unbound/releases/latest/download/install_linux.sh | sudo bash
 ```
 
-This script will:
-1. Detect your system architecture (PC or Raspberry Pi).
-2. Download the latest binary from GitHub.
-3. Install it to `/usr/local/bin/AscomAlpacaProxy`.
-4. Create and start a `systemd` service named `sv241-alpaca-proxy`.
-5. Add your user to the `dialout` group for serial port access.
-
-> [!IMPORTANT]
-> **Group Membership:** After installation, you must **log out and log back in** (or reboot) for the serial port permissions (`dialout` group) to take effect for the service.
-
-> [!NOTE]
-> **Linux Serial Reboots:** On Linux systems, the serial driver inherently pulses the DTR and RTS lines when a port is opened. This triggers the auto-reset circuit of the ESP32 microcontroller, meaning **the SV241 device will reboot** whenever the proxy service connects or is restarted.
->
-> **Proxy Handling:** While the reboot is unavoidable at the operating system level, the proxy software is designed to gracefully absorb this restart. It waits for the ESP32 to finish booting before sending commands, preventing communication crashes.
->
-> ⚠️ **Hardware Modification (For absolute zero reboots):** If you are running ultra-sensitive equipment and cannot tolerate proxy restarts triggering hardware reboots, you must solder a **10µF to 100µF capacitor** between the ESP32's `EN` pin and `GND` to physically block the Linux DTR pulse. *Note: this breaks the ability to flash new firmware via USB unless the capacitor is made removable (e.g., via a jumper/switch).*
-
-### Firmware Updates on Linux
-
-> [!WARNING]
-> **Web Serial API Requirement:** The integrated firmware flasher uses the **Web Serial API**. This requires that the web browser (Chrome or Edge) runs on the **same physical machine** where the SV241-Box is connected via USB.
->
-> If you are running the proxy on a **headless** server or Raspberry Pi, you cannot flash the firmware remotely from another computer's browser. You must either:
-> 1. Connect a monitor and keyboard to the Pi and use a local browser.
-> 2. Momentarily connect the SV241-Box to **another computer (Laptop/PC)** to perform the update.
->
-> Alternatively, you can use the **standalone Web Flasher** at [diyastro.github.io/SV241-Unbound](https://diyastro.github.io/SV241-Unbound/) from any compatible device that is physically connected to the box.
-
-### Service Management
-
-After installation, you can manage the proxy service using standard `systemd` commands:
-
-| Action | Command |
-|--------|---------|
-| **Check Status** | `sudo systemctl status sv241-alpaca-proxy` |
-| **View Proxy Logs** | `tail -f ~/.config/SV241AlpacaProxy/proxy.log` |
-| **Restart Service** | `sudo systemctl restart sv241-alpaca-proxy` |
-| **Stop Service** | `sudo systemctl stop sv241-alpaca-proxy` |
-| **Start Service** | `sudo systemctl start sv241-alpaca-proxy` |
+For the full step-by-step walkthrough - what the installer actually does, service management
+commands, updating, uninstalling, installing a beta build, and how to update the firmware on a
+headless/remote system - see **[PINS_INSTALL.md](../PINS_INSTALL.md)**. It's written with a
+Raspberry Pi running PINS in mind, but nothing about the installer itself is PINS-specific; it
+applies to any systemd-based Linux distribution.
 
 
 ## Accessing the Setup Page
