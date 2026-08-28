@@ -16,6 +16,18 @@ on:
         required: false
         type: string
 
+# A reusable workflow can never be granted more permissions than its caller has, regardless of
+# what the reusable workflow's own `permissions:` block asks for - without this, GitHub rejects
+# the whole run with "The workflow is requesting 'contents: write', but is only allowed
+# 'contents: read'" as soon as it tries to call release-firmware.yml (or any of the others).
+# Union of everything the four called workflows need: contents: write for
+# release-firmware/windows/linux.yml's `gh release upload`, pages: write + id-token: write for
+# release-webflasher.yml's Pages deployment.
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
 jobs:
   firmware:
     uses: ./.github/workflows/release-firmware.yml
