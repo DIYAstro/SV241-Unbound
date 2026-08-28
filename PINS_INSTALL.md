@@ -65,6 +65,15 @@ Seven quick steps, all logged to the terminal as they happen:
 It finishes by printing the web interface URL - that's your ASCOM Alpaca endpoint for PINS to
 connect to.
 
+**A note on other USB-serial devices:** the SV241 is found by USB chip type, not by name - if you
+have other CH340-based USB-serial devices plugged into the Pi too (common; it's a very widely used
+chip, found in plenty of cheap USB-serial adapters and Arduino-compatible boards), the very first
+connection (or the first one after moving the SV241 to a different USB port) checks whatever's
+currently connected to find it, without disturbing anything that answers normally. Once it's found
+the SV241 successfully, it remembers exactly which physical USB port that was and reconnects
+straight to it from then on, without touching anything else - as long as it stays in that same
+port. Practical takeaway: once it's working, leave the SV241 plugged into the same USB port.
+
 ## 5. Confirm it's running
 
 ```bash

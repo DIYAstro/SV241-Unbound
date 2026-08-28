@@ -180,6 +180,18 @@ and isn't guaranteed present on a minimal/headless image. Expects release assets
 `AscomAlpacaProxy-linux-<amd64|arm64>`, matching both `build_linux.ps1`'s and `build_linux.sh`'s
 output naming.
 
+Since the CH340's VID/PID (`1a86:7523`) isn't unique to the SV241 - the same chip shows up in
+countless other cheap USB-serial adapters and Arduino clones - `ch340_linux.go` pins to the
+specific USB bus/port path of whichever device it last connected to successfully (persisted
+through the existing `conf.SerialPortName` mechanism), falling back to checking whatever's
+currently connected only on the very first connect, or after the SV241 moves to a different port.
+That fallback tries every candidate gently (no DTR/RTS) before forcing a reset on any of them, and
+only escalates to a DTR/RTS release, one candidate at a time, if none respond gently - verified
+against real hardware with two CH340 devices connected, both with and without a prior pin: the
+SV241 is found within one connection attempt either way, and an unrelated candidate that answers
+normally is never touched. See that file's `ch340PathID`/`ch340Candidates`/`tryOpenCH340` for the
+full mechanism; see `PINS_INSTALL.md` for the user-facing version of this note.
+
 Set `SV241_RELEASE_TAG` to install from a specific release instead of whatever's current
 `latest` - the only way to point someone at a beta/pre-release, since GitHub itself never treats
 a pre-release as `latest`:
