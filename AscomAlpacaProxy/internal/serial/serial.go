@@ -518,12 +518,28 @@ func reconnect(newPortName string, preOpenedPort Port) {
 
 		if p != nil {
 			sv241Port = p
+
+			// Persist what the port actually resolved to, not necessarily newPortName itself -
+			// they differ whenever p implements resolvableName (currently just ch340Port on
+			// Linux) and newPortName was a stale/non-pinning value (no prior pin, the pre-pinning
+			// ch340PortLabel constant, or a pin that no longer matched anything). Without this,
+			// a value that never round-trips through resolvableName (like ch340PortLabel) would
+			// keep re-saving itself here forever, since this line runs on *every* successful
+			// (re)connect, including ones that went through the preOpenedPort branch above where
+			// openPort() (and its own internal resolution) is never even called.
+			resolvedName := newPortName
+			if rn, ok := p.(resolvableName); ok {
+				if resolved := rn.ResolvedName(); resolved != "" {
+					resolvedName = resolved
+				}
+			}
+
 			conf := config.Get()
-			conf.SerialPortName = newPortName // Update config with the valid port
+			conf.SerialPortName = resolvedName // Update config with the valid port
 			if err := config.Save(); err != nil {
 				logger.Warn("Failed to save newly connected serial port to config: %v", err)
 			}
-			logger.Info("Successfully opened serial port: %s", newPortName)
+			logger.Info("Successfully opened serial port: %s", resolvedName)
 
 			// Send a connected event if the status changed from disconnected.
 			if lastSentStatus == events.Disconnected {
