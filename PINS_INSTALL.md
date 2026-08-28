@@ -90,11 +90,6 @@ Keep these handy - no need to memorize, they're printed again at the end of ever
 | `sudo systemctl restart sv241-alpaca-proxy` | restart the service |
 | `sudo systemctl stop sv241-alpaca-proxy` | stop it |
 
-## Worth doing once
-
-`pi` / `pins` is a well-known default. If this Pi is reachable beyond your own home network,
-change the password with `passwd` before leaving it running unattended.
-
 ## Installing a beta build
 
 If a maintainer has asked you to test a pre-release, set `SV241_RELEASE_TAG` when installing
