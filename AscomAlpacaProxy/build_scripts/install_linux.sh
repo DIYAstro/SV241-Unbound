@@ -130,9 +130,21 @@ cat > "$UDEV_RULE_FILE" <<EOF
 # SV241 Alpaca Proxy - raw USB access for the CH340 direct-libusb driver (Linux only).
 # Installed by install_linux.sh. Safe to remove if the proxy is uninstalled.
 SUBSYSTEM=="usb", ATTR{idVendor}=="1a86", ATTR{idProduct}=="7523", MODE="0664", GROUP="dialout"
+
+# Every time the proxy releases the device for the web flasher (or on any reconnect), the CH340
+# driver's SetAutoDetach(true) makes the kernel's ch341 driver detach and reattach - which, from
+# udev's point of view, looks just like the device freshly appearing again. ModemManager (present
+# on many Debian/Raspberry Pi OS images for USB-modem support) auto-probes every new tty device by
+# briefly opening it, racing the proxy/browser's own attempt to open the exact same port right
+# after a release - causing the web flasher's "Serial port is not ready"/"device has been lost"
+# errors. ID_MM_DEVICE_IGNORE tells ModemManager to leave this specific device alone entirely -
+# the standard fix for this well-known class of problem, also used by many other USB-serial dev
+# boards (Arduino, etc.) for the same reason.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", ENV{ID_MM_DEVICE_IGNORE}="1"
 EOF
 udevadm control --reload-rules
 udevadm trigger --subsystem-match=usb
+udevadm trigger --subsystem-match=tty
 echo "  -> Installed $UDEV_RULE_FILE and reloaded udev rules."
 echo "  -> NOTE: if the SV241 is already plugged in, unplug and replug it once so the new rule applies."
 
