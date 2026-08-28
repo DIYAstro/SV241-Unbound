@@ -119,3 +119,16 @@ curl -sSL https://github.com/DIYAstro/SV241-Unbound/releases/latest/download/ins
 (Replace `v0.9.21-beta.1` with whatever tag you were given. Note the env var comes right after
 `sudo`, not before the whole command - `sudo` doesn't pass through your shell's environment
 variables otherwise.)
+
+## Uninstalling
+
+Same one-liner, with `SV241_UNINSTALL=1` instead:
+
+```bash
+curl -sSL https://github.com/DIYAstro/SV241-Unbound/releases/latest/download/install_linux.sh | sudo SV241_UNINSTALL=1 bash
+```
+
+Removes the service, the udev rule, and the binary. Leaves your `dialout` group membership, the
+`libusb-1.0-0` package, and any saved config under `~/.config/SV241AlpacaProxy/` in place - other
+things on the Pi may depend on the first two, and the config is worth keeping if you reinstall
+later.

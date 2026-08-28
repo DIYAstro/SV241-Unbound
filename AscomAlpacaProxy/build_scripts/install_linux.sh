@@ -6,6 +6,9 @@
 #   curl -sSL https://github.com/DIYAstro/SV241-Unbound/releases/latest/download/install_linux.sh | sudo bash
 # OR:
 #   wget -qO- https://github.com/DIYAstro/SV241-Unbound/releases/latest/download/install_linux.sh | sudo bash
+#
+# To uninstall:
+#   curl -sSL https://github.com/DIYAstro/SV241-Unbound/releases/latest/download/install_linux.sh | sudo SV241_UNINSTALL=1 bash
 # ==============================================================================
 set -e
 
@@ -22,6 +25,41 @@ echo ""
 if [ "$EUID" -ne 0 ]; then
     echo "Error: This script requires root privileges. Please run with sudo."
     exit 1
+fi
+
+# --- Uninstall ---
+# SV241_UNINSTALL=1 removes everything this script itself installs, then exits - same env-var
+# override pattern as SV241_RELEASE_TAG above, for consistency (one invocation style to remember,
+# not a second one like `bash -s -- --uninstall`):
+#   curl -sSL .../install_linux.sh | sudo SV241_UNINSTALL=1 bash
+# Doesn't need architecture detection or a download - skip straight to it before any of that.
+if [ -n "${SV241_UNINSTALL:-}" ]; then
+    echo "=== SV241 Alpaca Proxy - Linux Uninstaller ==="
+    echo ""
+
+    echo "[1/3] Stopping and disabling service..."
+    systemctl stop "$SERVICE_NAME" 2>/dev/null || true
+    systemctl disable "$SERVICE_NAME" 2>/dev/null || true
+    rm -f "$SERVICE_DIR/$SERVICE_NAME.service"
+    systemctl daemon-reload
+
+    echo "[2/3] Removing udev rule..."
+    rm -f /etc/udev/rules.d/99-sv241-usb.rules
+    udevadm control --reload-rules
+    udevadm trigger --subsystem-match=usb
+    udevadm trigger --subsystem-match=tty
+
+    echo "[3/3] Removing binary..."
+    rm -f "$INSTALL_DIR/$BINARY_NAME"
+
+    echo ""
+    echo "=== Uninstall Complete ==="
+    echo ""
+    echo "Left untouched on purpose (remove these yourself if you want a completely clean slate):"
+    echo "  - dialout group membership - other serial devices on this system may rely on it"
+    echo "  - the libusb-1.0-0 package - other software may depend on it"
+    echo "  - saved config/logs at ~/.config/SV241AlpacaProxy/ - kept in case you reinstall later"
+    exit 0
 fi
 
 # Get the actual user (not root when running with sudo)

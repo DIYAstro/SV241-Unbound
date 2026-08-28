@@ -189,6 +189,15 @@ curl -sSL .../install_linux.sh | sudo SV241_RELEASE_TAG=v0.9.21-beta.1 bash
 (As a `sudo` argument, not before the pipeline - `sudo` doesn't pass through the invoking shell's
 environment variables otherwise.)
 
+Set `SV241_UNINSTALL=1` (same argument-position rule) to remove everything the script itself
+installed - service, udev rule, binary - and exit, instead of installing:
+```bash
+curl -sSL .../install_linux.sh | sudo SV241_UNINSTALL=1 bash
+```
+Leaves the `dialout` group membership, the `libusb-1.0-0` package, and
+`~/.config/SV241AlpacaProxy/` (saved config/logs) alone on purpose - other things on the system
+may depend on the first two, and the config is worth keeping in case of a reinstall.
+
 ## GitHub Actions: `release-*.yml`
 
 Five workflows, all **manual only** (`workflow_dispatch`, no auto-trigger on release publish,
