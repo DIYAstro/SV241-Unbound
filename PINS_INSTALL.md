@@ -5,6 +5,10 @@
 > hardware, but the maintainer doesn't run Linux day-to-day and this isn't part of any ongoing
 > test routine. It should work, but a regression could go unnoticed until someone hits it - if
 > you do, please [open an issue](https://github.com/DIYAstro/SV241-Unbound/issues) or a PR.
+>
+> This guide is written for PINS since that's what's actually been tested, but nothing about
+> `install_linux.sh` is PINS-specific - it should work on most systemd-based Linux distributions
+> (Debian, Ubuntu, Raspberry Pi OS, etc.), just untested there so far.
 
 Seven steps, all from a terminal: log into the Raspberry Pi running PINS over SSH, then let one
 command download, install, and start the proxy as a background service.
