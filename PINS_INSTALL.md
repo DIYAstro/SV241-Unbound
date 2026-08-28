@@ -10,7 +10,7 @@
 > `install_linux.sh` is PINS-specific - it should work on most systemd-based Linux distributions
 > (Debian, Ubuntu, Raspberry Pi OS, etc.), just untested there so far.
 
-Seven steps, all from a terminal: log into the Raspberry Pi running PINS over SSH, then let one
+Eight steps, all from a terminal: log into the Raspberry Pi running PINS over SSH, then let one
 command download, install, and start the proxy as a background service.
 
 ## 1. Find the Pi's address
@@ -89,6 +89,23 @@ Keep these handy - no need to memorize, they're printed again at the end of ever
 | `sudo journalctl -u sv241-alpaca-proxy -f` | watch the live log |
 | `sudo systemctl restart sv241-alpaca-proxy` | restart the service |
 | `sudo systemctl stop sv241-alpaca-proxy` | stop it |
+
+## 8. Updating the firmware
+
+The Proxy has a built-in web flasher, but it needs a browser running **on the Pi itself** - the
+browser talks to the SV241 directly over USB, so it only works from the same machine the box is
+physically plugged into. **Opening it from another computer on the network will not work,** even
+though the Proxy's own web interface otherwise works fine remotely.
+
+To get a browser on the Pi's own desktop, install PINS' VNC plugin first, then connect to the Pi
+over VNC. From inside that VNC session, open Chromium and go to:
+
+```
+http://localhost:32241/flasher/
+```
+
+(`localhost`, not the Pi's IP - you're already running the browser on the Pi itself.) From there,
+click Connect and follow the on-screen instructions.
 
 ## Installing a beta build
 
