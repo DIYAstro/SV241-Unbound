@@ -6,9 +6,11 @@ compiling and bundling the matching ESP32 firmware.
 ## Table of Contents
 
 - [Single Source of Truth: `release_version.json`](#single-source-of-truth-release_versionjson)
+- [Firmware isn't committed to the repo](#firmware-isnt-committed-to-the-repo)
 - [Windows (actively maintained)](#windows-actively-maintained)
 - [Linux (not actively maintained)](#linux-not-actively-maintained)
-- [GitHub Action: `release-linux.yml`](#github-action-release-linuxyml)
+- [GitHub Actions: `release-*.yml`](#github-actions-release-yml)
+- [Cutting a beta / pre-release](#cutting-a-beta--pre-release)
 - [Prerequisites](#prerequisites)
 
 ## Single Source of Truth: `release_version.json`
@@ -40,6 +42,26 @@ easy-to-review diff instead of reformatting the whole file.
 
 You should never need to run either sync script directly - the build scripts call them
 automatically.
+
+## Firmware isn't committed to the repo
+
+`frontend-vue/public/flasher/firmware/*.bin` (the in-app flasher's asset folder) and
+`docs/firmware/*.bin` (the standalone GitHub Pages flasher's) are `.gitignore`d, not committed.
+Every build path below regenerates them from `src/` before it needs them - there's exactly one
+place firmware bytes come from (compiling the C++ source, pinned to a specific `platformio.ini`
+platform version for reproducibility), never a hand-maintained binary that can silently drift out
+of sync with what `release_version.json` claims.
+
+Locally, `build_exe.bat`/`build_linux.sh`/`build_linux.ps1` each just compile the firmware
+themselves via PlatformIO, same as always. In CI, `release-firmware.yml` builds it **once** and
+publishes it as `firmware.zip` on the GitHub release; `release-windows.yml`/`release-linux.yml`/
+`release-webflasher.yml` all download that same zip instead of each compiling their own copy
+(faster, and guarantees byte-identical firmware across every release asset). Set the
+`SKIP_FIRMWARE_BUILD=1` environment variable to make `build_exe.bat`/`build_linux.sh`/
+`build_linux.ps1` skip their own build step and use whatever's already sitting in the flasher
+asset folder - only ever set by the CI workflows, never for a local build (deliberately not a
+"does the file already exist" check - that gitignored folder can easily still hold a stale `.bin`
+from an earlier local build, which would silently skip rebuilding after a real source change).
 
 ## Windows (actively maintained)
 
@@ -158,28 +180,69 @@ and isn't guaranteed present on a minimal/headless image. Expects release assets
 `AscomAlpacaProxy-linux-<amd64|arm64>`, matching both `build_linux.ps1`'s and `build_linux.sh`'s
 output naming.
 
-## GitHub Action: `release-linux.yml`
+Set `SV241_RELEASE_TAG` to install from a specific release instead of whatever's current
+`latest` - the only way to point someone at a beta/pre-release, since GitHub itself never treats
+a pre-release as `latest`:
+```bash
+curl -sSL .../install_linux.sh | sudo SV241_RELEASE_TAG=v0.9.21-beta.1 bash
+```
+(As a `sudo` argument, not before the pipeline - `sudo` doesn't pass through the invoking shell's
+environment variables otherwise.)
 
-`.github/workflows/release-linux.yml` - **manual only** (`workflow_dispatch`, no auto-trigger on
-release publish, matching the "not actively maintained" caution above). Run it from the repo's
-Actions tab ("Run workflow"), optionally giving a specific release tag to target (defaults to
-whatever the current `latest` release is).
+## GitHub Actions: `release-*.yml`
 
-Builds `AscomAlpacaProxy-linux-amd64` and `-arm64` **natively** in parallel, on real
-`ubuntu-24.04` and `ubuntu-24.04-arm` GitHub-hosted runners (Linux arm64 hosted runners are free
-for public repos) - by installing `gcc`/`libusb-1.0-0-dev` and PlatformIO (`pip install
-platformio`), then running `build_linux.sh` unmodified on each (which, among other things, also
-compiles the actual firmware and bundles it into the flasher - see `build_linux.sh` above). No
-cross-compile toolchain involved at all; that complexity is now specific to the optional local
-`build_linux.ps1` path. Both binaries plus `install_linux.sh` are then
-uploaded to the target release (`gh release upload ... --clobber`, so re-running it replaces
-existing same-named assets - useful for fixing a bad upload, not just adding new ones). Includes a
-CRLF line-ending sanity check on `install_linux.sh` right before upload, guarding against the
-exact bug (a Windows working-tree copy uploaded by hand, crashing immediately on Linux) that
-`.gitattributes` fixes at the source but this catches again just in case.
+Five workflows, all **manual only** (`workflow_dispatch`, no auto-trigger on release publish,
+matching the "not actively maintained" caution above for the Linux-related ones). All take an
+optional `release_tag` input (blank = whatever's current `latest`) - none of them *create*
+releases, they only upload assets to one that already exists (create it by hand first: tag,
+release notes, mark as pre-release if it's a beta).
 
-Windows assets (`AscomAlpacaProxy.exe` / the installer) are **not** covered by this workflow and
-stay a manual `build_installer.bat` + manual upload step.
+- **`release-firmware.yml`** - builds the firmware (PlatformIO, same pinned platform as every
+  other path) and publishes it as `firmware.zip` (bootloader/partitions/firmware `.bin` + a
+  `version.json`) on the target release. Run this first - everything else downloads from here
+  instead of compiling its own copy.
+- **`release-windows.yml`** - downloads `firmware.zip`, builds the Windows installer
+  (`windows-latest` runner: Go, Node, Inno Setup via Chocolatey, `build_installer.bat` with
+  `SKIP_FIRMWARE_BUILD=1`), uploads it. **New, first time this project has used a Windows Actions
+  runner** - untested beyond local review, most likely to need a follow-up fix on its first real
+  run (Inno Setup's Chocolatey install path matching `build_installer.bat`'s hardcoded `ISCC.exe`
+  path is the main risk).
+- **`release-linux.yml`** - downloads `firmware.zip`, builds `AscomAlpacaProxy-linux-amd64`/
+  `-arm64` **natively** in parallel on real `ubuntu-24.04`/`ubuntu-24.04-arm` runners (Linux arm64
+  runners are free for public repos) via `build_linux.sh` with `SKIP_FIRMWARE_BUILD=1`, uploads
+  them plus `install_linux.sh`. Includes a CRLF line-ending sanity check on `install_linux.sh`
+  right before upload, guarding against the exact bug (a Windows working-tree copy uploaded by
+  hand, crashing immediately on Linux) that `.gitattributes` fixes at the source but this catches
+  again just in case.
+- **`release-webflasher.yml`** - downloads `firmware.zip`, substitutes its version into
+  `docs/index.html`'s `__FIRMWARE_VERSION__` placeholder, deploys the standalone flasher page via
+  GitHub's Actions-based Pages deployment (`actions/upload-pages-artifact` +
+  `actions/deploy-pages`) - **not** by committing to `docs/`. Requires the repo's Pages source set
+  to "GitHub Actions" in Settings > Pages (already done), not "Deploy from a branch".
+- **`release-all.yml`** - runs all four in order, Firmware → Windows → Linux → Webflasher,
+  strictly sequential (`needs:` chain, not parallel) so a failure stops the chain before anything
+  downstream builds against a bad artifact. **For a normal stable release only** - see below for
+  why betas should run the first three individually instead.
+
+`gh release upload ... --clobber` throughout, so re-running any of these replaces existing
+same-named assets on the target release - useful for fixing a bad upload, not just adding new
+ones.
+
+## Cutting a beta / pre-release
+
+Don't use `release-all.yml` for this: it always runs `release-webflasher.yml` too, which deploys
+the single, public, always-live GitHub Pages site - that should stay on stable firmware, not
+whatever the latest beta happens to be. Instead:
+
+1. Bump `release_version.json` to the beta version (e.g. `"0.9.21-beta.1"`), commit - doesn't need
+   to be on `main`; `workflow_dispatch` lets you pick the source branch from a dropdown when
+   triggering a workflow.
+2. Create the GitHub release by hand, tag e.g. `v0.9.21-beta.1`, marked as a **pre-release** (not
+   "Set as the latest release") - via the web UI or `gh release create v0.9.21-beta.1 --prerelease`.
+3. From the Actions tab, run `release-firmware` → `release-windows` → `release-linux` individually
+   (same branch, `release_tag: v0.9.21-beta.1` each time). **Skip `release-webflasher`.**
+4. Point testers at the release page directly, or for Linux, at the `SV241_RELEASE_TAG` override
+   documented above.
 
 ## Prerequisites
 

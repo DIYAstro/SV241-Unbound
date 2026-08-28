@@ -1,0 +1,84 @@
+name: Build & Publish Web Flasher (GitHub Pages)
+
+# Manual only, on purpose - matches the other release-*.yml workflows. Deploys the standalone
+# GitHub Pages flasher (docs/index.html) via GitHub's Actions-based Pages deployment - not by
+# committing to docs/. Firmware comes from release-firmware.yml's firmware.zip, never built here.
+#
+# Requires the repo's Pages source to be set to "GitHub Actions" (Settings > Pages) rather than
+# "Deploy from a branch" - already done.
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release to pull firmware.zip from (blank = current 'latest' release)"
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      release_tag:
+        description: "Release to pull firmware.zip from (blank = current 'latest' release)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve target release tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ inputs.release_tag }}"
+          if [ -z "$TAG" ]; then
+            TAG=$(gh release view --json tagName -q .tagName)
+          fi
+          echo "Firmware source release: $TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      # Pulls the exact same firmware release-firmware.yml already built and published - this
+      # workflow never compiles firmware itself.
+      - name: Download and extract firmware.zip
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${{ steps.tag.outputs.tag }}" -p firmware.zip -O firmware.zip
+          mkdir -p site/firmware
+          unzip -o firmware.zip -d site/firmware
+          cp docs/index.html site/index.html
+
+      # docs/index.html carries a __FIRMWARE_VERSION__ placeholder instead of a hand-maintained
+      # version string - substitute it here from the same version.json bundled in firmware.zip
+      # (produced by release-firmware.yml from the same build, guaranteed to match firmware.bin).
+      - name: Inject firmware version into the page
+        run: |
+          FW_VERSION=$(python3 -c "import json; print(json.load(open('site/firmware/version.json'))['version'])")
+          echo "Firmware version: $FW_VERSION"
+          sed -i "s/__FIRMWARE_VERSION__/$FW_VERSION/" site/index.html
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment

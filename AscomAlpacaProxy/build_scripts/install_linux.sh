@@ -45,18 +45,26 @@ esac
 echo "Detected architecture: $ARCH ($ARCH_TAG)"
 
 # --- Determine Download URL ---
-# Fetch the tag of the latest release from GitHub API
-echo "Fetching latest release version from GitHub..."
-LATEST_TAG=$(curl -sSf "https://api.github.com/repos/$REPO/releases/latest" \
-    | grep '"tag_name"' \
-    | sed -E 's/.*"tag_name":\s*"([^"]+)".*/\1/')
+# SV241_RELEASE_TAG overrides which release to install from - for pointing a specific tester at a
+# beta/pre-release build (e.g. `sudo SV241_RELEASE_TAG=v0.9.21-beta.1 bash`). GitHub itself never
+# treats a pre-release as "latest", so without this override there's no way to reach one at all.
+# Unset (the normal case) behaves exactly as before: resolve whatever's currently "latest".
+if [ -n "${SV241_RELEASE_TAG:-}" ]; then
+    LATEST_TAG="$SV241_RELEASE_TAG"
+    echo "Using explicitly requested release: $LATEST_TAG"
+else
+    echo "Fetching latest release version from GitHub..."
+    LATEST_TAG=$(curl -sSf "https://api.github.com/repos/$REPO/releases/latest" \
+        | grep '"tag_name"' \
+        | sed -E 's/.*"tag_name":\s*"([^"]+)".*/\1/')
 
-if [ -z "$LATEST_TAG" ]; then
-    echo "Error: Could not determine the latest release version."
-    echo "Please check your internet connection and try again."
-    exit 1
+    if [ -z "$LATEST_TAG" ]; then
+        echo "Error: Could not determine the latest release version."
+        echo "Please check your internet connection and try again."
+        exit 1
+    fi
+    echo "Latest release: $LATEST_TAG"
 fi
-echo "Latest release: $LATEST_TAG"
 
 DOWNLOAD_URL="https://github.com/$REPO/releases/download/$LATEST_TAG/${BINARY_NAME}-linux-${ARCH_TAG}"
 echo "Download URL: $DOWNLOAD_URL"

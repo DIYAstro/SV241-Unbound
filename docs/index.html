@@ -79,6 +79,17 @@
             text-align: left;
         }
 
+        .info {
+            background-color: rgba(0, 210, 255, 0.1);
+            color: var(--primary-color);
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1.5rem 0;
+            border: 1px solid var(--primary-color);
+            font-size: 0.9rem;
+            text-align: left;
+        }
+
         esp-web-install-button {
             --esp-web-install-button-fill-color: var(--primary-color);
             --esp-web-install-button-text-color: #0f0c29;
@@ -98,12 +109,18 @@
 <body>
     <div class="container">
         <h1>SV241-Unbound Web Flasher</h1>
-        <p style="margin-top: -1rem; color: #aaa;">Version 0.9.20</p>
-        <p>Connect the SV241 controller via USB and click "Connect" to install the latest firmware.</p>
+        <p style="margin-top: -1rem; color: #aaa;">Version __FIRMWARE_VERSION__</p>
+        <p>Connect the SV241 controller via USB and click "Connect" to install the firmware.</p>
+
+        <div class="info">
+            <strong>ℹ️ Note:</strong> Firmware updates preserve your existing settings (switch names,
+            startup states, heater config, etc.) by default. If the installer asks whether to erase the
+            device, leave the box unchecked to keep your settings - only check it for a complete reset.
+        </div>
 
         <div class="warning">
-            <strong>Warning:</strong> This process will erase all existing data and settings on your device. Ensure the
-            device is stable and do not disconnect it during the process.
+            <strong>Warning:</strong> Ensure the device is stable and do not disconnect it during the
+            flashing process.
         </div>
 
         <div>
@@ -123,6 +140,12 @@
 
             const manifest = {
                 name: "SV241-Unbound",
+                // Lets esp-web-tools' own install dialog ask the user whether to erase (checkbox
+                // defaults to unchecked = preserve settings), instead of the old 'erase-first'
+                // attribute, which isn't a real control in esp-web-tools 10.x and just silently
+                // erased unconditionally - see the in-app flasher's identical fix for the full
+                // story (AscomAlpacaProxy/frontend-vue/public/flasher/index.html).
+                new_install_prompt_erase: true,
                 builds: [
                     {
                         chipFamily: "ESP32",
@@ -139,10 +162,9 @@
             const manifestBlob = new Blob([manifestString], { type: 'application/json' });
             const manifestUrl = URL.createObjectURL(manifestBlob);
             installButton.manifest = manifestUrl;
-            installButton.setAttribute('erase-first', '');
             installButton.setAttribute('flash-baud-rate', '115200');
 
-            statusEl.textContent = "Ready to flash. All data will be erased.";
+            statusEl.textContent = "Ready to flash. Existing settings will be preserved.";
         });
     </script>
 </body>

@@ -7,3 +7,11 @@ AscomAlpacaProxy/build
 AscomAlpacaProxy/install
 AscomAlpacaProxy/temp_installer.iss
 ROADMAP.md
+
+# Firmware binaries - built fresh by every build path (build_exe.bat, build_linux.sh/.ps1,
+# release-firmware.yml) from src/ via PlatformIO, never hand-maintained. Not committed so there's
+# a single source of truth (the C++ source + release_version.json), not two.
+AscomAlpacaProxy/frontend-vue/public/flasher/firmware/*.bin
+AscomAlpacaProxy/frontend-vue/public/flasher/firmware/version.json
+docs/firmware/*.bin
+docs/firmware/version.json

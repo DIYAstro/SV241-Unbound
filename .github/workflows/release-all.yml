@@ -1,0 +1,45 @@
+name: Release Everything
+
+# Runs the full release chain in order: Firmware -> Windows -> Linux -> Webflasher (sequential,
+# not parallel, so each step's logs are easy to read top-to-bottom and a failure stops the chain
+# before anything downstream runs against a bad build).
+#
+# For a beta/pre-release: don't use this - release-webflasher.yml deploys the single, public,
+# always-live GitHub Pages site, which should stay on stable firmware. Run release-firmware.yml,
+# release-windows.yml, and release-linux.yml individually with the beta release_tag instead. See
+# build_scripts/readme.md.
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag to build everything against (blank = current 'latest' release)"
+        required: false
+        type: string
+
+jobs:
+  firmware:
+    uses: ./.github/workflows/release-firmware.yml
+    with:
+      release_tag: ${{ inputs.release_tag }}
+    secrets: inherit
+
+  windows:
+    needs: firmware
+    uses: ./.github/workflows/release-windows.yml
+    with:
+      release_tag: ${{ inputs.release_tag }}
+    secrets: inherit
+
+  linux:
+    needs: windows
+    uses: ./.github/workflows/release-linux.yml
+    with:
+      release_tag: ${{ inputs.release_tag }}
+    secrets: inherit
+
+  webflasher:
+    needs: linux
+    uses: ./.github/workflows/release-webflasher.yml
+    with:
+      release_tag: ${{ inputs.release_tag }}
+    secrets: inherit

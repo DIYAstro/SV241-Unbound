@@ -22,28 +22,38 @@ Write-Host "`n[1/8] Syncing versions from release_version.json..." -ForegroundCo
 #    (so the compiled firmware embeds the just-synced FIRMWARE_VERSION) and before the version
 #    string gets extracted into version.json below - otherwise that file would claim a firmware
 #    version that doesn't match what's actually embedded in firmware.bin.
-Write-Host "`n[2/8] Building Firmware..." -ForegroundColor Yellow
-$pioExe = "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe"
-if (-not (Test-Path $pioExe)) { $pioExe = "pio" }
-Push-Location $projectRoot
-try {
-    & $pioExe run
-    if ($LASTEXITCODE -ne 0) {
-        throw "Firmware build failed (is PlatformIO installed? pioExe=$pioExe)"
-    }
-} finally {
-    Pop-Location
-}
-
-Write-Host "Copying firmware artifacts to in-app flasher..." -ForegroundColor Yellow
-$fwBuildDir = "$projectRoot\.pio\build\Firmware_ESP32"
+#
+# $env:SKIP_FIRMWARE_BUILD = "1" skips this entirely - set only by release-windows.yml, which
+# downloads an already-built firmware.zip (from release-firmware.yml) and extracts it into
+# $flasherFwDir itself before calling this script. Never set for local/manual runs. Deliberately
+# not a file-existence check: $flasherFwDir is gitignored, so a stale .bin from an earlier local
+# build would otherwise cause this to silently skip rebuilding after a real source change.
 $flasherFwDir = "$proxyRoot\frontend-vue\public\flasher\firmware"
-New-Item -ItemType Directory -Path $flasherFwDir -Force | Out-Null
-foreach ($f in @("bootloader.bin", "partitions.bin", "firmware.bin")) {
-    Copy-Item -Path "$fwBuildDir\$f" -Destination "$flasherFwDir\$f" -Force
+if ($env:SKIP_FIRMWARE_BUILD -eq "1") {
+    Write-Host "`n[2/8] Skipping firmware build (SKIP_FIRMWARE_BUILD=1 - using pre-built firmware)..." -ForegroundColor Yellow
+} else {
+    Write-Host "`n[2/8] Building Firmware..." -ForegroundColor Yellow
+    $pioExe = "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe"
+    if (-not (Test-Path $pioExe)) { $pioExe = "pio" }
+    Push-Location $projectRoot
+    try {
+        & $pioExe run
+        if ($LASTEXITCODE -ne 0) {
+            throw "Firmware build failed (is PlatformIO installed? pioExe=$pioExe)"
+        }
+    } finally {
+        Pop-Location
+    }
+
+    Write-Host "Copying firmware artifacts to in-app flasher..." -ForegroundColor Yellow
+    $fwBuildDir = "$projectRoot\.pio\build\Firmware_ESP32"
+    New-Item -ItemType Directory -Path $flasherFwDir -Force | Out-Null
+    foreach ($f in @("bootloader.bin", "partitions.bin", "firmware.bin")) {
+        Copy-Item -Path "$fwBuildDir\$f" -Destination "$flasherFwDir\$f" -Force
+    }
 }
 # Note: docs/firmware/ (the separate GitHub Pages flasher) is deliberately NOT touched here -
-# publishing there is a distinct, manual release step (same as build_exe.bat).
+# publishing there is release-webflasher.yml's job.
 
 # 3. Ensure the CGO cross-compile toolchain (Zig + libusb-1.0 sysroots) is present.
 #    internal/serial/ch340_linux.go (Linux-only) needs cgo + real libusb-1.0 headers/libs for

@@ -61,23 +61,35 @@ bash "$SCRIPT_DIR/sync_versions.sh" "$PROJECT_ROOT" "$PROXY_ROOT"
 #    that doesn't match what's actually embedded in firmware.bin. (set -e above means a failed
 #    `pio run` or missing source file on the `cp` below already aborts this script - no separate
 #    error checks needed here, unlike the .bat/.ps1 equivalents.)
-echo "[2/6] Building Firmware..."
-if ! command -v pio >/dev/null 2>&1; then
-    echo "PlatformIO CLI not found on PATH - installing via pip..."
-    pip3 install --user --upgrade platformio
-    export PATH="$HOME/.local/bin:$PATH"
-fi
-(cd "$PROJECT_ROOT" && pio run)
-
-echo "Copying firmware artifacts to in-app flasher..."
-FW_BUILD_DIR="$PROJECT_ROOT/.pio/build/Firmware_ESP32"
+#
+# SKIP_FIRMWARE_BUILD=1 skips this entirely - set only by release-linux.yml/release-windows.yml,
+# which download an already-built firmware.zip (from release-firmware.yml) and extract it into
+# FLASHER_FW_DIR themselves before calling this script. Never set for local/manual runs, so the
+# default (build firmware fresh) is unchanged for every existing local workflow. Deliberately not
+# a file-existence check instead: FLASHER_FW_DIR is gitignored, so a stale .bin left over from an
+# earlier local build would otherwise cause this step to silently skip rebuilding after a real
+# source change.
 FLASHER_FW_DIR="$PROXY_ROOT/frontend-vue/public/flasher/firmware"
-mkdir -p "$FLASHER_FW_DIR"
-for f in bootloader.bin partitions.bin firmware.bin; do
-    cp "$FW_BUILD_DIR/$f" "$FLASHER_FW_DIR/$f"
-done
+if [ "${SKIP_FIRMWARE_BUILD:-}" = "1" ]; then
+    echo "[2/6] Skipping firmware build (SKIP_FIRMWARE_BUILD=1 - using pre-built firmware)..."
+else
+    echo "[2/6] Building Firmware..."
+    if ! command -v pio >/dev/null 2>&1; then
+        echo "PlatformIO CLI not found on PATH - installing via pip..."
+        pip3 install --user --upgrade platformio
+        export PATH="$HOME/.local/bin:$PATH"
+    fi
+    (cd "$PROJECT_ROOT" && pio run)
+
+    echo "Copying firmware artifacts to in-app flasher..."
+    FW_BUILD_DIR="$PROJECT_ROOT/.pio/build/Firmware_ESP32"
+    mkdir -p "$FLASHER_FW_DIR"
+    for f in bootloader.bin partitions.bin firmware.bin; do
+        cp "$FW_BUILD_DIR/$f" "$FLASHER_FW_DIR/$f"
+    done
+fi
 # Note: docs/firmware/ (the separate GitHub Pages flasher) is deliberately NOT touched here -
-# publishing there is a distinct, manual release step (same as build_exe.bat).
+# publishing there is release-webflasher.yml's job.
 
 # 3. Build Frontend
 echo "[3/6] Building Frontend..."

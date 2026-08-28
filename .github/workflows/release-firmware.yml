@@ -1,0 +1,69 @@
+name: Build & Publish Firmware
+
+# Manual only, on purpose - matches the other release-*.yml workflows. Builds the ESP32 firmware
+# from src/ and publishes it as firmware.zip on a GitHub release, so release-windows.yml,
+# release-linux.yml, and release-webflasher.yml can all pull the exact same, single build of it
+# instead of each compiling their own copy. Run this first when cutting a release - the others
+# expect firmware.zip to already be on the target release.
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag to attach firmware.zip to (blank = current 'latest' release)"
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      release_tag:
+        description: "Release tag to attach firmware.zip to (blank = current 'latest' release)"
+        required: false
+        type: string
+
+permissions:
+  contents: write # needed for `gh release upload`
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # Patches src/config_manager.h's FIRMWARE_VERSION from release_version.json - the same
+      # single source of truth every other build path (build_exe.bat, build_linux.sh/.ps1) reads.
+      - name: Sync firmware version from release_version.json
+        run: bash AscomAlpacaProxy/build_scripts/sync_versions.sh "$(pwd)" "$(pwd)/AscomAlpacaProxy"
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      # Pinned platform (see platformio.ini) makes this reproducible - not resolving whatever the
+      # PlatformIO registry's "espressif32" happens to mean today, see the commit that pinned it.
+      - name: Build firmware
+        run: pio run
+
+      - name: Package firmware.zip
+        run: |
+          FW_DIR=".pio/build/Firmware_ESP32"
+          FW_VERSION=$(grep -oP 'FIRMWARE_VERSION\s+"\K[^"]+' src/config_manager.h)
+          echo "{\"version\": \"$FW_VERSION\"}" > "$FW_DIR/version.json"
+          mkdir -p release-assets
+          zip -j release-assets/firmware.zip "$FW_DIR/bootloader.bin" "$FW_DIR/partitions.bin" "$FW_DIR/firmware.bin" "$FW_DIR/version.json"
+          unzip -l release-assets/firmware.zip
+
+      - name: Resolve target release tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ inputs.release_tag }}"
+          if [ -z "$TAG" ]; then
+            TAG=$(gh release view --json tagName -q .tagName)
+          fi
+          echo "Target release: $TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      # --clobber intentionally overwrites an existing firmware.zip on the same release.
+      - name: Upload firmware.zip to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ steps.tag.outputs.tag }}" release-assets/firmware.zip --clobber

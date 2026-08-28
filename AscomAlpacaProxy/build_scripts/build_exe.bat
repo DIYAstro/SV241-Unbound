@@ -28,31 +28,46 @@ if %ERRORLEVEL% NEQ 0 (
 
 REM 2. Build Firmware (PlatformIO) and copy the flashable artifacts into the in-app flasher's
 REM    asset folder - replaces the previous manual "compile, then copy 3 files by hand" step.
-echo [2/8] Building Firmware...
-set "PIO_EXE=%USERPROFILE%\.platformio\penv\Scripts\pio.exe"
-if not exist "%PIO_EXE%" set "PIO_EXE=pio"
-pushd "%PROJECT_ROOT%"
-"%PIO_EXE%" run
-if %ERRORLEVEL% NEQ 0 (
-    echo Error building firmware! ^(is PlatformIO installed? PIO_EXE=%PIO_EXE%^)
-    popd
-    exit /b 1
-)
-popd
-
-echo Copying firmware artifacts to in-app flasher...
-set "FW_BUILD_DIR=%PROJECT_ROOT%\.pio\build\Firmware_ESP32"
+REM
+REM SKIP_FIRMWARE_BUILD=1 skips this entirely - set only by release-windows.yml, which downloads
+REM an already-built firmware.zip (from release-firmware.yml) and extracts it into FLASHER_FW_DIR
+REM itself before calling this script. Never set for local/manual runs. Deliberately not a
+REM file-existence check: FLASHER_FW_DIR is gitignored, so a stale .bin from an earlier local
+REM build would otherwise cause this to silently skip rebuilding after a real source change.
 set "FLASHER_FW_DIR=%PROXY_ROOT%\frontend-vue\public\flasher\firmware"
-if not exist "%FLASHER_FW_DIR%" mkdir "%FLASHER_FW_DIR%"
-for %%F in (bootloader.bin partitions.bin firmware.bin) do (
-    copy /Y "%FW_BUILD_DIR%\%%F" "%FLASHER_FW_DIR%\%%F" >nul
+if "%SKIP_FIRMWARE_BUILD%"=="1" (
+    echo [2/8] Skipping firmware build ^(SKIP_FIRMWARE_BUILD=1 - using pre-built firmware^)...
+) else (
+    echo [2/8] Building Firmware...
+    REM Delayed expansion (!VAR!) required for every variable set-then-read within this same
+    REM parenthesized block - %VAR% would otherwise resolve to its value from BEFORE the block
+    REM started (parsed once, up front), not the value just set a few lines earlier. Bit this
+    REM project once already: PIO_EXE ended up empty (""), ERRORLEVEL stayed 0 no matter what
+    REM `pio run` actually returned, and FW_BUILD_DIR was empty in the copy loop below.
+    set "PIO_EXE=%USERPROFILE%\.platformio\penv\Scripts\pio.exe"
+    if not exist "!PIO_EXE!" set "PIO_EXE=pio"
+    pushd "%PROJECT_ROOT%"
+    "!PIO_EXE!" run
     if !ERRORLEVEL! NEQ 0 (
-        echo Error copying %%F from PlatformIO build output!
+        echo Error building firmware! ^(is PlatformIO installed? PIO_EXE=!PIO_EXE!^)
+        popd
         exit /b 1
+    )
+    popd
+
+    echo Copying firmware artifacts to in-app flasher...
+    set "FW_BUILD_DIR=%PROJECT_ROOT%\.pio\build\Firmware_ESP32"
+    if not exist "%FLASHER_FW_DIR%" mkdir "%FLASHER_FW_DIR%"
+    for %%F in (bootloader.bin partitions.bin firmware.bin) do (
+        copy /Y "!FW_BUILD_DIR!\%%F" "%FLASHER_FW_DIR%\%%F" >nul
+        if !ERRORLEVEL! NEQ 0 (
+            echo Error copying %%F from PlatformIO build output!
+            exit /b 1
+        )
     )
 )
 REM Note: docs/firmware/ (the separate GitHub Pages flasher) is deliberately NOT touched here -
-REM publishing there is a distinct, manual release step.
+REM publishing there is release-webflasher.yml's job.
 
 REM 3. Build Frontend
 echo [3/8] Building Frontend...

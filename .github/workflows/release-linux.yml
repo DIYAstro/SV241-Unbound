@@ -3,9 +3,16 @@ name: Build & Publish Linux Release Assets
 # Manual only, on purpose - see AscomAlpacaProxy/build_scripts/readme.md's "Linux (not actively
 # maintained)" section. Builds AscomAlpacaProxy-linux-amd64/-arm64 natively (no cross-compile
 # toolchain needed - see build_linux.sh, which this reuses as-is) and attaches them, plus
-# install_linux.sh, to a GitHub release.
+# install_linux.sh, to a GitHub release. Firmware itself comes from release-firmware.yml's
+# firmware.zip, not built here - see build_linux.sh's SKIP_FIRMWARE_BUILD support.
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag to attach Linux assets to (blank = current 'latest' release)"
+        required: false
+        type: string
+  workflow_call:
     inputs:
       release_tag:
         description: "Release tag to attach Linux assets to (blank = current 'latest' release)"
@@ -42,18 +49,31 @@ jobs:
       - name: Install cgo build dependencies (libusb-1.0)
         run: sudo apt-get update && sudo apt-get install -y gcc libusb-1.0-0-dev
 
-      # build_linux.sh compiles the ESP32 firmware itself (via PlatformIO) and bundles it into
-      # the in-app web flasher - needs the pio CLI present. build_linux.sh would install it via
-      # pip on its own if missing, but doing it as its own step here keeps that cost visible and
-      # separately cacheable/attributable in the Actions UI instead of hiding inside "Build".
-      - name: Install PlatformIO
-        run: pip install --upgrade platformio
+      # Pulls the exact same firmware release-firmware.yml already built and published - this
+      # workflow never compiles firmware itself (see the SKIP_FIRMWARE_BUILD env var on the Build
+      # step below). Each matrix leg resolves the tag itself (this step is cheap and per-arch, no
+      # need for a separate job just to share one `gh release view` call).
+      - name: Download and extract firmware.zip
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ inputs.release_tag }}"
+          if [ -z "$TAG" ]; then
+            TAG=$(gh release view --json tagName -q .tagName)
+          fi
+          echo "Firmware source release: $TAG"
+          gh release download "$TAG" -p firmware.zip -O firmware.zip
+          mkdir -p AscomAlpacaProxy/frontend-vue/public/flasher/firmware
+          unzip -o firmware.zip -d AscomAlpacaProxy/frontend-vue/public/flasher/firmware
 
-      # Does everything: syncs versions from release_version.json, builds the firmware and bundles
-      # it into the flasher, builds the frontend, extracts the firmware version, and compiles the
-      # Go binary as build/AscomAlpacaProxy-linux-<arch>. Nothing version-related happens in this
-      # workflow itself - see build_linux.sh.
+      # Does everything: syncs versions from release_version.json, builds the frontend, extracts
+      # the firmware version, and compiles the Go binary as build/AscomAlpacaProxy-linux-<arch>.
+      # SKIP_FIRMWARE_BUILD=1 makes it skip its own firmware build - the firmware.zip just
+      # extracted above is used as-is. Nothing version-related happens in this workflow itself -
+      # see build_linux.sh.
       - name: Build
+        env:
+          SKIP_FIRMWARE_BUILD: "1"
         # Invoked as `bash build_linux.sh` rather than `./build_linux.sh`: git's executable bit
         # is easy to lose on a file that's ever edited from Windows (as this one has been) -
         # this works regardless of it.

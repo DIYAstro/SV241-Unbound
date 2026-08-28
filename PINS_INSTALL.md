@@ -94,3 +94,16 @@ Keep these handy - no need to memorize, they're printed again at the end of ever
 
 `pi` / `pins` is a well-known default. If this Pi is reachable beyond your own home network,
 change the password with `passwd` before leaving it running unattended.
+
+## Installing a beta build
+
+If a maintainer has asked you to test a pre-release, set `SV241_RELEASE_TAG` when installing
+instead of using step 3's plain command:
+
+```bash
+curl -sSL https://github.com/DIYAstro/SV241-Unbound/releases/latest/download/install_linux.sh | sudo SV241_RELEASE_TAG=v0.9.21-beta.1 bash
+```
+
+(Replace `v0.9.21-beta.1` with whatever tag you were given. Note the env var comes right after
+`sudo`, not before the whole command - `sudo` doesn't pass through your shell's environment
+variables otherwise.)
