@@ -10,7 +10,7 @@
 > `install_linux.sh` is PINS-specific - it should work on most systemd-based Linux distributions
 > (Debian, Ubuntu, Raspberry Pi OS, etc.), just untested there so far.
 
-Eight steps, all from a terminal: log into the Raspberry Pi running PINS over SSH, then let one
+Nine steps, all from a terminal: log into the Raspberry Pi running PINS over SSH, then let one
 command download, install, and start the proxy as a background service.
 
 ## 1. Find the Pi's address
@@ -90,7 +90,21 @@ Keep these handy - no need to memorize, they're printed again at the end of ever
 | `sudo systemctl restart sv241-alpaca-proxy` | restart the service |
 | `sudo systemctl stop sv241-alpaca-proxy` | stop it |
 
-## 8. Updating the firmware
+## 8. Updating the Proxy
+
+Re-run the exact same command from step 3 - it downloads whatever's currently latest, stops the
+running service, replaces the binary, and starts it back up:
+
+```bash
+curl -sSL https://github.com/DIYAstro/SV241-Unbound/releases/latest/download/install_linux.sh | sudo bash
+```
+
+Your saved settings and the SV241 itself are untouched - the installer only ever replaces the
+binary and the service definition, never `~/.config/SV241AlpacaProxy/`. Confirm the update landed
+with `sudo systemctl status sv241-alpaca-proxy` (its recent log lines show the version that just
+started) or the version shown in the web interface.
+
+## 9. Updating the firmware
 
 The Proxy has a built-in web flasher, but it needs a browser running **on the Pi itself** - the
 browser talks to the SV241 directly over USB, so it only works from the same machine the box is
