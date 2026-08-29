@@ -31,7 +31,36 @@
         }
 
         :root {
+            /* Material Dark - matches frontend-vue/src/assets/css/style.css's own :root exactly,
+               which is the app's actual current default. Previously this bare :root held the old
+               "Deep Space" theme's values, which only mattered because the theme-init script above
+               used to skip setting data-theme at all when localStorage had nothing yet (now fixed)
+               - but keeping :root itself correct too is defense in depth: if that script's
+               try/catch ever swallows an error (e.g. localStorage inaccessible in private
+               browsing), this is what actually gets shown, and it should be the real default. */
             color-scheme: dark;
+            --bg-color-start: #0a0a0a;
+            --bg-color-mid: #0f0f0f;
+            --bg-color-end: #0a0a0a;
+            --surface-color: rgba(255, 255, 255, 0.03);
+            --surface-border: rgba(255, 255, 255, 0.08);
+            --primary-color: #3d7ab8;
+            --primary-glow: rgba(61, 122, 184, 0.25);
+            --text-primary: #e1e1e1;
+            --text-secondary: #a0a0a0;
+            --success-color: #3d8a7a;
+            --danger-color: #cf6679;
+            --warning-bg: rgba(255, 75, 75, 0.1);
+            --info-bg: rgba(61, 122, 184, 0.1);
+            --font-main: 'Outfit', sans-serif;
+            --radius-lg: 16px;
+            --radius-sm: 8px;
+            --shadow-soft: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        /* Deep Space Theme (previously the default) - explicit opt-in override now, matching
+           [data-theme="default"] in style.css. */
+        [data-theme="default"] {
             --bg-color-start: #0f0c29;
             --bg-color-mid: #302b63;
             --bg-color-end: #24243e;
@@ -45,10 +74,6 @@
             --danger-color: #ff4b4b;
             --warning-bg: rgba(255, 75, 75, 0.1);
             --info-bg: rgba(0, 210, 255, 0.1);
-            --font-main: 'Outfit', sans-serif;
-            --radius-lg: 16px;
-            --radius-sm: 8px;
-            --shadow-soft: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
         }
 
         /* Night Vision Theme Overrides */
@@ -68,19 +93,9 @@
             --info-bg: rgba(166, 40, 40, 0.1);
         }
 
-        /* Material Dark Theme Overrides */
+        /* Material Dark Theme - inherits from :root, same as style.css's [data-theme="dark"]. */
         [data-theme="dark"] {
-            --bg-color-start: #0a0a0a;
-            --bg-color-mid: #0f0f0f;
-            --bg-color-end: #0a0a0a;
-            --surface-color: rgba(255, 255, 255, 0.03);
-            --surface-border: rgba(255, 255, 255, 0.08);
-            --primary-color: #3d7ab8;
-            --primary-glow: rgba(61, 122, 184, 0.25);
-            --text-primary: #e1e1e1;
-            --text-secondary: #a0a0a0;
-            --success-color: #3d8a7a;
-            --danger-color: #cf6679;
+            color-scheme: dark;
         }
 
         body {
@@ -191,6 +206,7 @@
         esp-web-install-button {
             --esp-tools-button-color: var(--primary-color);
             --esp-tools-button-text-color: #000;
+            --esp-tools-button-border-radius: 8px;
         }
 
         /* Special case for dark primary button text */
@@ -242,16 +258,22 @@
     </style>
 
     <script>
-        // Apply theme early to prevent flash of unstyled content
+        // Apply theme early to prevent flash of unstyled content. Mirrors frontend-vue/index.html's
+        // identical script exactly - that's the Vite app shell, which has to solve this same
+        // problem for the main app itself. The fallback to 'dark' matters: the theme store
+        // (stores/theme.js) only ever writes to localStorage inside its watch() callback, which
+        // doesn't fire on initial load - so on a fresh install, before anyone has ever touched the
+        // theme toggle, the main app is already showing its default ('dark' = Material Dark) but
+        // localStorage['theme'] doesn't exist yet. Without this fallback, this page fell through to
+        // its own bare :root instead, which is a different (older) theme - see the :root/
+        // [data-theme] comment below for the fix on that side too.
         (function () {
             try {
                 // Main app uses localStorage key 'theme' (via Pinia/useStorage)
                 const savedTheme = localStorage.getItem('theme');
-                if (savedTheme) {
-                    // Remove quotes if present (localStorage from JSON.stringify)
-                    const theme = savedTheme.replace(/^"(.*)"$/, '$1');
-                    document.documentElement.setAttribute('data-theme', theme);
-                }
+                // Remove quotes if present (localStorage from JSON.stringify)
+                const theme = savedTheme ? savedTheme.replace(/^"(.*)"$/, '$1') : 'dark';
+                document.documentElement.setAttribute('data-theme', theme);
             } catch (e) {
                 console.error('Failed to apply theme', e);
             }

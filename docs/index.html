@@ -99,9 +99,14 @@
         }
 
         esp-web-install-button {
-            --esp-web-install-button-fill-color: var(--primary-color);
-            --esp-web-install-button-text-color: #0f0c29;
-            --esp-web-install-button-border-radius: 8px;
+            /* The real custom properties esp-web-tools exposes are --esp-tools-button-* - verified
+               against both the bundled copy (frontend-vue's public/flasher/js/install-button.js)
+               and the unpkg-hosted one this page loads. The previous --esp-web-install-button-*
+               names here never matched anything real, so the button always showed the library's
+               own default color regardless of theme. */
+            --esp-tools-button-color: var(--primary-color);
+            --esp-tools-button-text-color: #0f0c29;
+            --esp-tools-button-border-radius: 8px;
         }
 
         #status {
