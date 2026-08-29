@@ -74,6 +74,17 @@ the SV241 successfully, it remembers exactly which physical USB port that was an
 straight to it from then on, without touching anything else - as long as it stays in that same
 port. Practical takeaway: once it's working, leave the SV241 plugged into the same USB port.
 
+If you've got other CH340-based gear plugged into the SV241's own switchable USB outputs (`USB
+3+4+5` / `USB-C 1+2`) specifically, you can guarantee an unambiguous very first connection instead
+of just relying on the above: set those outputs' startup state to **Off** (Switches tab in the web
+interface, or the firmware config). With them off at boot, whatever's plugged into them is
+electrically absent - not enumerated on the USB bus at all - so the Proxy's first-ever scan can
+only ever see the SV241 itself. Once it's connected once (and so has a port pinned), it's safe to
+turn those outputs back on; only a fresh, un-pinned scan (e.g. after moving the SV241 to a
+different USB port) would need this trick again. Doesn't help with CH340 devices plugged into some
+other USB port on the Pi entirely, outside the SV241's own outputs - only ones routed through the
+box itself.
+
 ## 5. Confirm it's running
 
 ```bash
