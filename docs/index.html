@@ -11,18 +11,23 @@
 
     <style>
         :root {
+            /* Matches the Proxy's own app-wide default theme ("Material Dark" /
+               [data-theme="dark"] in frontend-vue/src/assets/css/style.css) exactly, so this
+               standalone page looks like it belongs to the same product instead of the old
+               "Deep Space" purple/cyan look ([data-theme="default"] in that same file - since
+               retired as the app's default, kept only as a selectable alternate theme there). */
             color-scheme: dark;
-            --bg-color-start: #0f0c29;
-            --bg-color-mid: #302b63;
-            --bg-color-end: #24243e;
-            --surface-color: rgba(255, 255, 255, 0.05);
-            --surface-border: rgba(255, 255, 255, 0.1);
-            --primary-color: #00d2ff;
-            --primary-glow: rgba(0, 210, 255, 0.4);
-            --text-primary: #ffffff;
-            --text-secondary: #b0b0b0;
-            --danger-color: #ff4b4b;
-            --warning-bg: rgba(255, 75, 75, 0.1);
+            --bg-color-start: #0a0a0a;
+            --bg-color-mid: #0f0f0f;
+            --bg-color-end: #0a0a0a;
+            --surface-color: rgba(255, 255, 255, 0.03);
+            --surface-border: rgba(255, 255, 255, 0.08);
+            --primary-color: #3d7ab8;
+            --primary-glow: rgba(61, 122, 184, 0.25);
+            --text-primary: #e1e1e1;
+            --text-secondary: #a0a0a0;
+            --warning-color: #ffb74d;
+            --warning-bg: rgba(255, 183, 77, 0.1);
             --font-main: 'Outfit', sans-serif;
             --radius-lg: 16px;
             --shadow-soft: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
@@ -69,18 +74,21 @@
         }
 
         .warning {
+            /* Uses --warning-color (amber), not --danger-color - matches how the app itself
+               distinguishes the two, and reads more accurately here: this is a caution about the
+               flashing process, not an error. */
             background-color: var(--warning-bg);
-            color: var(--danger-color);
+            color: var(--warning-color);
             padding: 1rem;
             border-radius: 8px;
             margin: 1.5rem 0;
-            border: 1px solid var(--danger-color);
+            border: 1px solid var(--warning-color);
             font-size: 0.9rem;
             text-align: left;
         }
 
         .info {
-            background-color: rgba(0, 210, 255, 0.1);
+            background-color: rgba(61, 122, 184, 0.1);
             color: var(--primary-color);
             padding: 1rem;
             border-radius: 8px;
@@ -109,7 +117,7 @@
 <body>
     <div class="container">
         <h1>SV241-Unbound Web Flasher</h1>
-        <p style="margin-top: -1rem; color: #aaa;">Version __FIRMWARE_VERSION__</p>
+        <p style="margin-top: -1rem; color: var(--text-secondary);">Version __FIRMWARE_VERSION__</p>
         <p>Connect the SV241 controller via USB and click "Connect" to install the firmware.</p>
 
         <div class="info">
