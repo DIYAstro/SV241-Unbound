@@ -60,7 +60,7 @@ Follow these steps to get up and running quickly.
 
 ### 1. Install the ASCOM Alpaca Proxy
 
-1.  Download the latest installer (`SV241-AscomAlpacaProxy-Setup-x.x.exe`) from the project's releases page.
+1.  Download the latest installer (`SV241-AscomAlpacaProxy-Setup-x.x.exe`) from the [latest release page](https://github.com/DIYAstro/SV241-Unbound/releases/latest).
 2.  Run the installer. It's recommended to allow the proxy to start automatically with Windows.
 3.  Once running, an icon will appear in your system tray. Right-click it and select **"Open Setup Page"** to access the web interface.
 
