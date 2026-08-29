@@ -130,6 +130,64 @@ http://localhost:32241/flasher/
 (`localhost`, not the Pi's IP - you're already running the browser on the Pi itself.) From there,
 click Connect and follow the on-screen instructions.
 
+## Manually setting the serial port (advanced)
+
+Normally you never need this - the Proxy finds the SV241 on its own and, from then on, remembers
+exactly which USB port it was on (see the note in step 4). But if you'd rather set it explicitly -
+say, you've got other CH340-based USB-serial gear on the Pi and want to skip relying on
+auto-detection even once - here's how.
+
+**Easiest way: let it find the SV241 once, then lock that in.** After a normal install and a
+successful connect (steps 1-6), the Proxy has already written the right value into its config.
+Open `~/.config/SV241AlpacaProxy/proxy_config.json` and look at `serialPortName` - it'll be
+something like `"ch340-usb:bus1:1.1.4.4"`, not a `/dev/ttyUSB0`-style path (see
+`internal/serial/ch340_linux.go` for why - the short version: this identifies the SV241 by its
+physical USB port, not by a device node name that can change). Set `"autoDetectPort": false` (via
+the web interface's Proxy Settings tab, or directly in this file) and you're done - the Proxy will
+only ever try that exact port from now on.
+
+**Setting it yourself, without ever letting auto-detect run:**
+
+1. Stop the service, so nothing is holding the port while you do this:
+   ```bash
+   sudo systemctl stop sv241-alpaca-proxy
+   ```
+2. Clear the kernel log, then physically unplug and reconnect the SV241's USB cable (a `dmesg
+   --clear` alone does nothing here - you need a fresh "device appeared" event to log):
+   ```bash
+   sudo dmesg --clear
+   ```
+3. Find the line announcing it. Note that `dmesg` logs the vendor/product ID as two separate
+   fields, not as the `1a86:7523` pair `lsusb` would show - `idVendor=1a86` alone is enough to
+   find it:
+   ```bash
+   dmesg | grep 'idVendor=1a86'
+   ```
+   You'll see something like:
+   ```
+   usb 1-1.3: New USB device found, idVendor=1a86, idProduct=7523, bcdDevice= 2.54
+   ```
+   The `1-1.3` part is the bit you need - it's `<bus number>-<physical port path>` (here: bus `1`,
+   port path `1.3`; on a Pi behind extra hubs/adapters it'll have more segments, e.g. `1-1.4.2`).
+4. Turn that into the Proxy's format by replacing the first `-` with `:bus` and adding a `:` after
+   the bus number - `1-1.3` becomes `ch340-usb:bus1:1.3`.
+5. Edit `~/.config/SV241AlpacaProxy/proxy_config.json` (create the directory/file first if the
+   Proxy has never run yet):
+   ```json
+   "serialPortName": "ch340-usb:bus1:1.3",
+   "autoDetectPort": false,
+   ```
+6. Restart the service and confirm it connected straight to that port:
+   ```bash
+   sudo systemctl restart sv241-alpaca-proxy
+   sudo journalctl -u sv241-alpaca-proxy -n 20
+   ```
+   Look for a line like `CH340 (ch340-usb:bus1:1.3): gentle open succeeded`.
+
+Got the format wrong, or the SV241 later moves to a different USB port? Nothing breaks - an
+unrecognized or non-matching value is simply treated the same as no preference at all, and the
+Proxy falls back to its normal auto-detection.
+
 ## Installing a beta build
 
 If a maintainer has asked you to test a pre-release, set `SV241_RELEASE_TAG` when installing
