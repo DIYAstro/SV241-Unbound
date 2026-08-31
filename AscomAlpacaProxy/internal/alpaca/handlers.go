@@ -769,59 +769,6 @@ func getSavedManualPower(heaterIdx int) float64 {
 	return getSavedManualPowerFromConfig(fullConfig, heaterIdx)
 }
 
-func updateHeaterPersistence(heaterIdx int, newValue float64) {
-	// 1. Fetch current config
-	configJSON, err := serial.SendCommand(`{"get":"config"}`, false, 0)
-	if err != nil {
-		logger.Warn("Persistence: Could not get firmware config: %v", err)
-		return
-	}
-
-	// 2. Parse into a map structure to preserve all other fields
-	var fullConfig map[string]interface{}
-	if err := json.Unmarshal([]byte(configJSON), &fullConfig); err != nil {
-		logger.Warn("Persistence: Could not parse firmware config: %v", err)
-		return
-	}
-
-	// 3. Locate and update the target heater's manual power setting
-	// Structure: "dh": [ { "m": 0, "mp": 25, ... }, ... ]
-	updated := false
-	if dhRaw, ok := fullConfig["dh"]; ok {
-		if dhArray, ok := dhRaw.([]interface{}); ok && heaterIdx < len(dhArray) {
-			if heaterMap, ok := dhArray[heaterIdx].(map[string]interface{}); ok {
-				oldMP := heaterMap["mp"]
-				heaterMap["mp"] = newValue
-				dhArray[heaterIdx] = heaterMap // Re-assign modified map to array
-				fullConfig["dh"] = dhArray     // Re-assign modified array to root
-				updated = true
-				logger.Info("Persistence: Updated Heater %d Manual Power (mp) from %v to %.0f", heaterIdx+1, oldMP, newValue)
-			}
-		}
-	}
-
-	if !updated {
-		logger.Warn("Persistence: Failed to locate 'dh' structure or heater index %d in config.", heaterIdx)
-		return
-	}
-
-	// 4. Send the updated configuration back to the device
-	// The device expects {"sc": { ...config... }}
-	updatedConfigBytes, err := json.Marshal(fullConfig)
-	if err != nil {
-		logger.Warn("Persistence: Failed to marshal updated config: %v", err)
-		return
-	}
-
-	setConfigCommand := fmt.Sprintf(`{"sc":%s}`, string(updatedConfigBytes))
-	_, err = serial.SendCommand(setConfigCommand, true, 0)
-	if err != nil {
-		logger.Error("Persistence: Failed to write updated config to device: %v", err)
-	} else {
-		logger.Info("Persistence: Successfully saved manual power setting to firmware.")
-	}
-}
-
 func (a *API) HandleSwitchSetSwitchName(w http.ResponseWriter, r *http.Request) {
 	id, ok := ParseSwitchID(w, r)
 	if !ok {

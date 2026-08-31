@@ -35,22 +35,6 @@ export const useDeviceStore = defineStore('device', () => {
         }
     }
 
-    async function fetchProxySettings() {
-        try {
-            const response = await fetch('/api/v1/settings');
-            if (response.ok) {
-                const data = await response.json();
-                // The endpoint returns { proxy_config: {...}, ... } or just the config?
-                // app.js: const settings = await response.json(); const proxyConf = settings.proxy_config;
-                // But wait, check checkConnection(). It calls /api/v1/settings.
-                // So we already fetch it there.
-                // Let's reuse that or standardize.
-            }
-        } catch (e) {
-            console.error("Failed to fetch proxy settings", e);
-        }
-    }
-
     async function saveProxyConfig(newSettings) {
         try {
             const response = await fetch('/api/v1/settings', {
@@ -326,7 +310,6 @@ export const useDeviceStore = defineStore('device', () => {
         availableIps,
         fetchConfig,
         saveConfig,
-        fetchProxySettings,
         saveProxyConfig,
         setSwitch,
         setSwitchValue,
