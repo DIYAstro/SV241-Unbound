@@ -1,18 +1,27 @@
 package alpaca
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
 	"sv241pro-alpaca-proxy/internal/config"
 	"sv241pro-alpaca-proxy/internal/logger"
-	"sync/atomic"
 )
 
-var (
-	ClientTransactionID uint32
-	ServerTransactionID uint32
-)
+// ServerTransactionID is a genuinely global, ever-incrementing counter (per the Alpaca spec, it
+// just needs to be unique across the server's lifetime) - safe as shared state, unlike
+// ClientTransactionID below.
+var ServerTransactionID uint32
+
+// clientTransactionIDKey is the context key ClientTransactionID is stored under - see Handler and
+// clientTransactionIDFromContext (responses.go). A request-scoped context value, not the package
+// -level atomic variable this used to be: that let one request's ClientTransactionID leak into a
+// concurrently-running request's response, since both would read whatever the shared variable
+// happened to hold at that moment rather than what they were each sent with.
+type clientTransactionIDKeyType struct{}
+
+var clientTransactionIDKey = clientTransactionIDKeyType{}
 
 // Handler is a middleware that wraps HTTP handlers to provide Alpaca-specific functionality.
 // It parses ClientTransactionID and ClientID from the request form.
@@ -23,12 +32,12 @@ func Handler(fn http.HandlerFunc) http.HandlerFunc {
 			logger.Warn("Error parsing form for request %s %s: %v", r.Method, r.URL.Path, err)
 		}
 
+		var txID uint64
 		if txIDStr, ok := GetFormValueIgnoreCase(r, "ClientTransactionID"); ok {
-			txID, _ := strconv.ParseUint(txIDStr, 10, 32)
-			atomic.StoreUint32(&ClientTransactionID, uint32(txID))
-		} else {
-			atomic.StoreUint32(&ClientTransactionID, 0)
+			txID, _ = strconv.ParseUint(txIDStr, 10, 32)
 		}
+		ctx := context.WithValue(r.Context(), clientTransactionIDKey, uint32(txID))
+		r = r.WithContext(ctx)
 
 		// We don't use ClientID, but we acknowledge its presence.
 		if _, ok := GetFormValueIgnoreCase(r, "ClientID"); ok {
@@ -67,7 +76,7 @@ func ParseSwitchID(w http.ResponseWriter, r *http.Request) (int, bool) {
 		ErrorResponse(w, r, http.StatusOK, 0x400, "Invalid or missing switch ID")
 		return 0, false
 	}
-	if _, ok := config.SwitchIDMap[id]; !ok {
+	if _, ok := config.GetSwitchIDMapEntry(id); !ok {
 		ErrorResponse(w, r, http.StatusOK, 0x400, "Invalid switch ID")
 		return 0, false
 	}

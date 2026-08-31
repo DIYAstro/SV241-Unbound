@@ -11,6 +11,7 @@ import (
 	"sv241pro-alpaca-proxy/internal/logger"
 	"sv241pro-alpaca-proxy/internal/serial"
 	"sv241pro-alpaca-proxy/internal/weather"
+	"sync/atomic"
 	"time"
 )
 
@@ -34,15 +35,18 @@ type AlpacaConfiguredDevice struct {
 
 // API holds all dependencies for the Alpaca API handlers.
 type API struct {
-	appVersion      string
-	driverConnected bool
+	appVersion string
+	// driverConnected is read and written from different request goroutines (PUT vs GET
+	// .../connected, and every handler that gates on it) - atomic.Bool instead of a plain bool
+	// avoids a data race across them. Zero value is already false, so NewAPI doesn't need to set
+	// it explicitly.
+	driverConnected atomic.Bool
 }
 
 // NewAPI creates a new API instance.
 func NewAPI(appVersion string) *API {
 	return &API{
-		appVersion:      appVersion,
-		driverConnected: false,
+		appVersion: appVersion,
 	}
 }
 
@@ -122,9 +126,9 @@ func (a *API) HandleConnected(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Update our internal connection state
-		a.driverConnected = connected
+		a.driverConnected.Store(connected)
 		// If connecting, we verify hardware is actually there
-		if a.driverConnected && !serial.IsConnected() {
+		if connected && !serial.IsConnected() {
 			// But ASCOM says we should try to connect or error if we can't.
 			// Reconnect is already handled in background, but if it's currently down, we error.
 			ErrorResponse(w, r, http.StatusOK, 0x40B, "SV241 device not connected. Please check the USB connection.")
@@ -135,7 +139,7 @@ func (a *API) HandleConnected(w http.ResponseWriter, r *http.Request) {
 	}
 	// For GET, report the internal connection status.
 	// Many clients depend on this being true only if hardware is also alive.
-	BoolResponse(w, r, a.driverConnected && serial.IsConnected())
+	BoolResponse(w, r, a.driverConnected.Load() && serial.IsConnected())
 }
 
 func (a *API) HandleDeviceName(name string) http.HandlerFunc {
@@ -172,13 +176,13 @@ func (a *API) HandleObsCondAction(w http.ResponseWriter, r *http.Request) {
 // --- Switch Handlers ---
 
 func (a *API) HandleSwitchMaxSwitch(w http.ResponseWriter, r *http.Request) {
-	count := len(config.SwitchIDMap)
+	count := config.GetSwitchMapLength()
 	IntResponse(w, r, count)
 }
 
 func (a *API) HandleSwitchGetSwitchName(w http.ResponseWriter, r *http.Request) {
 	if id, ok := ParseSwitchID(w, r); ok {
-		internalName := config.SwitchIDMap[id]
+		internalName, _ := config.GetSwitchIDMapEntry(id)
 
 		// Sensor switches have fixed human-readable names
 		switch internalName {
@@ -199,14 +203,14 @@ func (a *API) HandleSwitchGetSwitchName(w http.ResponseWriter, r *http.Request) 
 			}
 			return
 		case config.SensorPWM1Key:
-			if name := config.Get().SwitchNames["pwm1"]; name != "" {
+			if name := config.GetSwitchName("pwm1"); name != "" {
 				StringResponse(w, r, name)
 			} else {
 				StringResponse(w, r, "Dew Heater 1")
 			}
 			return
 		case config.SensorPWM2Key:
-			if name := config.Get().SwitchNames["pwm2"]; name != "" {
+			if name := config.GetSwitchName("pwm2"); name != "" {
 				StringResponse(w, r, name)
 			} else {
 				StringResponse(w, r, "Dew Heater 2")
@@ -214,7 +218,7 @@ func (a *API) HandleSwitchGetSwitchName(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
-		customName := config.Get().SwitchNames[internalName]
+		customName := config.GetSwitchName(internalName)
 		if customName != "" {
 			StringResponse(w, r, customName)
 		} else {
@@ -225,7 +229,7 @@ func (a *API) HandleSwitchGetSwitchName(w http.ResponseWriter, r *http.Request) 
 
 func (a *API) HandleSwitchGetSwitchDescription(w http.ResponseWriter, r *http.Request) {
 	if id, ok := ParseSwitchID(w, r); ok {
-		internalName := config.SwitchIDMap[id]
+		internalName, _ := config.GetSwitchIDMapEntry(id)
 
 		// Sensor switches have descriptive text with units
 		switch internalName {
@@ -259,7 +263,7 @@ func (a *API) HandleSwitchGetSwitch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	key := config.SwitchIDMap[id]
+	key, _ := config.GetSwitchIDMapEntry(id)
 
 	// Sensors always return true (they are "on" when device is connected)
 	if config.IsSensorSwitch(key) {
@@ -267,14 +271,16 @@ func (a *API) HandleSwitchGetSwitch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	shortKey := config.ShortSwitchKeyByID[id]
+	shortKey, _ := config.GetShortSwitchKeyByIDEntry(id)
 	serial.Status.RLock()
 	defer serial.Status.RUnlock()
 
 	if shortKey == "all" {
 		allOn := true
-		// Loop through all defined switches (except the master itself and sensors)
-		for _, key := range config.ShortSwitchKeyByID {
+		// Loop through all defined switches (except the master itself and sensors) - a snapshot
+		// copy, not the live package map, so this doesn't race SyncFirmwareConfig reassigning it
+		// concurrently.
+		for _, key := range config.GetShortSwitchKeyByIDSnapshot() {
 			if key == "all" {
 				continue
 			}
@@ -329,7 +335,7 @@ func (a *API) HandleSwitchGetSwitchValue(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	key := config.SwitchIDMap[id]
+	key, _ := config.GetSwitchIDMapEntry(id)
 
 	// Handle sensor switches
 	if config.IsSensorSwitch(key) {
@@ -383,13 +389,13 @@ func (a *API) HandleSwitchGetSwitchValue(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	shortKey := config.ShortSwitchKeyByID[id]
+	shortKey, _ := config.GetShortSwitchKeyByIDEntry(id)
 	serial.Status.RLock()
 	defer serial.Status.RUnlock()
 
 	if shortKey == "all" {
 		allOn := true
-		for _, key := range config.ShortSwitchKeyByID {
+		for _, key := range config.GetShortSwitchKeyByIDSnapshot() {
 			if key == "all" {
 				continue
 			}
@@ -502,7 +508,7 @@ func (a *API) HandleSwitchSetSwitchValue(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Sensors are read-only - cannot be set
-	key := config.SwitchIDMap[id]
+	key, _ := config.GetSwitchIDMapEntry(id)
 	if config.IsSensorSwitch(key) {
 		ErrorResponse(w, r, http.StatusOK, 0x400, "Sensor switches are read-only and cannot be set")
 		return
@@ -514,7 +520,10 @@ func (a *API) HandleSwitchSetSwitchValue(w http.ResponseWriter, r *http.Request)
 		// Normalize: allows usage of "12,5" instead of "12.5"
 		valueStr = strings.Replace(valueStr, ",", ".", -1)
 		value, err := strconv.ParseFloat(valueStr, 64)
-		if err != nil {
+		// strconv.ParseFloat accepts "NaN"/"Inf" as valid floats (err == nil) - reject them
+		// explicitly rather than letting a non-finite value flow into a command meant to drive a
+		// physical output.
+		if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
 			ErrorResponse(w, r, http.StatusOK, 400, "Invalid Value parameter")
 			return
 		}
@@ -530,8 +539,8 @@ func (a *API) HandleSwitchSetSwitchValue(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	longKey := config.SwitchIDMap[id]
-	shortKey := config.ShortSwitchIDMap[longKey]
+	longKey, _ := config.GetSwitchIDMapEntry(id)
+	shortKey := config.ShortSwitchIDMap[longKey] // static map, never reassigned - no race
 
 	// Special handling for Adjustable Voltage (ID 7) if enabled
 	var command string
@@ -613,7 +622,14 @@ func (a *API) HandleSwitchSetSwitchValue(w http.ResponseWriter, r *http.Request)
 				originalStr := valueStr
 				valueStr = strings.Replace(valueStr, ",", ".", -1)
 				logger.Debug("SetSwitchValue (AdjConv) - Received: '%s', Normalized: '%s'", originalStr, valueStr)
-				value, _ := strconv.ParseFloat(valueStr, 64)
+				value, parseErr := strconv.ParseFloat(valueStr, 64)
+				// See the identical check above - ParseFloat accepts "NaN"/"Inf" without error,
+				// which would otherwise reach the firmware and bypass its voltage clamps (NaN
+				// compares false against every bound check).
+				if parseErr != nil || math.IsNaN(value) || math.IsInf(value, 0) {
+					ErrorResponse(w, r, http.StatusOK, 400, "Invalid Value parameter")
+					return
+				}
 				command = fmt.Sprintf(`{"set":{"%s":%.2f}}`, shortKey, value)
 				newVoltageTarget = value
 			} else {
@@ -629,12 +645,20 @@ func (a *API) HandleSwitchSetSwitchValue(w http.ResponseWriter, r *http.Request)
 				// Global Enable first (synchronous)
 				serial.SendCommand(`{"set":{"all":1}}`, true, 0)
 
-				// Now force-restore values for PWM heaters using smart restore logic
+				// Now force-restore values for PWM heaters using smart restore logic. Fetch the
+				// firmware config once and reuse it for both heaters, instead of restorePowerState
+				// fetching it twice in a row - halves the number of blocking serial round trips
+				// this request makes (see fetchFirmwareConfig's doc comment).
 				// We don't need to check errors here, we just fire and forget
-				cmd1 := restorePowerState("pwm1", 0, true)
+				fullConfig, err := fetchFirmwareConfig()
+				if err != nil {
+					logger.Warn("Master Power ON: Could not get/parse firmware config for smart restore: %v", err)
+					fullConfig = map[string]interface{}{}
+				}
+				cmd1 := restorePowerStateFromConfig("pwm1", fullConfig, 0)
 				serial.SendCommand(cmd1, true, 0)
 
-				cmd2 := restorePowerState("pwm2", 1, true)
+				cmd2 := restorePowerStateFromConfig("pwm2", fullConfig, 1)
 				serial.SendCommand(cmd2, true, 0)
 
 				// Respond success immediately (the commands are queued)
@@ -690,21 +714,36 @@ func restorePowerState(shortKey string, heaterIdx int, state bool) string {
 	return fmt.Sprintf(`{"set":{"%s":%.0f}}`, shortKey, savedVal)
 }
 
-func getSavedManualPower(heaterIdx int) float64 {
-	// Attempt to read the full config to find the 'mp' value for this heater.
-	// This is a blocking call, but necessary to ensure we restore the correct value.
+// restorePowerStateFromConfig is restorePowerState, but takes an already-fetched firmware config
+// instead of fetching its own - see fetchFirmwareConfig's doc comment for why this matters when
+// restoring more than one heater in the same request (Master Power ON).
+func restorePowerStateFromConfig(shortKey string, fullConfig map[string]interface{}, heaterIdx int) string {
+	savedVal := getSavedManualPowerFromConfig(fullConfig, heaterIdx)
+	logger.Info("Smart Restore (%s): Restoring power to %.0f%% (Firmware Config).", shortKey, savedVal)
+	return fmt.Sprintf(`{"set":{"%s":%.0f}}`, shortKey, savedVal)
+}
+
+// fetchFirmwareConfig fetches and parses the full firmware config in one blocking round trip.
+// Callers that need the "mp" value for more than one heater (e.g. Master Power ON, which restores
+// both pwm1 and pwm2) should call this once and pass the result to getSavedManualPowerFromConfig
+// for each heater, rather than each going through getSavedManualPower separately - that would
+// fetch and parse the identical config twice in a row for no reason, adding a second blocking
+// serial round trip (up to the full command timeout) to an already-slow request.
+func fetchFirmwareConfig() (map[string]interface{}, error) {
 	configJSON, err := serial.SendCommand(`{"get":"config"}`, false, 0)
 	if err != nil {
-		logger.Warn("RestoreToggle: Could not get firmware config: %v", err)
-		return 0
+		return nil, err
 	}
-
 	var fullConfig map[string]interface{}
 	if err := json.Unmarshal([]byte(configJSON), &fullConfig); err != nil {
-		logger.Warn("RestoreToggle: Could not parse firmware config: %v", err)
-		return 0
+		return nil, err
 	}
+	return fullConfig, nil
+}
 
+// getSavedManualPowerFromConfig extracts a heater's configured "Manual Power" (mp) value from an
+// already-fetched firmware config - see fetchFirmwareConfig.
+func getSavedManualPowerFromConfig(fullConfig map[string]interface{}, heaterIdx int) float64 {
 	if dhRaw, ok := fullConfig["dh"]; ok {
 		if dhArray, ok := dhRaw.([]interface{}); ok && heaterIdx < len(dhArray) {
 			if heaterMap, ok := dhArray[heaterIdx].(map[string]interface{}); ok {
@@ -717,6 +756,17 @@ func getSavedManualPower(heaterIdx int) float64 {
 		}
 	}
 	return 0
+}
+
+func getSavedManualPower(heaterIdx int) float64 {
+	// Attempt to read the full config to find the 'mp' value for this heater.
+	// This is a blocking call, but necessary to ensure we restore the correct value.
+	fullConfig, err := fetchFirmwareConfig()
+	if err != nil {
+		logger.Warn("RestoreToggle: Could not get/parse firmware config: %v", err)
+		return 0
+	}
+	return getSavedManualPowerFromConfig(fullConfig, heaterIdx)
 }
 
 func updateHeaterPersistence(heaterIdx int, newValue float64) {
@@ -778,7 +828,7 @@ func (a *API) HandleSwitchSetSwitchName(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	internalName := config.SwitchIDMap[id]
+	internalName, _ := config.GetSwitchIDMapEntry(id)
 
 	// Sensors have fixed names and cannot be renamed
 	if config.IsSensorSwitch(internalName) {
@@ -791,8 +841,7 @@ func (a *API) HandleSwitchSetSwitchName(w http.ResponseWriter, r *http.Request) 
 		ErrorResponse(w, r, http.StatusBadRequest, http.StatusBadRequest, "Missing Name parameter")
 		return
 	}
-	conf := config.Get()
-	conf.SwitchNames[internalName] = newName
+	config.SetSwitchName(internalName, newName)
 	logger.Info("Set custom name for switch %d ('%s') to '%s'", id, internalName, newName)
 
 	if err := config.Save(); err != nil {
@@ -805,7 +854,7 @@ func (a *API) HandleSwitchSetSwitchName(w http.ResponseWriter, r *http.Request) 
 
 func (a *API) HandleSwitchCanWrite(w http.ResponseWriter, r *http.Request) {
 	if id, ok := ParseSwitchID(w, r); ok {
-		key := config.SwitchIDMap[id]
+		key, _ := config.GetSwitchIDMapEntry(id)
 		// Sensors are read-only
 		if config.IsSensorSwitch(key) {
 			BoolResponse(w, r, false)
@@ -817,7 +866,7 @@ func (a *API) HandleSwitchCanWrite(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) HandleSwitchMaxSwitchValue(w http.ResponseWriter, r *http.Request) {
 	if id, ok := ParseSwitchID(w, r); ok {
-		key := config.SwitchIDMap[id]
+		key, _ := config.GetSwitchIDMapEntry(id)
 		// Debug logging for troubleshooting slider issue
 		logger.Debug("MaxSwitchValue: ID=%d Key=%s", id, key)
 
@@ -877,7 +926,7 @@ func (a *API) HandleSwitchMaxSwitchValue(w http.ResponseWriter, r *http.Request)
 
 func (a *API) HandleSwitchMinSwitchValue(w http.ResponseWriter, r *http.Request) {
 	if id, ok := ParseSwitchID(w, r); ok {
-		key := config.SwitchIDMap[id]
+		key, _ := config.GetSwitchIDMapEntry(id)
 		if key == config.SensorLensTempKey {
 			FloatResponse(w, r, -273.15) // Absolute zero as min/error
 			return
@@ -888,7 +937,7 @@ func (a *API) HandleSwitchMinSwitchValue(w http.ResponseWriter, r *http.Request)
 
 func (a *API) HandleSwitchSwitchStep(w http.ResponseWriter, r *http.Request) {
 	if id, ok := ParseSwitchID(w, r); ok {
-		key := config.SwitchIDMap[id]
+		key, _ := config.GetSwitchIDMapEntry(id)
 
 		// Sensors have 0.1 step for precision
 		if config.IsSensorSwitch(key) {
@@ -1098,7 +1147,7 @@ func (a *API) HandleObsCondLatestUpdateTime(w http.ResponseWriter, r *http.Reque
 
 	if latest.IsZero() {
 		// If no data ever arrived, use current time but return early if never connected
-		if !a.driverConnected {
+		if !a.driverConnected.Load() {
 			ErrorResponse(w, r, http.StatusOK, 0x40B, "Driver not connected")
 			return
 		}
@@ -1140,7 +1189,7 @@ func (a *API) HandleObsCondSensorDescription(w http.ResponseWriter, r *http.Requ
 	}
 
 	if a.isMetricImplemented(metric, hwKey) {
-		priority := config.Get().WeatherSourcePriority[metric]
+		priority := config.GetWeatherSourcePriority(metric)
 		if priority == "" {
 			priority = "hybrid"
 		}
@@ -1218,7 +1267,7 @@ var internetSupportedMetrics = map[string]bool{
 
 func (a *API) isMetricImplemented(metric string, hwKey string) bool {
 	conf := config.Get()
-	priority := conf.WeatherSourcePriority[metric]
+	priority := config.GetWeatherSourcePriority(metric)
 	if priority == "" {
 		priority = "hybrid"
 	}
@@ -1243,7 +1292,7 @@ func (a *API) getWeatherValue(metric string, hwKey string) (float64, bool, error
 	}
 
 	conf := config.Get()
-	priority := conf.WeatherSourcePriority[metric]
+	priority := config.GetWeatherSourcePriority(metric)
 	if priority == "" {
 		priority = "hybrid"
 	}
@@ -1302,8 +1351,18 @@ func (a *API) getWeatherValue(metric string, hwKey string) (float64, bool, error
 }
 
 func handleHeaterInteractions(id int, state bool) {
+	// Runs in its own goroutine (see the `go handleHeaterInteractions(...)` call site) with no
+	// caller to recover a panic for it - an unrecovered panic in any goroutine takes down the
+	// whole process, not just this one heater toggle. Belt-and-suspenders against exactly that,
+	// on top of the explicit length check below.
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Error("handleHeaterInteractions panicked (recovered): %v", r)
+		}
+	}()
+
 	// This logic checks for heater inter-dependencies (PID leader/follower).
-	key := config.SwitchIDMap[id]
+	key, _ := config.GetSwitchIDMapEntry(id)
 	if key != "pwm1" && key != "pwm2" {
 		return // Not a heater
 	}
@@ -1322,6 +1381,14 @@ func handleHeaterInteractions(id int, state bool) {
 		logger.Warn("HeaterInteraction: Could not parse firmware config: %v", err)
 		return
 	}
+	// fwConfig.DH is indexed by heater index (0/1) below in both branches - a response that's
+	// valid JSON but doesn't carry a full 2-element "dh" array (e.g. an error object from the
+	// firmware, or a version mismatch) would otherwise panic here. Mirrors the same guard
+	// SyncFirmwareConfig (internal/serial/serial_sync.go) already has for the identical shape.
+	if len(fwConfig.DH) < 2 {
+		logger.Warn("HeaterInteraction: firmware config response had %d heater(s), expected 2 - skipping.", len(fwConfig.DH))
+		return
+	}
 
 	if state { // Logic for turning a heater ON
 		followerHeaterIndex := 0
@@ -1330,7 +1397,7 @@ func handleHeaterInteractions(id int, state bool) {
 		}
 
 		followerKey := key
-		if !config.Get().HeaterAutoEnableLeader[followerKey] {
+		if !config.GetHeaterAutoEnableLeader(followerKey) {
 			logger.Debug("Auto-enable leader is disabled for %s. Skipping.", followerKey)
 			return
 		}

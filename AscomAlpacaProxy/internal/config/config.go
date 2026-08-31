@@ -71,6 +71,63 @@ type PowerStartupStates struct {
 // SwitchMapMutex protects concurrent access to SwitchIDMap and ShortSwitchKeyByID.
 var SwitchMapMutex sync.RWMutex
 
+// ProxyConfigMutex protects concurrent access to the map-valued fields of the ProxyConfig
+// singleton (SwitchNames, HeaterAutoEnableLeader, WeatherSourcePriority) - config.Get() returns a
+// bare pointer with no synchronization of its own, and HandlePostSettings (re)assigns these maps
+// wholesale from an HTTP handler goroutine while other goroutines read them concurrently. Use the
+// Get*/Set* accessors below rather than accessing these map fields directly - a concurrent map
+// read racing a write is not just a data race but can trigger Go's fatal "concurrent map read and
+// write" runtime error, crashing the process.
+var ProxyConfigMutex sync.RWMutex
+
+// GetSwitchName returns the custom display name for a switch's internal key, thread-safely.
+func GetSwitchName(internalName string) string {
+	ProxyConfigMutex.RLock()
+	defer ProxyConfigMutex.RUnlock()
+	return Get().SwitchNames[internalName]
+}
+
+// SetSwitchName sets the custom display name for a switch's internal key, thread-safely.
+func SetSwitchName(internalName, displayName string) {
+	ProxyConfigMutex.Lock()
+	defer ProxyConfigMutex.Unlock()
+	Get().SwitchNames[internalName] = displayName
+}
+
+// GetHeaterAutoEnableLeader returns whether auto-enabling the leader is on for a follower heater
+// key, thread-safely.
+func GetHeaterAutoEnableLeader(followerKey string) bool {
+	ProxyConfigMutex.RLock()
+	defer ProxyConfigMutex.RUnlock()
+	return Get().HeaterAutoEnableLeader[followerKey]
+}
+
+// GetWeatherSourcePriority returns the configured source priority for a weather metric,
+// thread-safely.
+func GetWeatherSourcePriority(metric string) string {
+	ProxyConfigMutex.RLock()
+	defer ProxyConfigMutex.RUnlock()
+	return Get().WeatherSourcePriority[metric]
+}
+
+// SetProxyMaps atomically replaces SwitchNames, HeaterAutoEnableLeader, and WeatherSourcePriority
+// on the ProxyConfig singleton. Use this from HandlePostSettings/backup-restore instead of
+// assigning conf.SwitchNames = ... etc. directly, which would race concurrent readers.
+func SetProxyMaps(switchNames map[string]string, heaterAutoEnableLeader map[string]bool, weatherSourcePriority map[string]string) {
+	ProxyConfigMutex.Lock()
+	defer ProxyConfigMutex.Unlock()
+	conf := Get()
+	if switchNames != nil {
+		conf.SwitchNames = switchNames
+	}
+	if heaterAutoEnableLeader != nil {
+		conf.HeaterAutoEnableLeader = heaterAutoEnableLeader
+	}
+	if weatherSourcePriority != nil {
+		conf.WeatherSourcePriority = weatherSourcePriority
+	}
+}
+
 // Sensor switch keys - these are read-only sensors at fixed IDs 0, 1, 2
 // Sensor switch keys - these are read-only sensors at fixed IDs 0, 1, 2
 const (
@@ -137,6 +194,21 @@ func GetShortSwitchKeyByIDEntry(id int) (string, bool) {
 	defer SwitchMapMutex.RUnlock()
 	val, ok := ShortSwitchKeyByID[id]
 	return val, ok
+}
+
+// GetShortSwitchKeyByIDSnapshot returns a copy of ShortSwitchKeyByID, safe to range over without
+// racing SyncFirmwareConfig's wholesale reassignment of the live map. The single-entry getters
+// above don't cover iteration - callers that need to loop over every switch (e.g. to compute an
+// "all on" aggregate) should copy once via this function rather than ranging over the package
+// variable directly.
+func GetShortSwitchKeyByIDSnapshot() map[int]string {
+	SwitchMapMutex.RLock()
+	defer SwitchMapMutex.RUnlock()
+	snapshot := make(map[int]string, len(ShortSwitchKeyByID))
+	for k, v := range ShortSwitchKeyByID {
+		snapshot[k] = v
+	}
+	return snapshot
 }
 
 // init sets up the path to the configuration file.

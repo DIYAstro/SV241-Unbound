@@ -488,8 +488,9 @@ func handleRestoreBackup(w http.ResponseWriter, r *http.Request) {
 	conf.NetworkPort = backup.ProxyConfig.NetworkPort
 	conf.ListenAddress = backup.ProxyConfig.ListenAddress
 	conf.LogLevel = backup.ProxyConfig.LogLevel
-	conf.SwitchNames = backup.ProxyConfig.SwitchNames
-	conf.HeaterAutoEnableLeader = backup.ProxyConfig.HeaterAutoEnableLeader
+	// See ProxyConfigMutex's doc comment (internal/config/config.go) - these are maps read
+	// concurrently elsewhere, direct assignment here would race those readers.
+	config.SetProxyMaps(backup.ProxyConfig.SwitchNames, backup.ProxyConfig.HeaterAutoEnableLeader, nil)
 	conf.HistoryRetentionNights = backup.ProxyConfig.HistoryRetentionNights
 	conf.TelemetryInterval = backup.ProxyConfig.TelemetryInterval
 	conf.EnableAlpacaVoltageControl = backup.ProxyConfig.EnableAlpacaVoltageControl

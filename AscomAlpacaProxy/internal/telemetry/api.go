@@ -225,14 +225,11 @@ func HandleDownloadCSV(w http.ResponseWriter, r *http.Request) {
 
 	// Write Header with custom names
 	// Format: key (customName) if custom name exists and differs from key
-	proxyConf := config.Get()
 	header := []string{"timestamp"}
 	for _, col := range selectedCols {
 		colHeader := col
-		if proxyConf.SwitchNames != nil {
-			if customName, exists := proxyConf.SwitchNames[col]; exists && customName != "" && customName != col {
-				colHeader = fmt.Sprintf("%s (%s)", col, customName)
-			}
+		if customName := config.GetSwitchName(col); customName != "" && customName != col {
+			colHeader = fmt.Sprintf("%s (%s)", col, customName)
 		}
 		header = append(header, colHeader)
 	}

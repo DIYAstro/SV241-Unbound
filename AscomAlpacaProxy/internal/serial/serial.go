@@ -102,12 +102,25 @@ func StartManager() {
 	}
 
 	portMutex.Lock()
-	if sv241Port != nil {
+	connected := sv241Port != nil
+	portMutex.Unlock()
+	if connected {
 		logger.Info("Initial connection attempt finished successfully.")
+		// Populate Status.Data (including "dm", the heater mode array) synchronously before
+		// anything else can race ahead - periodicCacheUpdater below does the same fetch, but only
+		// after close(initDone) unblocks it, and server.Start() (called by our own caller right
+		// after StartManager returns) could already be accepting requests by the time that
+		// goroutine actually runs. Without this, a GetSwitchValue for a manual-mode heater that
+		// arrives in that window reads Status.Data["dm"] as missing and returns a clamped,
+		// wrong value. Deliberately NOT done inside reconnect() itself - that always runs under
+		// portMutex, which SendCommand's own processor (ProcessCommands) needs too, so calling it
+		// there would deadlock. Only needed here, once: a reconnect later in the process's life
+		// leaves the previous (stale but present) "dm" entry in Status.Data until this same
+		// periodic update naturally refreshes it, so there's no equivalent gap to close there.
+		performCacheUpdate()
 	} else {
 		logger.Warn("Initial connection attempt failed. The application will continue to try connecting in the background.")
 	}
-	portMutex.Unlock()
 
 	// Signal background tasks to start their main loops.
 	logger.Info("Signaling background tasks to start main loops.")
@@ -245,6 +258,21 @@ func ProcessCommands() {
 
 		trimmedResponse := strings.TrimSpace(response)
 		logger.Debug("Received response from device: %s", trimmedResponse)
+
+		// The firmware rejects some "set" commands (e.g. a disabled output) by sending a single
+		// {"error":"..."} line instead of the usual status JSON - surface that as a real Go error
+		// rather than a "successful" response callers would otherwise silently ignore. This is
+		// the device's only use of a top-level "error" key, so no legitimate response is
+		// misclassified by this check.
+		if strings.Contains(trimmedResponse, `"error":`) {
+			var errResp struct {
+				Error string `json:"error"`
+			}
+			if json.Unmarshal([]byte(trimmedResponse), &errResp) == nil && errResp.Error != "" {
+				cmd.Error <- fmt.Errorf("device rejected command: %s", errResp.Error)
+				continue
+			}
+		}
 
 		// Instant Cache Update (Turbo): Sniff the response for status or sensor data.
 		// If found, update the global cache immediately so NINA sees the change without waiting for the poller.

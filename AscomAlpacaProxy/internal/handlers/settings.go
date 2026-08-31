@@ -70,8 +70,11 @@ func HandlePostSettings(w http.ResponseWriter, r *http.Request) {
 	conf.SerialPortName = newConfig.SerialPortName
 	conf.AutoDetectPort = newConfig.AutoDetectPort
 	conf.LogLevel = newConfig.LogLevel
-	conf.SwitchNames = newConfig.SwitchNames
-	conf.HeaterAutoEnableLeader = newConfig.HeaterAutoEnableLeader
+	// SwitchNames/HeaterAutoEnableLeader/WeatherSourcePriority are maps read concurrently by other
+	// goroutines - assigning them directly here would race those readers (see ProxyConfigMutex's
+	// doc comment). WeatherSourcePriority is set the same way further down, once its value is
+	// validated.
+	config.SetProxyMaps(newConfig.SwitchNames, newConfig.HeaterAutoEnableLeader, nil)
 	conf.HistoryRetentionNights = newConfig.HistoryRetentionNights
 	conf.TelemetryInterval = newConfig.TelemetryInterval
 	conf.EnableAlpacaVoltageControl = newConfig.EnableAlpacaVoltageControl
@@ -91,7 +94,7 @@ func HandlePostSettings(w http.ResponseWriter, r *http.Request) {
 	if conf.WeatherInterval < 1 {
 		conf.WeatherInterval = 5
 	}
-	conf.WeatherSourcePriority = newConfig.WeatherSourcePriority
+	config.SetProxyMaps(nil, nil, newConfig.WeatherSourcePriority)
 
 	// Apply log level immediately
 	logger.SetLevelFromString(conf.LogLevel)

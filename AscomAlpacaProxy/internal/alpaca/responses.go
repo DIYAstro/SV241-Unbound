@@ -8,6 +8,17 @@ import (
 	"sync/atomic"
 )
 
+// clientTransactionIDFromContext reads the ClientTransactionID the middleware (Handler,
+// middleware.go) stashed in this specific request's context - request-scoped, so concurrent
+// requests each get back the value they were sent with, not whatever a different in-flight
+// request happened to store last (see clientTransactionIDKey's doc comment).
+func clientTransactionIDFromContext(r *http.Request) uint32 {
+	if v, ok := r.Context().Value(clientTransactionIDKey).(uint32); ok {
+		return v
+	}
+	return 0
+}
+
 // --- Response Structs ---
 
 type Response struct {
@@ -52,7 +63,7 @@ func writeResponse(w http.ResponseWriter, r *http.Request, data interface{}) {
 
 func EmptyResponse(w http.ResponseWriter, r *http.Request) {
 	resp := Response{
-		ClientTransactionID: atomic.LoadUint32(&ClientTransactionID),
+		ClientTransactionID: clientTransactionIDFromContext(r),
 		ServerTransactionID: atomic.AddUint32(&ServerTransactionID, 1),
 	}
 	writeResponse(w, r, resp)
@@ -61,7 +72,7 @@ func EmptyResponse(w http.ResponseWriter, r *http.Request) {
 func StringListResponse(w http.ResponseWriter, r *http.Request, value []string) {
 	resp := ValueResponse{
 		Response: Response{
-			ClientTransactionID: atomic.LoadUint32(&ClientTransactionID),
+			ClientTransactionID: clientTransactionIDFromContext(r),
 			ServerTransactionID: atomic.AddUint32(&ServerTransactionID, 1),
 		},
 		Value: value,
@@ -71,7 +82,7 @@ func StringListResponse(w http.ResponseWriter, r *http.Request, value []string) 
 
 func ErrorResponse(w http.ResponseWriter, r *http.Request, httpStatus int, errNum int, errMsg string) {
 	resp := Response{
-		ClientTransactionID: atomic.LoadUint32(&ClientTransactionID),
+		ClientTransactionID: clientTransactionIDFromContext(r),
 		ServerTransactionID: atomic.AddUint32(&ServerTransactionID, 1),
 		ErrorNumber:         errNum,
 		ErrorMessage:        errMsg,
@@ -93,7 +104,7 @@ func ErrorResponse(w http.ResponseWriter, r *http.Request, httpStatus int, errNu
 func StringResponse(w http.ResponseWriter, r *http.Request, value string) {
 	resp := ValueResponse{
 		Response: Response{
-			ClientTransactionID: atomic.LoadUint32(&ClientTransactionID),
+			ClientTransactionID: clientTransactionIDFromContext(r),
 			ServerTransactionID: atomic.AddUint32(&ServerTransactionID, 1),
 		},
 		Value: value,
@@ -104,7 +115,7 @@ func StringResponse(w http.ResponseWriter, r *http.Request, value string) {
 func IntResponse(w http.ResponseWriter, r *http.Request, value int) {
 	resp := ValueResponse{
 		Response: Response{
-			ClientTransactionID: atomic.LoadUint32(&ClientTransactionID),
+			ClientTransactionID: clientTransactionIDFromContext(r),
 			ServerTransactionID: atomic.AddUint32(&ServerTransactionID, 1),
 		},
 		Value: value,
@@ -120,7 +131,7 @@ func FloatResponse(w http.ResponseWriter, r *http.Request, value float64) {
 
 	resp := ValueResponse{
 		Response: Response{
-			ClientTransactionID: atomic.LoadUint32(&ClientTransactionID),
+			ClientTransactionID: clientTransactionIDFromContext(r),
 			ServerTransactionID: atomic.AddUint32(&ServerTransactionID, 1),
 		},
 		Value: value,
@@ -131,7 +142,7 @@ func FloatResponse(w http.ResponseWriter, r *http.Request, value float64) {
 func RawFloatResponse(w http.ResponseWriter, r *http.Request, value float64) {
 	resp := ValueResponse{
 		Response: Response{
-			ClientTransactionID: atomic.LoadUint32(&ClientTransactionID),
+			ClientTransactionID: clientTransactionIDFromContext(r),
 			ServerTransactionID: atomic.AddUint32(&ServerTransactionID, 1),
 		},
 		Value: value,
@@ -142,7 +153,7 @@ func RawFloatResponse(w http.ResponseWriter, r *http.Request, value float64) {
 func InvalidValueResponse(w http.ResponseWriter, r *http.Request, errNum int, errMsg string) {
 	resp := ValueResponse{
 		Response: Response{
-			ClientTransactionID: atomic.LoadUint32(&ClientTransactionID),
+			ClientTransactionID: clientTransactionIDFromContext(r),
 			ServerTransactionID: atomic.AddUint32(&ServerTransactionID, 1),
 			ErrorNumber:         errNum,
 			ErrorMessage:        errMsg,
@@ -155,7 +166,7 @@ func InvalidValueResponse(w http.ResponseWriter, r *http.Request, errNum int, er
 func BoolResponse(w http.ResponseWriter, r *http.Request, value bool) {
 	resp := ValueResponse{
 		Response: Response{
-			ClientTransactionID: atomic.LoadUint32(&ClientTransactionID),
+			ClientTransactionID: clientTransactionIDFromContext(r),
 			ServerTransactionID: atomic.AddUint32(&ServerTransactionID, 1),
 		},
 		Value: value,
