@@ -310,11 +310,13 @@ function handleClickOutside(event) {
     left: 1.2rem;
     top: -2.5rem;
     padding: 0.5rem 0.75rem;
-    background: rgba(15, 12, 41, 0.95);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    /* Same fix as .pwm-popover below - was hardcoded to the old theme's colors, and --surface-color
+       alone (no blur backdrop behind it here either) was too translucent over other cards' text -
+       see .pwm-popover's comment. */
+    background: var(--bg-color-start);
+    border: 1px solid var(--surface-border);
     border-radius: 8px;
-    color: #fff;
+    color: var(--text-primary);
     font-size: 0.85rem;
     white-space: nowrap;
     opacity: 0;
@@ -322,7 +324,7 @@ function handleClickOutside(event) {
     transition: opacity 0.2s ease, visibility 0.2s ease;
     pointer-events: none;
     z-index: 1000;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--shadow-soft);
 }
 
 
@@ -342,9 +344,12 @@ function handleClickOutside(event) {
 }
 
 .pwm-badge {
-    background: rgba(0, 255, 255, 0.1);
-    color: #0ff;
-    border: 1px solid rgba(0, 255, 255, 0.3);
+    /* Was hardcoded neon-cyan-on-purple regardless of theme - now tied to the same
+       --primary-color/--primary-glow/--surface-* variables the rest of the app (style.css,
+       AppModal.vue) already uses, so this actually follows whichever theme is selected. */
+    background: var(--primary-glow);
+    color: var(--primary-color);
+    border: 1px solid var(--primary-glow);
     padding: 0.15rem 0.5rem;
     border-radius: 4px;
     font-size: 1.0rem;
@@ -352,27 +357,27 @@ function handleClickOutside(event) {
     cursor: pointer;
     transition: all 0.2s ease;
     user-select: none;
-    text-shadow: 0 0 5px rgba(0, 255, 255, 0.5);
+    text-shadow: 0 0 5px var(--primary-glow);
     min-width: 4.5rem;
     text-align: center;
 }
 
 .pwm-badge.is-off {
-    background: rgba(255, 255, 255, 0.05);
-    color: #888;
-    border-color: rgba(255, 255, 255, 0.1);
+    background: var(--surface-color);
+    color: var(--text-secondary);
+    border-color: var(--surface-border);
     text-shadow: none;
 }
 
 .pwm-badge:hover {
-    background: rgba(0, 255, 255, 0.2);
-    box-shadow: 0 0 8px rgba(0, 255, 255, 0.4);
+    background: var(--primary-glow);
+    box-shadow: 0 0 8px var(--primary-glow);
     transform: translateY(-1px);
 }
 .pwm-badge.is-off:hover {
-    background: rgba(255, 255, 255, 0.1);
-    box-shadow: 0 0 5px rgba(255, 255, 255, 0.2);
-    color: #ccc;
+    background: var(--surface-hover);
+    box-shadow: 0 0 5px var(--surface-border);
+    color: var(--text-primary);
 }
 
 .pwm-popover {
@@ -380,13 +385,20 @@ function handleClickOutside(event) {
     bottom: 120%; /* Above the badge */
     right: 0; /* Align right edge */
     width: 280px; /* Slightly wider for Button */
-    background: rgba(15, 12, 41, 0.95);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    /* --surface-color (the .glass-panel recipe) turned out too translucent here - that's built
+       for large panels sitting on the smooth page gradient, not a small popover floating on top
+       of other, busier foreground content (other switch cards/text), and .modal-content's
+       equally-light background only works because it always has --modal-overlay's near-opaque
+       backdrop behind it, which this popover doesn't have. --bg-color-start is solid/opaque in
+       every theme and dark in all three, giving reliable contrast against anything behind it -
+       matches what the original hardcoded rgba(15, 12, 41, 0.95) was already going for, just
+       theme-aware now. */
+    background: var(--bg-color-start);
+    border: 1px solid var(--surface-border);
     border-radius: 12px;
     padding: 1.25rem;
     z-index: 2000; /* Above regular tooltips */
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    box-shadow: var(--shadow-soft);
     display: flex;
     flex-direction: column;
     gap: 0.8rem;
@@ -399,26 +411,26 @@ function handleClickOutside(event) {
     justify-content: space-between;
     align-items: center;
     font-size: 0.95rem;
-    color: #a0a0a0;
+    color: var(--text-secondary);
 }
 
 /* OK Button Styles */
 .ok-btn {
-    background: rgba(0, 255, 255, 0.2);
-    color: #0ff;
-    border: 1px solid rgba(0, 255, 255, 0.3);
+    background: var(--primary-glow);
+    color: var(--primary-color);
+    border: 1px solid var(--primary-glow);
     border-radius: 4px;
     padding: 0.2rem 0.6rem;
     font-family: inherit;
     font-size: 0.9rem;
     cursor: pointer;
     transition: all 0.2s;
-    text-shadow: 0 0 5px rgba(0, 255, 255, 0.5);
+    text-shadow: 0 0 5px var(--primary-glow);
 }
 
 .ok-btn:hover {
-    background: rgba(0, 255, 255, 0.3);
-    box-shadow: 0 0 8px rgba(0, 255, 255, 0.4);
+    background: var(--primary-glow);
+    box-shadow: 0 0 8px var(--primary-glow);
     transform: translateY(-1px);
 }
 
@@ -434,10 +446,10 @@ function handleClickOutside(event) {
 }
 
 .popover-header .value {
-    color: #0ff;
+    color: var(--primary-color);
     font-weight: bold;
     font-size: 1.1rem;
-    text-shadow: 0 0 5px rgba(0, 255, 255, 0.5);
+    text-shadow: 0 0 5px var(--primary-glow);
 }
 
 /* Slider Styling */
@@ -445,7 +457,7 @@ function handleClickOutside(event) {
     -webkit-appearance: none;
     width: 100%;
     height: 4px;
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--surface-hover);
     border-radius: 2px;
     outline: none;
     flex: 1; /* Take remaining space */
@@ -457,9 +469,9 @@ function handleClickOutside(event) {
     width: 16px;
     height: 16px;
     border-radius: 50%;
-    background: #0ff;
+    background: var(--primary-color);
     cursor: pointer;
-    box-shadow: 0 0 10px rgba(0, 255, 255, 0.8);
+    box-shadow: 0 0 10px var(--primary-glow);
     transition: transform 0.1s;
 }
 
