@@ -987,111 +987,24 @@ func (a *API) HandleSwitchAction(w http.ResponseWriter, r *http.Request) {
 
 // --- ObservingConditions Handlers ---
 
-func (a *API) HandleObsCondTemperature(w http.ResponseWriter, r *http.Request) {
-	if val, impl, err := a.getWeatherValue("temperature", "t_amb"); impl {
-		if err == nil {
-			FloatResponse(w, r, val)
+// HandleObsCondValue returns a handler for the 9 ObservingConditions properties that are a plain
+// float value backed by getWeatherValue (temperature, humidity, dewpoint, pressure, windspeed,
+// winddirection, windgust, cloudcover, rainrate) - these used to be 9 separate functions with an
+// identical body differing only in the metric/hwKey pair passed to getWeatherValue. hwKey is
+// resolved once from metricHardwareKeys and captured in the closure, so callers only ever pass the
+// metric name (the same string already used as the route's map key in server.go).
+func (a *API) HandleObsCondValue(metric string) http.HandlerFunc {
+	hwKey := metricHardwareKeys[metric] // "" for the 6 internet-only metrics (Go zero-value)
+	return func(w http.ResponseWriter, r *http.Request) {
+		if val, impl, err := a.getWeatherValue(metric, hwKey); impl {
+			if err == nil {
+				FloatResponse(w, r, val)
+			} else {
+				ErrorResponse(w, r, http.StatusOK, 0x40B, err.Error())
+			}
 		} else {
-			ErrorResponse(w, r, http.StatusOK, 0x40B, err.Error())
+			ErrorResponse(w, r, http.StatusOK, 0x40C, "Property not implemented")
 		}
-	} else {
-		ErrorResponse(w, r, http.StatusOK, 0x40C, "Property not implemented")
-	}
-}
-
-func (a *API) HandleObsCondHumidity(w http.ResponseWriter, r *http.Request) {
-	if val, impl, err := a.getWeatherValue("humidity", "h_amb"); impl {
-		if err == nil {
-			FloatResponse(w, r, val)
-		} else {
-			ErrorResponse(w, r, http.StatusOK, 0x40B, err.Error())
-		}
-	} else {
-		ErrorResponse(w, r, http.StatusOK, 0x40C, "Property not implemented")
-	}
-}
-
-func (a *API) HandleObsCondDewPoint(w http.ResponseWriter, r *http.Request) {
-	if val, impl, err := a.getWeatherValue("dewpoint", "d"); impl {
-		if err == nil {
-			FloatResponse(w, r, val)
-		} else {
-			ErrorResponse(w, r, http.StatusOK, 0x40B, err.Error())
-		}
-	} else {
-		ErrorResponse(w, r, http.StatusOK, 0x40C, "Property not implemented")
-	}
-}
-
-func (a *API) HandleObsCondPressure(w http.ResponseWriter, r *http.Request) {
-	if val, impl, err := a.getWeatherValue("pressure", ""); impl {
-		if err == nil {
-			FloatResponse(w, r, val)
-		} else {
-			ErrorResponse(w, r, http.StatusOK, 0x40B, err.Error())
-		}
-	} else {
-		ErrorResponse(w, r, http.StatusOK, 0x40C, "Property not implemented")
-	}
-}
-
-func (a *API) HandleObsCondWindSpeed(w http.ResponseWriter, r *http.Request) {
-	if val, impl, err := a.getWeatherValue("windspeed", ""); impl {
-		if err == nil {
-			FloatResponse(w, r, val)
-		} else {
-			ErrorResponse(w, r, http.StatusOK, 0x40B, err.Error())
-		}
-	} else {
-		ErrorResponse(w, r, http.StatusOK, 0x40C, "Property not implemented")
-	}
-}
-
-func (a *API) HandleObsCondWindDirection(w http.ResponseWriter, r *http.Request) {
-	if val, impl, err := a.getWeatherValue("winddirection", ""); impl {
-		if err == nil {
-			FloatResponse(w, r, val)
-		} else {
-			ErrorResponse(w, r, http.StatusOK, 0x40B, err.Error())
-		}
-	} else {
-		ErrorResponse(w, r, http.StatusOK, 0x40C, "Property not implemented")
-	}
-}
-
-func (a *API) HandleObsCondWindGust(w http.ResponseWriter, r *http.Request) {
-	if val, impl, err := a.getWeatherValue("windgust", ""); impl {
-		if err == nil {
-			FloatResponse(w, r, val)
-		} else {
-			ErrorResponse(w, r, http.StatusOK, 0x40B, err.Error())
-		}
-	} else {
-		ErrorResponse(w, r, http.StatusOK, 0x40C, "Property not implemented")
-	}
-}
-
-func (a *API) HandleObsCondCloudCover(w http.ResponseWriter, r *http.Request) {
-	if val, impl, err := a.getWeatherValue("cloudcover", ""); impl {
-		if err == nil {
-			FloatResponse(w, r, val)
-		} else {
-			ErrorResponse(w, r, http.StatusOK, 0x40B, err.Error())
-		}
-	} else {
-		ErrorResponse(w, r, http.StatusOK, 0x40C, "Property not implemented")
-	}
-}
-
-func (a *API) HandleObsCondRainRate(w http.ResponseWriter, r *http.Request) {
-	if val, impl, err := a.getWeatherValue("rainrate", ""); impl {
-		if err == nil {
-			FloatResponse(w, r, val)
-		} else {
-			ErrorResponse(w, r, http.StatusOK, 0x40B, err.Error())
-		}
-	} else {
-		ErrorResponse(w, r, http.StatusOK, 0x40C, "Property not implemented")
 	}
 }
 
@@ -1176,17 +1089,7 @@ func (a *API) HandleObsCondSensorDescription(w http.ResponseWriter, r *http.Requ
 	}
 
 	metric := strings.ToLower(sensorName)
-	hwKey := ""
-	switch metric {
-	case "temperature":
-		hwKey = "t_amb"
-	case "humidity":
-		hwKey = "h_amb"
-	case "dewpoint":
-		hwKey = "d"
-	case "pressure":
-		hwKey = "" // Future expansion
-	}
+	hwKey := metricHardwareKeys[metric]
 
 	if a.isMetricImplemented(metric, hwKey) {
 		priority := config.GetWeatherSourcePriority(metric)
@@ -1224,15 +1127,7 @@ func (a *API) HandleObsCondTimeSinceLastUpdate(w http.ResponseWriter, r *http.Re
 	}
 
 	metric := strings.ToLower(sensorName)
-	hwKey := ""
-	switch metric {
-	case "temperature":
-		hwKey = "t_amb"
-	case "humidity":
-		hwKey = "h_amb"
-	case "dewpoint":
-		hwKey = "d"
-	}
+	hwKey := metricHardwareKeys[metric]
 
 	if a.isMetricImplemented(metric, hwKey) {
 		// Treat as real-time for now (hot cache)
@@ -1251,6 +1146,18 @@ func (a *API) HandleObsCondRefresh(w http.ResponseWriter, r *http.Request) {
 }
 
 // --- Helper Logic ---
+
+// metricHardwareKeys maps a metric name to its firmware hardware key. Metrics not present here
+// resolve to "" (Go's zero value for a missing map key), meaning "no hardware source" - intentional
+// for the 6 internet-only metrics (pressure, windspeed, winddirection, windgust, cloudcover,
+// rainrate), not an omission. Single source of truth for this mapping, used by HandleObsCondValue,
+// HandleObsCondSensorDescription, and HandleObsCondTimeSinceLastUpdate - previously duplicated
+// (implicitly or via an inline switch) in all three places.
+var metricHardwareKeys = map[string]string{
+	"temperature": "t_amb",
+	"humidity":    "h_amb",
+	"dewpoint":    "d",
+}
 
 // internetSupportedMetrics defines which metrics can be sourced from the internet (Open-Meteo).
 var internetSupportedMetrics = map[string]bool{

@@ -165,9 +165,9 @@ func setupAlpacaDeviceRoutes(api *alpaca.API) {
 
 	// ObservingConditions device
 	obsCondHandlers := map[string]http.HandlerFunc{
-		"temperature":         api.HandleObsCondTemperature,
-		"humidity":            api.HandleObsCondHumidity,
-		"dewpoint":            api.HandleObsCondDewPoint,
+		"temperature":         api.HandleObsCondValue("temperature"),
+		"humidity":            api.HandleObsCondValue("humidity"),
+		"dewpoint":            api.HandleObsCondValue("dewpoint"),
 		"name":                api.HandleDeviceName("SV241 Environment"),
 		"supportedactions":    api.HandleSupportedActions,
 		"action":              api.HandleObsCondAction,
@@ -175,18 +175,18 @@ func setupAlpacaDeviceRoutes(api *alpaca.API) {
 		"sensordescription":   api.HandleObsCondSensorDescription,
 		"timesincelastupdate": api.HandleObsCondTimeSinceLastUpdate,
 		"refresh":             api.HandleObsCondRefresh,
-		"cloudcover":          api.HandleObsCondCloudCover,
-		"pressure":            api.HandleObsCondPressure,
-		"rainrate":            api.HandleObsCondRainRate,
+		"cloudcover":          api.HandleObsCondValue("cloudcover"),
+		"pressure":            api.HandleObsCondValue("pressure"),
+		"rainrate":            api.HandleObsCondValue("rainrate"),
 		"latestupdatetime":    api.HandleObsCondLatestUpdateTime,
 		"latestupdate":        api.HandleObsCondLatestUpdateTime, // Alias
 		"skybrightness":       api.HandleObsCondNotImplemented,
 		"skyquality":          api.HandleObsCondNotImplemented,
 		"skytemperature":      api.HandleObsCondNotImplemented,
 		"starfwhm":            api.HandleObsCondNotImplemented,
-		"winddirection":       api.HandleObsCondWindDirection,
-		"windgust":            api.HandleObsCondWindGust,
-		"windspeed":           api.HandleObsCondWindSpeed,
+		"winddirection":       api.HandleObsCondValue("winddirection"),
+		"windgust":            api.HandleObsCondValue("windgust"),
+		"windspeed":           api.HandleObsCondValue("windspeed"),
 	}
 	for k, v := range commonHandlers {
 		obsCondHandlers[k] = v
