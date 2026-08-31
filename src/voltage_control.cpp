@@ -76,7 +76,10 @@ void setup_voltage_control() {
   ledcAttach(ADJUSTABLE_CONVERTER_PIN, LEDC_FREQUENCY, LEDC_RESOLUTION);
 
   xSemaphoreTake(config_mutex, portMAX_DELAY);
-  bool startup_state = config.power_startup_states.adj_conv;
+  // 0=Off, 1=On, 2=Disabled - a bare uint8_t->bool conversion would treat 2 (Disabled) as On,
+  // energizing the output at boot even though the user asked to keep it off. Match the "== 1"
+  // pattern power_control.cpp's setup_power_outputs() already uses for every other output.
+  bool startup_state = (config.power_startup_states.adj_conv == 1);
   // On startup, we always respect the config preset, so ensure RAM override is cleared.
   ram_voltage_target = -1.0f;
   xSemaphoreGive(config_mutex);

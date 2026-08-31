@@ -98,6 +98,28 @@ static float calculate_median(float arr[], int count) {
   }
 }
 
+// See sensors.h for why this exists. Only ever needs to shrink readings_count (raising a count
+// is already handled naturally - update_sensor_cache()'s own `if (readings_count < avg_count)`
+// guard lets it grow back up one real reading at a time).
+//
+// Does NOT take config_mutex itself - the caller must already hold it (its only caller,
+// updateConfig()'s "ac" block, now requires that of all its own callers too - see updateConfig's
+// doc comment). Taking it here as well would deadlock: FreeRTOS's plain xSemaphoreCreateMutex()
+// mutexes aren't recursive, and updateConfig() is always reached with config_mutex already held.
+void clamp_averaging_readings_counts() {
+  int voltage_avg = config.averaging_counts.ina219_voltage;
+  int current_avg = config.averaging_counts.ina219_current;
+  int sht_temp_avg = config.averaging_counts.sht40_temp;
+  int sht_humidity_avg = config.averaging_counts.sht40_humidity;
+  int ds18b20_avg = config.averaging_counts.ds18b20_temp;
+
+  if (ina219_voltage_readings_count > voltage_avg) ina219_voltage_readings_count = voltage_avg;
+  if (ina219_current_readings_count > current_avg) ina219_current_readings_count = current_avg;
+  if (sht40_readings_count > sht_temp_avg) sht40_readings_count = sht_temp_avg;
+  if (sht40_humidity_readings_count > sht_humidity_avg) sht40_humidity_readings_count = sht_humidity_avg;
+  if (ds18b20_readings_count > ds18b20_avg) ds18b20_readings_count = ds18b20_avg;
+}
+
 void setup_sensors() {
   // Initialize all sensor values to NAN to indicate they are not yet valid
   sensor_cache.ina_voltage = NAN;

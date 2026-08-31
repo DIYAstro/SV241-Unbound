@@ -47,4 +47,12 @@ void get_sensor_values_json(JsonDocument& doc);
 // Triggers the SHT40 internal heater to dry the sensor.
 void dry_sht40_sensor();
 
+// Call this after config.averaging_counts changes live (without a reboot). If a count was
+// lowered, the corresponding ring buffer's internal "how many readings do I have" counter must
+// shrink to match - otherwise calculate_median() keeps including buffer slots that are never
+// written again, folding permanently stale readings into every future median until the next
+// reboot. Reads config.averaging_counts directly - the caller must already hold config_mutex
+// (matches updateConfig()'s own precondition; this function is only ever called from within it).
+void clamp_averaging_readings_counts();
+
 #endif // SENSORS_H

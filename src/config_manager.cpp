@@ -1,4 +1,5 @@
 #include "config_manager.h"
+#include "sensors.h"
 #include <LittleFS.h>
 
 // Forward declarations
@@ -82,8 +83,16 @@ bool loadConfig() {
     // JSON actually contains on top - exactly like a live "sc" update. Any field absent from the
     // loaded file (e.g. one added by a newer firmware than whatever last saved this file) simply
     // keeps its explicit, intentional default instead of being left as random struct memory.
+    //
+    // updateConfig() requires config_mutex to already be held (see its doc comment) - loadConfig()
+    // runs during setup(), before any FreeRTOS task that could contend for it exists, so this
+    // isn't fixing a reachable race here specifically, just upholding the same precondition
+    // uniformly at every call site rather than leaving it implicitly "safe for a different reason"
+    // at this one.
+    xSemaphoreTake(config_mutex, portMAX_DELAY);
     populateDefaultConfig();
     updateConfig(doc.as<JsonObject>());
+    xSemaphoreGive(config_mutex);
 
     return true;
 }
@@ -249,6 +258,9 @@ void updateConfig(const JsonObject& doc) {
         config.averaging_counts.ds18b20_temp = averaging_counts["dt"] | config.averaging_counts.ds18b20_temp;
         config.averaging_counts.ina219_voltage = averaging_counts["iv"] | config.averaging_counts.ina219_voltage;
         config.averaging_counts.ina219_current = averaging_counts["ic"] | config.averaging_counts.ina219_current;
+        // If any count was lowered, shrink the matching ring buffer's reading count too - see
+        // sensors.h's doc comment for why this can't be skipped.
+        clamp_averaging_readings_counts();
     }
 
     if (!doc["av"].isNull()) {
@@ -290,7 +302,15 @@ void updateConfig(const JsonObject& doc) {
                 if (!heater_obj["auto_mode"].isNull()) {
                     config.dew_heaters[i].mode = (heater_obj["auto_mode"].as<bool>()) ? 1 : 0;
                 }
-                if (!heater_obj["m"].isNull()) config.dew_heaters[i].mode = heater_obj["m"];
+                if (!heater_obj["m"].isNull()) {
+                    // Valid modes are exactly 0-5 (Manual/PID/Ambient/PID-Sync/MinTemp/Disabled) -
+                    // clamp rather than accept anything a raw API call might send, since
+                    // dew_control_task's mode switch has its own default-case safety net but
+                    // there's no reason to let an invalid value into the config in the first
+                    // place. Matches the "xd" field's existing constrain() pattern just below.
+                    int mode = heater_obj["m"];
+                    config.dew_heaters[i].mode = constrain(mode, 0, 5);
+                }
 
                 if (!heater_obj["mp"].isNull()) config.dew_heaters[i].manual_power = heater_obj["mp"];
                 

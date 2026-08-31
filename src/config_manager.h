@@ -111,6 +111,13 @@ bool loadConfig();
 bool saveConfig();
 void createDefaultConfig();
 void serializeConfig(JsonDocument& doc);
+// Mutates the global `config` struct from parsed JSON. The caller MUST already hold config_mutex
+// - this function reads and writes `config` directly with no locking of its own (matches how
+// every other direct reader/writer of `config`, e.g. serializeConfig() call sites, is expected to
+// take config_mutex first). Both current callers (the live "sc" wire command in main.cpp, and
+// loadConfig() at startup) hold it for the entire call; loadConfig()'s case runs before any
+// FreeRTOS task that could contend for it even exists, so the lock there is a consistency/defense
+// -in-depth measure, not a fix for a reachable race.
 void updateConfig(const JsonObject& doc);
 
 

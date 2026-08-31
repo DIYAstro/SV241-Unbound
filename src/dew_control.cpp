@@ -354,6 +354,18 @@ void dew_control_task(void *pvParameters) {
                     ledcWrite(HEATER_PINS[i], 0);
                     break;
                 }
+
+                default: {
+                    // Mode is validated by the Vue UI dropdown, but nothing enforces that on the
+                    // wire - a raw API call can set an out-of-range value. Without this, none of
+                    // the cases above run and the output keeps whatever duty cycle it last had,
+                    // indefinitely, with no automatic shutoff. Fail safe: turn the output off,
+                    // same as Disabled Mode.
+                    heater_power[i] = 0;
+                    heater_demand[i] = 0;
+                    ledcWrite(HEATER_PINS[i], 0);
+                    break;
+                }
             }
         }
 

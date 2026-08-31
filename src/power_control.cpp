@@ -101,8 +101,8 @@ void setup_power_outputs() {
   }
 }
 
-void set_power_output(PowerOutput output, bool on) {
-  if (output < 0 || output >= POWER_OUTPUT_COUNT) return;
+bool set_power_output(PowerOutput output, bool on) {
+  if (output < 0 || output >= POWER_OUTPUT_COUNT) return true;
 
   // If trying to turn ON, check if this output is disabled in config
   if (on) {
@@ -127,7 +127,7 @@ void set_power_output(PowerOutput output, bool on) {
       xSemaphoreTake(serial_mutex, portMAX_DELAY);
       Serial.printf("{\"error\":\"Cannot enable disabled output: %s\"}\n", get_power_output_name(output));
       xSemaphoreGive(serial_mutex);
-      return; // Block the command
+      return false; // Block the command - caller must not send a second response line
     }
   }
 
@@ -141,8 +141,9 @@ void set_power_output(PowerOutput output, bool on) {
   } else {
     digitalWrite(power_output_pins[output], on ? HIGH : LOW);
   }
-  
+
   power_output_states[output] = on;
+  return true;
 }
 
 const char* get_power_output_name(PowerOutput output) {
@@ -200,7 +201,8 @@ void get_power_status_json(JsonDocument& doc) {
   }
 }
 
-void handle_set_power_command(JsonVariant set_command) {
+bool handle_set_power_command(JsonVariant set_command) {
+  bool all_succeeded = true;
   if (set_command.is<JsonObject>()) {
     JsonObject set_obj = set_command.as<JsonObject>();
 
@@ -253,13 +255,16 @@ void handle_set_power_command(JsonVariant set_command) {
                 set_power_output((PowerOutput)i, false);
             }
         }
-        return; // Exit after handling the "all" command
+        // Neither branch above can reject: the staggered-on path already filters out disabled
+        // outputs before queuing them, and turning off is never rejected - so no {"error":...}
+        // line was ever sent for this command.
+        return true; // Exit after handling the "all" command
     }
 
     // If "all" key is not present, proceed with individual keys
     for (int i = 0; i < POWER_OUTPUT_COUNT; i++) {
       const char* name = get_power_output_name((PowerOutput)i);
-      
+
       // Check if the key exists in the object (using ArduinoJson v7 compatible check)
       if (set_obj[name].isNull()) continue;
 
@@ -267,14 +272,14 @@ void handle_set_power_command(JsonVariant set_command) {
       if ((PowerOutput)i == POWER_ADJ_CONV) {
          if (set_obj[name].is<bool>()) {
              bool state = set_obj[name].as<bool>();
-             set_power_output((PowerOutput)i, state);
+             all_succeeded &= set_power_output((PowerOutput)i, state);
          } else if (set_obj[name].is<int>() || set_obj[name].is<float>()) {
              float v = set_obj[name].as<float>();
              if (v <= 0.0f) {
-                 set_power_output((PowerOutput)i, false);  // Turn off at 0V
+                 all_succeeded &= set_power_output((PowerOutput)i, false);  // Turn off at 0V
              } else {
                  set_adjustable_voltage_ram(v);
-                 set_power_output((PowerOutput)i, true);
+                 all_succeeded &= set_power_output((PowerOutput)i, true);
              }
           }
           continue;
@@ -283,32 +288,33 @@ void handle_set_power_command(JsonVariant set_command) {
       // Special handling for PWM channels
       if ((PowerOutput)i == POWER_PWM1 || (PowerOutput)i == POWER_PWM2) {
           int heater_idx = ((PowerOutput)i == POWER_PWM1) ? 0 : 1;
-          
+
           if (set_obj[name].is<bool>()) {
                bool state = set_obj[name].as<bool>();
                // If turning ON via boolean, reset RAM override to -1 (use config default)
                if (state) set_dew_heater_pwm_ram(heater_idx, -1);
                // Wait, don't reset to -1 on true, or we lose custom setting if user just toggles switch?
-               // Actually for Alpaca, "True" usually means "On at default". 
+               // Actually for Alpaca, "True" usually means "On at default".
                // But if we want persistence of session, maybe don't reset?
                // Let's stick to: Boolean TRUE = Reset to Config (Safe Default). Integer = Override.
-               set_power_output((PowerOutput)i, state);
+               all_succeeded &= set_power_output((PowerOutput)i, state);
           } else if (set_obj[name].is<int>() || set_obj[name].is<float>()) {
                int pwm = set_obj[name].as<int>();
                pwm = constrain(pwm, 0, 100);
                set_dew_heater_pwm_ram(heater_idx, pwm);
-               set_power_output((PowerOutput)i, true);
+               all_succeeded &= set_power_output((PowerOutput)i, true);
           }
           continue;
-      } 
-      
+      }
+
       // Standard handling for all (including PWM if not special)
       if (set_obj[name].is<bool>() || set_obj[name].is<int>()) {
         bool state = set_obj[name].as<bool>();
-        set_power_output((PowerOutput)i, state);
+        all_succeeded &= set_power_output((PowerOutput)i, state);
       }
     }
   }
+  return all_succeeded;
 }
 
 bool get_power_output_state(PowerOutput output) {

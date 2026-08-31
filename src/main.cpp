@@ -138,16 +138,22 @@ void serial_command_task(void *pvParameters) {
             xSemaphoreGive(serial_mutex);
 
           } else if (doc["set"].is<JsonObject>()) {
-            // Apply power settings
-            handle_set_power_command(doc["set"]);
-            // Respond with the updated power status directly to the serial port for performance.
-            // This is safe because get_power_status_json() does not take other mutexes.
-            xSemaphoreTake(serial_mutex, portMAX_DELAY);
-            status_doc.clear();
-            get_power_status_json(status_doc);
-            serializeJson(status_doc, Serial);
-            Serial.println();
-            xSemaphoreGive(serial_mutex);
+            // Apply power settings. If any output was rejected (e.g. disabled in config),
+            // handle_set_power_command() has already sent its own {"error":...} line - sending
+            // the status JSON below too would put a second, unrequested line on the wire that the
+            // Go proxy (which only ever reads one line per command) never reads, silently
+            // desyncing the next command's response instead.
+            if (handle_set_power_command(doc["set"])) {
+              // Respond with the updated power status directly to the serial port for
+              // performance. This is safe because get_power_status_json() does not take other
+              // mutexes.
+              xSemaphoreTake(serial_mutex, portMAX_DELAY);
+              status_doc.clear();
+              get_power_status_json(status_doc);
+              serializeJson(status_doc, Serial);
+              Serial.println();
+              xSemaphoreGive(serial_mutex);
+            }
 
           } else if (doc["get"].is<const char*>() && strcmp(doc["get"], "config") == 0) {
             String output_buffer;
