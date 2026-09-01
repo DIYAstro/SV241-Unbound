@@ -613,6 +613,18 @@ func handleDisconnect() {
 	} else {
 		lastSentStatus = events.Disconnected
 	}
+
+	// Invalidate the cached firmware version on every disconnect - without this, a stale value
+	// lingers across a real firmware flash (ReleasePort -> flash -> Resume): the frontend's
+	// one-shot on-mount update check (UpdateBanner.vue) can win the race against the ~10s
+	// background reconnect+refetch (5s ManageConnection poll + 2s + 3s of sleeps in
+	// FetchFirmwareVersion) and read back the PRE-flash version, wrongly reporting an update is
+	// still available. "unknown" is a value the frontend already treats specially -
+	// UpdateBanner.vue bails out without showing the banner rather than trusting a stale
+	// comparison, and Header.vue's FW badge already defaults to it pre-connection.
+	firmwareVersionMu.Lock()
+	firmwareVersion = "unknown"
+	firmwareVersionMu.Unlock()
 }
 
 // ReleasePort closes the serial port to allow external tools (e.g., web flasher) to access it.
