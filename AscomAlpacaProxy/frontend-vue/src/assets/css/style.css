@@ -996,11 +996,12 @@ button {
     text-align: center;
 }
 
-/* Ensure Dropdowns fit */
+/* Ensure Dropdowns fit "Disabled" (the longest option) without stretching to fill the
+   auto-layout column width. Tighter padding than the default input/select style (0.8rem) since
+   that alone was forcing extra width for no reason on a 3-option control. */
 .startup-state-select {
-    width: 100%;
-    min-width: 140px;
-    /* Prevent being too narrow on mobile */
+    width: 110px;
+    padding: 0.5rem 0.6rem;
 }
 
 /* Responsive adjustments for very small screens */
@@ -1010,7 +1011,7 @@ button {
     }
 
     .startup-state-select {
-        min-width: 110px;
+        width: 95px;
     }
 }
 

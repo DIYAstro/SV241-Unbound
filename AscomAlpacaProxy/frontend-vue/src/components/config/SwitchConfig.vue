@@ -246,7 +246,7 @@ async function save() {
                   <tr v-for="row in displayRows" :key="row.key">
                       <td>{{ row.defaultName }}</td>
                       <td>
-                          <select :value="row.startupState" @change="e => onStateChange(row.key, e.target.value)">
+                          <select class="startup-state-select" :value="row.startupState" @change="e => onStateChange(row.key, e.target.value)">
                               <option value="0">OFF</option>
                               <option value="1">ON</option>
                               <option value="2">Disabled</option>
