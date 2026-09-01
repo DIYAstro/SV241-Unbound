@@ -49,7 +49,9 @@ func Handler(fn http.HandlerFunc) http.HandlerFunc {
 }
 
 // GetFormValueIgnoreCase retrieves the first value for a given key from the request form, case-insensitively.
-// The Alpaca specification requires parameter names to be case-insensitive.
+// The Alpaca spec makes ONLY ClientID/ClientTransactionID case-insensitive - use this exclusively
+// for those two. Every device/property-specific parameter (AveragePeriod, Value, Name, Id,
+// Connected, ...) must be matched exactly instead - see GetFormValueExact below.
 func GetFormValueIgnoreCase(r *http.Request, key string) (string, bool) {
 	for k, values := range r.Form {
 		if strings.EqualFold(k, key) {
@@ -60,6 +62,25 @@ func GetFormValueIgnoreCase(r *http.Request, key string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// GetFormValueExact returns a form parameter by its EXACT (case-sensitive) name, and whether it
+// was present. Per the Alpaca spec, ClientID/ClientTransactionID are the ONLY parameter names that
+// are case-insensitive (GetFormValueIgnoreCase above) - every device/property-specific PUT
+// parameter must be matched exactly. ASCOM Conform Universal's protocol checker sends an
+// inverted-case variant of exactly these parameters and requires a genuine HTTP 400 in response,
+// treating the mismatched name as if the parameter were simply absent - which is what this
+// achieves: a differently-cased key just isn't found in r.Form (a plain map, case-sensitive by
+// construction), so callers see the same "not present" result they already handle.
+func GetFormValueExact(r *http.Request, key string) (string, bool) {
+	values, ok := r.Form[key]
+	if !ok {
+		return "", false
+	}
+	if len(values) > 0 {
+		return values[0], true
+	}
+	return "", true // Key exists but has no value.
 }
 
 // ParseSwitchID extracts and validates the 'Id' parameter from the request.

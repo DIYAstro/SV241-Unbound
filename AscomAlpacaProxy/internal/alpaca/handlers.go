@@ -961,9 +961,13 @@ func (a *API) HandleObsCondNotImplemented(w http.ResponseWriter, r *http.Request
 
 func (a *API) HandleObsCondAveragePeriod(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "PUT" {
-		avgPeriodStr, ok := GetFormValueIgnoreCase(r, "AveragePeriod")
+		// Case-sensitive on purpose (GetFormValueExact, not GetFormValueIgnoreCase) - AveragePeriod
+		// is a device-specific parameter, not one of the two spec-exempted ID parameters, so a
+		// wrongly-cased name (e.g. "averageperiod") must be treated as absent, landing in the
+		// missing-parameter branch below just like it would if truly omitted.
+		avgPeriodStr, ok := GetFormValueExact(r, "AveragePeriod")
 		if !ok {
-			ErrorResponse(w, r, http.StatusOK, 0x400, "Missing required parameter 'AveragePeriod'.")
+			ErrorResponse(w, r, http.StatusBadRequest, 0x400, "Missing required parameter 'AveragePeriod'.")
 			return
 		}
 		avg, err := strconv.ParseFloat(avgPeriodStr, 64)
@@ -1031,11 +1035,18 @@ func (a *API) HandleObsCondSensorDescription(w http.ResponseWriter, r *http.Requ
 	}
 	sensorName, ok := GetFormValueIgnoreCase(r, "SensorName")
 	if !ok {
-		ErrorResponse(w, r, http.StatusOK, 0x400, "Missing required parameter 'SensorName'.")
+		ErrorResponse(w, r, http.StatusBadRequest, 0x400, "Missing required parameter 'SensorName'.")
 		return
 	}
 
 	metric := strings.ToLower(sensorName)
+	// A SensorName outside the fixed ASCOM IObservingConditions property set isn't a recognized
+	// property at all - a malformed parameter (400), not "valid name, just unimplemented" (which is
+	// what a genuinely valid-but-unsupported name like SkyBrightness still correctly gets below).
+	if !validObsCondSensorNames[metric] {
+		ErrorResponse(w, r, http.StatusBadRequest, 0x400, fmt.Sprintf("Invalid value '%s' for SensorName.", sensorName))
+		return
+	}
 	hwKey := metricHardwareKeys[metric]
 
 	if a.isMetricImplemented(metric, hwKey) {
@@ -1074,6 +1085,12 @@ func (a *API) HandleObsCondTimeSinceLastUpdate(w http.ResponseWriter, r *http.Re
 	}
 
 	metric := strings.ToLower(sensorName)
+	// See HandleObsCondSensorDescription's identical check - a name outside the fixed ASCOM
+	// IObservingConditions property set is a malformed parameter (400), not "unimplemented" (0x40C).
+	if !validObsCondSensorNames[metric] {
+		ErrorResponse(w, r, http.StatusBadRequest, 0x400, fmt.Sprintf("Invalid value '%s' for SensorName.", sensorName))
+		return
+	}
 	hwKey := metricHardwareKeys[metric]
 
 	if a.isMetricImplemented(metric, hwKey) {
@@ -1104,6 +1121,29 @@ var metricHardwareKeys = map[string]string{
 	"temperature": "t_amb",
 	"humidity":    "h_amb",
 	"dewpoint":    "d",
+}
+
+// validObsCondSensorNames is the complete, fixed set of ASCOM IObservingConditions property names
+// - the only strings SensorName (HandleObsCondSensorDescription/HandleObsCondTimeSinceLastUpdate)
+// may legitimately hold, whether or not this driver actually implements each one. A name outside
+// this set isn't a recognized ASCOM property at all (a malformed parameter, not merely
+// "unimplemented by this driver") and must fail with a real HTTP 400 - conflating the two was
+// exactly what ASCOM Conform Universal 4.5.0 flagged (a garbage SensorName got 200+0x40C instead
+// of 400).
+var validObsCondSensorNames = map[string]bool{
+	"cloudcover":     true,
+	"dewpoint":       true,
+	"humidity":       true,
+	"pressure":       true,
+	"rainrate":       true,
+	"skybrightness":  true,
+	"skyquality":     true,
+	"skytemperature": true,
+	"starfwhm":       true,
+	"temperature":    true,
+	"winddirection":  true,
+	"windgust":       true,
+	"windspeed":      true,
 }
 
 // internetSupportedMetrics defines which metrics can be sourced from the internet (Open-Meteo).
