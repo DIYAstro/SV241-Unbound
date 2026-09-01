@@ -116,9 +116,9 @@ const availableSensors = computed(() => {
 
 const graphData = ref([])
 
-// Initialize dates to last 24h and setup ResizeObserver
+// Initialize dates to last 4h and setup ResizeObserver
 onMounted(() => {
-    setPreset('24h')
+    setPreset('4h')
     
     // Setup ResizeObserver to handle browser zoom and window resize
     if (chartContainerRef.value) {
@@ -144,6 +144,7 @@ function setPreset(preset) {
     
     switch(preset) {
         case '1h': start.setHours(end.getHours() - 1); break;
+        case '4h': start.setHours(end.getHours() - 4); break;
         case '12h': start.setHours(end.getHours() - 12); break;
         case '24h': start.setHours(end.getHours() - 24); break;
         case '3d': start.setDate(end.getDate() - 3); break;
@@ -347,6 +348,7 @@ const chartOptions = {
                 <label>Time Range</label>
                 <div class="presets">
                     <button @click="setPreset('1h')">1h</button>
+                    <button @click="setPreset('4h')">4h</button>
                     <button @click="setPreset('12h')">12h</button>
                     <button @click="setPreset('24h')">24h</button>
                     <button @click="setPreset('7d')">7d</button>
