@@ -49,29 +49,6 @@ static unsigned long last_ds18b20_update = 0;
 // --- Auto-dry state ---
 static unsigned long high_humidity_start_time = 0; // 0 means timer is not running
 
-// --- Filter buffers and indices ---
-// Arrays are now sized to a fixed maximum. The actual count used is from the config.
-static float ina219_voltage_readings[MAX_SENSOR_AVG_COUNT];
-static int ina219_voltage_index = 0;
-static int ina219_voltage_readings_count = 0;
-
-static float ina219_current_readings[MAX_SENSOR_AVG_COUNT];
-static int ina219_current_index = 0;
-static int ina219_current_readings_count = 0;
-
-static float sht40_temp_readings[MAX_SENSOR_AVG_COUNT];
-static int sht40_temp_index = 0;
-static int sht40_readings_count = 0;
-
-static float sht40_humidity_readings[MAX_SENSOR_AVG_COUNT];
-static int sht40_humidity_index = 0;
-static int sht40_humidity_readings_count = 0;
-
-static float ds18b20_temp_readings[MAX_SENSOR_AVG_COUNT];
-static int ds18b20_temp_index = 0;
-static int ds18b20_readings_count = 0;
-
-
 // Helper function to calculate the median of an array
 static float calculate_median(float arr[], int count) {
   if (count == 0) return 0;
@@ -98,26 +75,58 @@ static float calculate_median(float arr[], int count) {
   }
 }
 
-// See sensors.h for why this exists. Only ever needs to shrink readings_count (raising a count
-// is already handled naturally - update_sensor_cache()'s own `if (readings_count < avg_count)`
-// guard lets it grow back up one real reading at a time).
+// A fixed-capacity ring buffer of raw readings feeding calculate_median() above - encapsulates the
+// "write reading, advance index, grow count up to the configured averaging window, shrink count
+// back down if that window is lowered live" bookkeeping that used to be copy-pasted once per
+// sensor channel (voltage, current, SHT40 temp/humidity, DS18B20 temp). Kept as a plain struct
+// with a fixed-size array member, not a pointer/dynamic allocation, so each instance below is a
+// `static` global exactly like the old per-channel arrays were - same persistent-across-calls,
+// no-heap-allocation, no-VLA semantics (see the "Replace VLA with static array" note on
+// calculate_median above, which this must not reintroduce a variant of).
+struct MedianFilterBuf {
+  float readings[MAX_SENSOR_AVG_COUNT];
+  int index = 0;
+  int count = 0;
+
+  // Feeds one new raw reading in and returns the resulting median. avg_count is the currently
+  // configured averaging window (1..MAX_SENSOR_AVG_COUNT) - callers are only expected to call this
+  // when avg_count > 1 (averaging enabled), matching the guard every call site already had.
+  float add_reading(float value, int avg_count) {
+    readings[index] = value;
+    index = (index + 1) % avg_count;
+    if (count < avg_count) count++;
+    return calculate_median(readings, count);
+  }
+
+  // Shrinks count to at most avg_count - see clamp_averaging_readings_counts()/sensors.h for why
+  // this is needed when a channel's averaging window is lowered live without a reboot.
+  void clamp(int avg_count) {
+    if (count > avg_count) count = avg_count;
+  }
+};
+
+// --- Filter buffers ---
+// One MedianFilterBuf per averaged sensor channel - see the struct's doc comment above.
+static MedianFilterBuf ina219_voltage_filter;
+static MedianFilterBuf ina219_current_filter;
+static MedianFilterBuf sht40_temp_filter;
+static MedianFilterBuf sht40_humidity_filter;
+static MedianFilterBuf ds18b20_temp_filter;
+
+// See sensors.h for why this exists. Only ever needs to shrink each buffer's count (raising a
+// count is already handled naturally - MedianFilterBuf::add_reading()'s own `if (count <
+// avg_count)` guard lets it grow back up one real reading at a time).
 //
 // Does NOT take config_mutex itself - the caller must already hold it (its only caller,
 // updateConfig()'s "ac" block, now requires that of all its own callers too - see updateConfig's
 // doc comment). Taking it here as well would deadlock: FreeRTOS's plain xSemaphoreCreateMutex()
 // mutexes aren't recursive, and updateConfig() is always reached with config_mutex already held.
 void clamp_averaging_readings_counts() {
-  int voltage_avg = config.averaging_counts.ina219_voltage;
-  int current_avg = config.averaging_counts.ina219_current;
-  int sht_temp_avg = config.averaging_counts.sht40_temp;
-  int sht_humidity_avg = config.averaging_counts.sht40_humidity;
-  int ds18b20_avg = config.averaging_counts.ds18b20_temp;
-
-  if (ina219_voltage_readings_count > voltage_avg) ina219_voltage_readings_count = voltage_avg;
-  if (ina219_current_readings_count > current_avg) ina219_current_readings_count = current_avg;
-  if (sht40_readings_count > sht_temp_avg) sht40_readings_count = sht_temp_avg;
-  if (sht40_humidity_readings_count > sht_humidity_avg) sht40_humidity_readings_count = sht_humidity_avg;
-  if (ds18b20_readings_count > ds18b20_avg) ds18b20_readings_count = ds18b20_avg;
+  ina219_voltage_filter.clamp(config.averaging_counts.ina219_voltage);
+  ina219_current_filter.clamp(config.averaging_counts.ina219_current);
+  sht40_temp_filter.clamp(config.averaging_counts.sht40_temp);
+  sht40_humidity_filter.clamp(config.averaging_counts.sht40_humidity);
+  ds18b20_temp_filter.clamp(config.averaging_counts.ds18b20_temp);
 }
 
 void setup_sensors() {
@@ -208,19 +217,13 @@ void update_sensor_cache() {
     // Averaging for Voltage
     int avg_count_v = avg_counts.ina219_voltage;
     if (avg_count_v > 1 && avg_count_v <= MAX_SENSOR_AVG_COUNT) {
-        ina219_voltage_readings[ina219_voltage_index] = raw_bus_voltage;
-        ina219_voltage_index = (ina219_voltage_index + 1) % avg_count_v;
-        if (ina219_voltage_readings_count < avg_count_v) { ina219_voltage_readings_count++; }
-        final_bus_voltage = calculate_median(ina219_voltage_readings, ina219_voltage_readings_count);
+        final_bus_voltage = ina219_voltage_filter.add_reading(raw_bus_voltage, avg_count_v);
     }
 
     // Averaging for Current
     int avg_count_c = avg_counts.ina219_current;
     if (avg_count_c > 1 && avg_count_c <= MAX_SENSOR_AVG_COUNT) {
-        ina219_current_readings[ina219_current_index] = raw_current_mA;
-        ina219_current_index = (ina219_current_index + 1) % avg_count_c;
-        if (ina219_current_readings_count < avg_count_c) { ina219_current_readings_count++; }
-        final_current_mA = calculate_median(ina219_current_readings, ina219_current_readings_count);
+        final_current_mA = ina219_current_filter.add_reading(raw_current_mA, avg_count_c);
     }
 
     if(xSemaphoreTake(sensor_cache_mutex, (TickType_t)10) == pdTRUE) {
@@ -252,19 +255,13 @@ void update_sensor_cache() {
       // Averaging for Temperature
       int avg_count_t = avg_counts.sht40_temp;
       if (avg_count_t > 1 && avg_count_t <= MAX_SENSOR_AVG_COUNT) {
-          sht40_temp_readings[sht40_temp_index] = temp.temperature;
-          sht40_temp_index = (sht40_temp_index + 1) % avg_count_t;
-          if (sht40_readings_count < avg_count_t) { sht40_readings_count++; }
-          final_sht40_temp = calculate_median(sht40_temp_readings, sht40_readings_count);
+          final_sht40_temp = sht40_temp_filter.add_reading(temp.temperature, avg_count_t);
       }
 
       // Averaging for Humidity
       int avg_count_h = avg_counts.sht40_humidity;
       if (avg_count_h > 1 && avg_count_h <= MAX_SENSOR_AVG_COUNT) {
-          sht40_humidity_readings[sht40_humidity_index] = humidity.relative_humidity;
-          sht40_humidity_index = (sht40_humidity_index + 1) % avg_count_h;
-          if (sht40_humidity_readings_count < avg_count_h) { sht40_humidity_readings_count++; }
-          final_sht40_humidity = calculate_median(sht40_humidity_readings, sht40_humidity_readings_count);
+          final_sht40_humidity = sht40_humidity_filter.add_reading(humidity.relative_humidity, avg_count_h);
       }
 
       // --- Auto-Dry Logic ---
@@ -323,10 +320,7 @@ void update_sensor_cache() {
       // Averaging for Temperature
       int avg_count_t = avg_counts.ds18b20_temp;
       if (avg_count_t > 1 && avg_count_t <= MAX_SENSOR_AVG_COUNT) {
-          ds18b20_temp_readings[ds18b20_temp_index] = tempC;
-          ds18b20_temp_index = (ds18b20_temp_index + 1) % avg_count_t;
-          if (ds18b20_readings_count < avg_count_t) { ds18b20_readings_count++; }
-          final_ds18b20_temp = calculate_median(ds18b20_temp_readings, ds18b20_readings_count);
+          final_ds18b20_temp = ds18b20_temp_filter.add_reading(tempC, avg_count_t);
       }
 
       if(xSemaphoreTake(sensor_cache_mutex, (TickType_t)10) == pdTRUE) {
