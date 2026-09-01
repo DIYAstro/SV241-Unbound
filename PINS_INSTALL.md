@@ -13,6 +13,21 @@
 Nine steps, all from a terminal: log into the Raspberry Pi running PINS over SSH, then let one
 command download, install, and start the proxy as a background service.
 
+## Contents
+
+- [1. Find the Pi's address](#1-find-the-pis-address)
+- [2. Connect over SSH](#2-connect-over-ssh)
+- [3. Run the installer](#3-run-the-installer)
+- [4. What the installer does](#4-what-the-installer-does)
+- [5. Confirm it's running](#5-confirm-its-running)
+- [6. Connect from PINS](#6-connect-from-pins)
+- [7. Everyday commands](#7-everyday-commands)
+- [8. Updating the Proxy](#8-updating-the-proxy)
+- [9. Updating the firmware](#9-updating-the-firmware)
+- [Manually setting the serial port (advanced)](#manually-setting-the-serial-port-advanced)
+- [Installing a beta build](#installing-a-beta-build)
+- [Uninstalling](#uninstalling)
+
 ## 1. Find the Pi's address
 
 You need either its IP address or its network name. PINS images typically set the hostname to
