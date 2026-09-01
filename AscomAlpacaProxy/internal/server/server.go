@@ -37,20 +37,17 @@ func Start(frontendFS fs.FS, appVersion string) {
 	// Initialize CSV Telemetry Logger
 	telemetry.Init()
 
-	// Global HTTP handler with route normalization and logging
+	// Global HTTP handler with request logging. Deliberately does NOT lowercase r.URL.Path before
+	// dispatch (a prior version did, "for case-insensitive routing") - that made a capitalized
+	// device-type segment (e.g. /api/v1/SWITCH/0/description) match the lowercase-registered route
+	// and return 200, which ASCOM Conform Universal 4.5.0 flags as a spec violation (non-lowercase
+	// device-type URLs must get a 4xx, not succeed). The only case-insensitivity Alpaca actually
+	// needs - the method-name segment (e.g. Description vs description) - is already handled
+	// independently by deviceMux's own strings.ToLower(path[lastSlash+1:]) below, so removing this
+	// doesn't lose any real leniency: a capitalized device type now falls through to the catch-all
+	// "/" handler's static-file-not-found 404, which Conform accepts.
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Log incoming requests at Debug level
 		logger.Debug("Global HTTP: %s %s (from %s)", r.Method, r.URL.Path, r.RemoteAddr)
-
-		// Normalize Alpaca/Management paths to lowercase for case-insensitive routing
-		lowered := strings.ToLower(r.URL.Path)
-		if strings.HasPrefix(lowered, "/api/v1/") ||
-			strings.HasPrefix(lowered, "/management/v1/") ||
-			strings.HasPrefix(lowered, "/setup/v1/") ||
-			strings.HasPrefix(lowered, "/management/apiversions") {
-
-			r.URL.Path = lowered
-		}
 		http.DefaultServeMux.ServeHTTP(w, r)
 	})
 
