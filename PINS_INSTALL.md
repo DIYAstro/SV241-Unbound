@@ -25,7 +25,7 @@ command download, install, and start the proxy as a background service.
 - [8. Updating the Proxy](#8-updating-the-proxy)
 - [9. Updating the firmware](#9-updating-the-firmware)
 - [Manually setting the serial port (advanced)](#manually-setting-the-serial-port-advanced)
-- [Installing a beta build](#installing-a-beta-build)
+- [Installing a daily build](#installing-a-daily-build)
 - [Uninstalling](#uninstalling)
 
 ## 1. Find the Pi's address
@@ -214,18 +214,21 @@ Got the format wrong, or the SV241 later moves to a different USB port? Nothing 
 unrecognized or non-matching value is simply treated the same as no preference at all, and the
 Proxy falls back to its normal auto-detection.
 
-## Installing a beta build
+## Installing a daily build
 
-If a maintainer has asked you to test a pre-release, set `SV241_RELEASE_TAG` when installing
-instead of using step 3's plain command:
+Rebuilt automatically whenever `AscomAlpacaProxy/` or `src/` changes (at most once a day),
+published as a single rolling
+[`daily` prerelease](https://github.com/DIYAstro/SV241-Unbound/releases/tag/daily) - always
+whatever's newest. Unreviewed and can be broken at any given moment; for testing only, not for
+anything you depend on. Set `SV241_RELEASE_TAG` when installing instead of using step 3's plain
+command:
 
 ```bash
-curl -sSL https://github.com/DIYAstro/SV241-Unbound/releases/latest/download/install_linux.sh | sudo SV241_RELEASE_TAG=v0.9.21-beta.1 bash
+curl -sSL https://github.com/DIYAstro/SV241-Unbound/releases/latest/download/install_linux.sh | sudo SV241_RELEASE_TAG=daily bash
 ```
 
-(Replace `v0.9.21-beta.1` with whatever tag you were given. Note the env var comes right after
-`sudo`, not before the whole command - `sudo` doesn't pass through your shell's environment
-variables otherwise.)
+(Note the env var comes right after `sudo`, not before the whole command - `sudo` doesn't pass
+through your shell's environment variables otherwise.)
 
 ## Uninstalling
 
