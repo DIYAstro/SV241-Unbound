@@ -26,7 +26,7 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Patches src/config_manager.h's FIRMWARE_VERSION from release_version.json - the same
       # single source of truth every other build path (build_exe.bat, build_linux.sh/.ps1) reads.

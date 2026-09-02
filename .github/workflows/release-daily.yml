@@ -44,7 +44,7 @@ jobs:
       changed: ${{ steps.diff.outputs.changed }}
       prev_sha: ${{ steps.prev.outputs.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -83,7 +83,7 @@ jobs:
     if: needs.check.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
