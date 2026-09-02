@@ -89,4 +89,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $installer = Get-ChildItem "AscomAlpacaProxy\build\SV241-AscomAlpacaProxy-Setup-*.exe" | Select-Object -First 1
+
+          # The installer's filename embeds its own version (installer.iss's OutputBaseFilename),
+          # so on a rolling tag (the daily prerelease) --clobber below can never match yesterday's
+          # differently-named installer - it just adds a new asset, leaving every previous day's
+          # installer to pile up on the release forever. Delete any other installer asset already
+          # on this release before uploading the new one. A no-op for a normal one-off stable
+          # release, which never has a stale installer here to begin with.
+          $staleInstallers = gh release view "${{ steps.tag.outputs.tag }}" --json assets -q '.assets[].name' |
+            Where-Object { $_ -like "SV241-AscomAlpacaProxy-Setup-*.exe" -and $_ -ne $installer.Name }
+          foreach ($stale in $staleInstallers) {
+            Write-Host "Removing stale installer asset: $stale"
+            gh release delete-asset "${{ steps.tag.outputs.tag }}" $stale --yes
+          }
+
           gh release upload "${{ steps.tag.outputs.tag }}" $installer.FullName --clobber
