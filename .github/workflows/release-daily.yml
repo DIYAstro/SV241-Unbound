@@ -153,10 +153,15 @@ jobs:
           git add AscomAlpacaProxy/build_scripts/release_version.json AscomAlpacaProxy/versioninfo.json src/config_manager.h
           git commit -m "Daily build ${{ steps.ver.outputs.proxy_version }}"
 
-      - name: Generate release notes from what changed since the last daily build
+      # Against the last *stable* tag, not the last daily build - with dailies firing at most
+      # once a day, "since the last daily" is often just one commit and tells a tester nothing
+      # about what they're actually getting relative to the release everyone else is running.
+      # --exclude=daily keeps the rolling daily tag itself from matching.
+      - name: Generate release notes from what changed since the last stable release
         run: |
-          if [ -n "${{ needs.check.outputs.prev_sha }}" ]; then
-            git log ${{ needs.check.outputs.prev_sha }}..HEAD~1 --oneline > release-notes.txt
+          LAST_STABLE=$(git describe --tags --abbrev=0 --exclude=daily HEAD~1 2>/dev/null || true)
+          if [ -n "$LAST_STABLE" ]; then
+            git log "$LAST_STABLE"..HEAD~1 --oneline > release-notes.txt
           else
             echo "First daily build." > release-notes.txt
           fi
