@@ -87,15 +87,21 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Hash of the last commit that actually touched each component's own path, not today's
+      # date/HEAD - keeps the version STABLE across daily runs that didn't change that
+      # component (e.g. a proxy-only day leaves fw_version untouched). This matters concretely
+      # for firmware: UpdateBanner.vue does a strict string comparison between what's flashed on
+      # the ESP32 and what's bundled in the running proxy, so a version that changed every day
+      # regardless of actual content would nag users to reflash identical firmware.
       - name: Compute this build's daily version
         id: ver
         run: |
           PROXY_BASE=$(jq -r '.proxyVersion' AscomAlpacaProxy/build_scripts/release_version.json)
           FW_BASE=$(jq -r '.firmwareVersion' AscomAlpacaProxy/build_scripts/release_version.json)
-          DATE=$(date -u +%Y%m%d)
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          echo "proxy_version=${PROXY_BASE}-daily.${DATE}+${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-          echo "fw_version=${FW_BASE}-daily.${DATE}+${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          PROXY_HASH=$(git log -1 --format=%h -- AscomAlpacaProxy)
+          FW_HASH=$(git log -1 --format=%h -- src)
+          echo "proxy_version=${PROXY_BASE}-daily.${PROXY_HASH}" >> "$GITHUB_OUTPUT"
+          echo "fw_version=${FW_BASE}-daily.${FW_HASH}" >> "$GITHUB_OUTPUT"
 
       # Only ever committed locally in this runner's checkout, never pushed to main - the
       # "daily" tag (moved below) is the only thing that will ever reference this commit. Once
