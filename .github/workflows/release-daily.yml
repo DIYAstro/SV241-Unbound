@@ -4,9 +4,11 @@ name: Daily Prerelease Build
 # changed since the last daily build - otherwise it's a no-op (no wasted CI minutes, no empty
 # releases). When it does build, it publishes to a single rolling "daily" tag/release (always the
 # same tag, force-moved each day) rather than a fresh dated tag - no separate pruning needed, and
-# testers get one stable link that's always "whatever's newest". The build itself carries a
-# `-daily.<date>+<short-sha>` version suffix so a running instance can still be identified even
-# though the tag name alone doesn't change day to day.
+# testers get one stable link that's always "whatever's newest". Proxy and firmware each carry a
+# `-daily.<short-sha-of-last-touching-commit>` version suffix so a running instance can still be
+# identified even though the tag name alone doesn't change day to day - and, crucially, so the
+# suffix stays IDENTICAL across days where that particular component didn't actually change (see
+# the "Compute this build's daily version" step below for why that matters).
 #
 # Deliberately mirrors the manual beta-release process documented in
 # AscomAlpacaProxy/build_scripts/readme.md ("Cutting a beta / pre-release"), just automated:
@@ -14,6 +16,11 @@ name: Daily Prerelease Build
 # release-windows.yml -> release-linux.yml against it. Like that manual process,
 # release-webflasher.yml is intentionally NEVER called here - it deploys the single, public,
 # always-live GitHub Pages site, which must stay on stable firmware only.
+#
+# release-firmware.yml specifically only runs when src/ changed (it's the slowest job here by
+# far) - release-windows.yml/release-linux.yml still run on any change, since a firmware-only day
+# still needs a fresh proxy build to bundle the new firmware.zip. See the check job's two
+# independent change flags and the firmware/windows job `if:` conditions below.
 on:
   schedule:
     - cron: "17 2 * * *" # daily at 02:17 UTC - off the hour, and off cleanup-old-runs.yml's
@@ -33,7 +40,7 @@ concurrency:
 
 # Same union-of-needs reasoning as release-all.yml: a reusable workflow can never be granted more
 # than its caller has. Only contents: write is needed here (for the tag push + gh release
-# create/delete/upload) - no pages/id-token, since release-webflasher.yml is never called.
+# create/edit/upload) - no pages/id-token, since release-webflasher.yml is never called.
 permissions:
   contents: write
 
@@ -42,6 +49,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       changed: ${{ steps.diff.outputs.changed }}
+      firmware_changed: ${{ steps.diff.outputs.firmware_changed }}
+      proxy_changed: ${{ steps.diff.outputs.proxy_changed }}
       prev_sha: ${{ steps.prev.outputs.sha }}
     steps:
       - uses: actions/checkout@v5
@@ -66,21 +75,37 @@ jobs:
           echo "Previous daily commit: ${SHA:-<none, first run>}"
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
+      # firmware_changed and proxy_changed are tracked independently so the firmware job (by far
+      # the slowest part of this pipeline) can be skipped on days where only AscomAlpacaProxy/
+      # changed - see the firmware/windows/linux jobs' `if:` below. windows/linux still run on
+      # *either* flag: a firmware-only change still needs a fresh proxy build to bundle the new
+      # firmware.zip for the flasher/UpdateBanner to pick up.
       - name: Check for relevant changes since the last daily build
         id: diff
         run: |
           if [ "${{ inputs.force }}" = "true" ]; then
-            echo "force=true, building regardless of changes"
-            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "force=true, building everything regardless of changes"
+            FW_CHANGED=true
+            PROXY_CHANGED=true
           elif [ -z "${{ steps.prev.outputs.sha }}" ]; then
-            echo "No previous daily build found (first run) - building"
+            echo "No previous daily build found (first run) - building everything"
+            FW_CHANGED=true
+            PROXY_CHANGED=true
+          else
+            FW_CHANGED=false
+            PROXY_CHANGED=false
+            git diff --quiet ${{ steps.prev.outputs.sha }}..HEAD -- src || FW_CHANGED=true
+            git diff --quiet ${{ steps.prev.outputs.sha }}..HEAD -- AscomAlpacaProxy || PROXY_CHANGED=true
+          fi
+
+          echo "firmware_changed=$FW_CHANGED" >> "$GITHUB_OUTPUT"
+          echo "proxy_changed=$PROXY_CHANGED" >> "$GITHUB_OUTPUT"
+          if [ "$FW_CHANGED" = "true" ] || [ "$PROXY_CHANGED" = "true" ]; then
+            echo "Building (firmware_changed=$FW_CHANGED, proxy_changed=$PROXY_CHANGED)"
             echo "changed=true" >> "$GITHUB_OUTPUT"
-          elif git diff --quiet ${{ steps.prev.outputs.sha }}..HEAD -- AscomAlpacaProxy src; then
+          else
             echo "No changes under AscomAlpacaProxy/ or src/ since the last daily build - skipping"
             echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "Changes found since the last daily build - building"
-            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
   publish:
@@ -137,27 +162,48 @@ jobs:
           fi
           cat release-notes.txt
 
-      - name: Move the rolling 'daily' tag and (re)publish the prerelease
+      # Moves the tag only - never deletes+recreates the release. A release's "target commit" is
+      # whatever its tag currently resolves to, so force-moving the tag is enough; deleting it
+      # first would also wipe any assets (firmware.zip in particular) that a skipped firmware job
+      # this run is relying on still being there from a previous one.
+      - name: Move the rolling 'daily' tag and update the prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete daily --yes --cleanup-tag || true
           git tag -f daily
           git push origin daily --force
-          gh release create daily \
-            --prerelease \
-            --title "Daily build $(date -u +%Y-%m-%d)" \
-            --notes-file release-notes.txt
+          if gh release view daily >/dev/null 2>&1; then
+            gh release edit daily \
+              --title "Daily build $(date -u +%Y-%m-%d)" \
+              --notes-file release-notes.txt
+          else
+            gh release create daily \
+              --prerelease \
+              --title "Daily build $(date -u +%Y-%m-%d)" \
+              --notes-file release-notes.txt
+          fi
 
+  # Only runs when src/ actually changed - by far the slowest job in this pipeline, no reason to
+  # pay for it on a proxy-only day. Its firmware.zip stays on the release from whenever it last
+  # legitimately ran (uploaded with --clobber, never deleted - see the publish job above).
   firmware:
-    needs: publish
+    needs: [check, publish]
+    if: needs.check.outputs.firmware_changed == 'true'
     uses: ./.github/workflows/release-firmware.yml
     with:
       release_tag: daily
     secrets: inherit
 
+  # Runs whenever publish ran at all (i.e. firmware_changed OR proxy_changed - proxy still needs
+  # rebuilding on a firmware-only day, to bundle the fresh firmware.zip for the flasher). `always()`
+  # is needed here because `firmware` being skipped would otherwise auto-skip this job too -
+  # skipped is a normal, expected outcome for firmware, not a reason to stop the chain.
   windows:
-    needs: firmware
+    needs: [publish, firmware]
+    if: |
+      always() &&
+      needs.publish.result == 'success' &&
+      needs.firmware.result != 'failure'
     uses: ./.github/workflows/release-windows.yml
     with:
       release_tag: daily
@@ -165,6 +211,7 @@ jobs:
 
   linux:
     needs: windows
+    if: always() && needs.windows.result == 'success'
     uses: ./.github/workflows/release-linux.yml
     with:
       release_tag: daily
