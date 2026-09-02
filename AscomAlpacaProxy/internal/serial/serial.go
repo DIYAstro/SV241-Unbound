@@ -697,7 +697,8 @@ func updateStatusCacheFromJSON(statusJSON string) {
 	// Unmarshal into generic map because we have mixed types ("status" object, "dm" array)
 	if json.Unmarshal([]byte(statusJSON), &rootData) == nil {
 		// Extract "status" block
-		if statusMap, ok := rootData["status"].(map[string]interface{}); ok {
+		statusRaw, present := rootData["status"]
+		if statusMap, ok := statusRaw.(map[string]interface{}); ok {
 			Status.Lock()
 			defer Status.Unlock()
 
@@ -725,6 +726,15 @@ func updateStatusCacheFromJSON(statusJSON string) {
 					VoltageMutex.Unlock()
 				}
 			}
+		} else if _, isString := statusRaw.(string); isString {
+			// Some device commands (dry_sensor/reboot/factory_reset) send a one-line plain-text
+			// acknowledgment that happens to reuse the "status" key for a string, not an object,
+			// e.g. {"status":"starting SHT40 drying cycle"}. The opportunistic sniff in
+			// ProcessCommands matches on the raw substring `"status":` regardless of which command
+			// produced the line, so this is an expected, non-error shape - nothing to cache here.
+			logger.Debug("Received device ack (not a status object): %s", statusJSON)
+		} else if present {
+			logger.Warn("Status JSON 'status' field has unexpected type: %T", statusRaw)
 		} else {
 			logger.Warn("Status JSON missing 'status' object")
 		}

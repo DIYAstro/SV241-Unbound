@@ -189,7 +189,7 @@ func TestConfig_ResetCommands(t *testing.T) {
 		resp := mustSendCommand(t, conn, `{"command":"factory_reset"}`, 3*time.Second)
 		var ack map[string]interface{}
 		require.NoError(t, json.Unmarshal([]byte(resp), &ack))
-		assert.Contains(t, fmt.Sprint(ack["status"]), "factory reset")
+		assert.Contains(t, fmt.Sprint(ack["info"]), "factory reset")
 		conn.Close() // release the port - a restart is already in flight
 
 		time.Sleep(3 * time.Second) // ESP.restart() (100ms delay) + boot time
@@ -214,7 +214,7 @@ func TestConfig_ResetCommands(t *testing.T) {
 		resp := mustSendCommand(t, conn, `{"command":"reboot"}`, 3*time.Second)
 		var ack map[string]interface{}
 		require.NoError(t, json.Unmarshal([]byte(resp), &ack))
-		assert.Contains(t, fmt.Sprint(ack["status"]), "rebooting")
+		assert.Contains(t, fmt.Sprint(ack["info"]), "rebooting")
 		conn.Close()
 
 		time.Sleep(3 * time.Second)

@@ -239,7 +239,7 @@ void update_sensor_cache() {
       if (millis() - sht40_drying_start_time >= SHT40_DRYING_COOLDOWN_MS) {
           is_sht40_drying = false;
            if(xSemaphoreTake(serial_mutex, (TickType_t)10) == pdTRUE) {
-                Serial.println("{\"status\":\"SHT40 drying cycle complete\"}");
+                Serial.println("{\"info\":\"SHT40 drying cycle complete\"}");
                 xSemaphoreGive(serial_mutex);
             }
       }
@@ -346,7 +346,7 @@ void dry_sht40_sensor() {
 
     // Optional: Log to serial that the process has started.
     if(xSemaphoreTake(serial_mutex, (TickType_t)10) == pdTRUE) {
-        Serial.println("{\"status\":\"starting SHT40 drying cycle\"}");
+        Serial.println("{\"info\":\"starting SHT40 drying cycle\"}");
         xSemaphoreGive(serial_mutex);
     }
 

@@ -103,13 +103,13 @@ void serial_command_task(void *pvParameters) {
         if (!error) {
           if (doc["command"].is<const char*>() && strcmp(doc["command"], "reboot") == 0) {
             xSemaphoreTake(serial_mutex, portMAX_DELAY);
-            Serial.println("{\"status\":\"rebooting\"}");
+            Serial.println("{\"info\":\"rebooting\"}");
             xSemaphoreGive(serial_mutex);
             delay(100);
             ESP.restart();
           } else if (doc["command"].is<const char*>() && strcmp(doc["command"], "factory_reset") == 0) {
             xSemaphoreTake(serial_mutex, portMAX_DELAY);
-            Serial.println("{\"status\":\"performing factory reset\"}");
+            Serial.println("{\"info\":\"performing factory reset\"}");
             xSemaphoreGive(serial_mutex);
             xSemaphoreTake(config_mutex, portMAX_DELAY);
             createDefaultConfig(); // This function is in config_manager.cpp
