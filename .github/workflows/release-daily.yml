@@ -49,12 +49,17 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      # Resolves to the tag commit's *parent*, not the tag commit itself: the tag always points
+      # at a synthetic version-bump commit (release_version.json etc. patched to that day's
+      # version), which never matches HEAD's clean values in those same files even when nothing
+      # real changed - diffing against it would make the change-check below fire every single
+      # day. The parent is the actual last real main commit that bump was built from.
       - name: Resolve the previous daily build's commit
         id: prev
         run: |
           git fetch origin --tags --force
           if git rev-parse -q --verify refs/tags/daily^{commit} > /dev/null; then
-            SHA=$(git rev-parse refs/tags/daily^{commit})
+            SHA=$(git rev-parse refs/tags/daily^{commit}^1)
           else
             SHA=""
           fi
