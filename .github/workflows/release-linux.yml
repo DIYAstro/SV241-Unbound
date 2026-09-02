@@ -33,13 +33,24 @@ jobs:
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     steps:
+      # ref explicit: without it, checkout defaults to whatever commit triggered *this* run,
+      # which is wrong when called as a reusable workflow with a release_tag pointing elsewhere
+      # (e.g. release-daily.yml's rolling 'daily' tag) - it would silently build the wrong
+      # source. Empty release_tag behaves exactly like omitting ref: (falls back to the trigger
+      # commit), so this is a no-op for the existing "blank = latest" manual-dispatch case.
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.release_tag }}
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: AscomAlpacaProxy/go.mod
+          # go.mod's directory isn't the repo root, so setup-go's default go.sum discovery
+          # doesn't reliably find it (surfaced as a "Restore cache failed: ... go.sum" warning) -
+          # point it at the actual file explicitly.
+          cache-dependency-path: AscomAlpacaProxy/go.sum
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7.0.0
         with:
           node-version: "22"
 
@@ -79,7 +90,7 @@ jobs:
         # this works regardless of it.
         run: bash AscomAlpacaProxy/build_scripts/build_linux.sh
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.1
         with:
           name: binary-${{ matrix.arch }}
           path: AscomAlpacaProxy/build/AscomAlpacaProxy-linux-${{ matrix.arch }}
@@ -88,9 +99,13 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      # Same ref: reasoning as the build job above - needed so the install_linux.sh sanity-check
+      # and upload below operate on the tagged commit, not whatever triggered this run.
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.release_tag }}
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8.0.1
         with:
           pattern: binary-*
           merge-multiple: true

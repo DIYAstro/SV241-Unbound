@@ -26,7 +26,14 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     steps:
+      # ref explicit: without it, checkout defaults to whatever commit triggered *this* run,
+      # which is wrong when called as a reusable workflow with a release_tag pointing elsewhere
+      # (e.g. release-daily.yml's rolling 'daily' tag) - it would silently build the wrong
+      # source. Empty release_tag behaves exactly like omitting ref: (falls back to the trigger
+      # commit), so this is a no-op for the existing "blank = latest" manual-dispatch case.
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.release_tag }}
 
       # Patches src/config_manager.h's FIRMWARE_VERSION from release_version.json - the same
       # single source of truth every other build path (build_exe.bat, build_linux.sh/.ps1) reads.
