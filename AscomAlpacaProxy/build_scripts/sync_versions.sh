@@ -41,7 +41,13 @@ fi
 # always hold the same value - and the FileVersion/ProductVersion patterns only match the
 # *string* form (StringFileInfo's, quote right after the colon), not the object form
 # (FixedFileInfo's, which starts with "{").
-IFS='.' read -r MAJOR MINOR PATCH BUILD <<< "$PROXY_VER"
+#
+# FixedFileInfo's four fields are plain integers (PE resource format), so a prerelease suffix
+# like "-daily.20260903+a1b2c3d" (proxyVersion can carry one, e.g. for daily builds) has to be
+# stripped before splitting on '.' - only the numeric core goes into Major/Minor/Patch/Build.
+# The *string* fields below (FileVersion/ProductVersion) keep the full $PROXY_VER, suffix and all.
+PROXY_VER_CORE="${PROXY_VER%%-*}"
+IFS='.' read -r MAJOR MINOR PATCH BUILD <<< "$PROXY_VER_CORE"
 MAJOR=${MAJOR:-0}
 MINOR=${MINOR:-0}
 PATCH=${PATCH:-0}

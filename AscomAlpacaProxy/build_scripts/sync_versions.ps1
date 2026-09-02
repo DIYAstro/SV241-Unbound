@@ -37,7 +37,13 @@ if ([string]::IsNullOrWhiteSpace($proxyVer) -or [string]::IsNullOrWhiteSpace($fw
 # version objects, both of which should always hold the same value - and the FileVersion/
 # ProductVersion regexes only match the *string* form (StringFileInfo's), not the object form
 # (FixedFileInfo's), because they require a quote immediately after the colon.
-$parts = $proxyVer.Split('.')
+#
+# FixedFileInfo's four fields are plain integers (PE resource format), so a prerelease suffix
+# like "-daily.20260903+a1b2c3d" (proxyVersion can carry one, e.g. for daily builds) has to be
+# stripped before splitting on '.' - only the numeric core goes into Major/Minor/Patch/Build.
+# The *string* fields below (FileVersion/ProductVersion) keep the full $proxyVer, suffix and all.
+$core = $proxyVer.Split('-')[0]
+$parts = $core.Split('.')
 $major = [int]$parts[0]
 $minor = [int]$parts[1]
 $patch = if ($parts.Length -ge 3) { [int]$parts[2] } else { 0 }

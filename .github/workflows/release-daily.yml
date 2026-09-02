@@ -1,0 +1,160 @@
+name: Daily Prerelease Build
+
+# Runs every night, but only actually builds/publishes something if AscomAlpacaProxy/ or src/
+# changed since the last daily build - otherwise it's a no-op (no wasted CI minutes, no empty
+# releases). When it does build, it publishes to a single rolling "daily" tag/release (always the
+# same tag, force-moved each day) rather than a fresh dated tag - no separate pruning needed, and
+# testers get one stable link that's always "whatever's newest". The build itself carries a
+# `-daily.<date>+<short-sha>` version suffix so a running instance can still be identified even
+# though the tag name alone doesn't change day to day.
+#
+# Deliberately mirrors the manual beta-release process documented in
+# AscomAlpacaProxy/build_scripts/readme.md ("Cutting a beta / pre-release"), just automated:
+# bump release_version.json, create a *pre-release* tag, then run release-firmware.yml ->
+# release-windows.yml -> release-linux.yml against it. Like that manual process,
+# release-webflasher.yml is intentionally NEVER called here - it deploys the single, public,
+# always-live GitHub Pages site, which must stay on stable firmware only.
+on:
+  schedule:
+    - cron: "17 2 * * *" # daily at 02:17 UTC - off the hour, and off cleanup-old-runs.yml's
+                          # Sunday 03:00 UTC slot, just to avoid piling multiple scheduled runs
+                          # into the same minute.
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Build even if nothing changed since the last daily build"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: daily-release
+  cancel-in-progress: true
+
+# Same union-of-needs reasoning as release-all.yml: a reusable workflow can never be granted more
+# than its caller has. Only contents: write is needed here (for the tag push + gh release
+# create/delete/upload) - no pages/id-token, since release-webflasher.yml is never called.
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+      prev_sha: ${{ steps.prev.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Resolve the previous daily build's commit
+        id: prev
+        run: |
+          git fetch origin --tags --force
+          if git rev-parse -q --verify refs/tags/daily^{commit} > /dev/null; then
+            SHA=$(git rev-parse refs/tags/daily^{commit})
+          else
+            SHA=""
+          fi
+          echo "Previous daily commit: ${SHA:-<none, first run>}"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Check for relevant changes since the last daily build
+        id: diff
+        run: |
+          if [ "${{ inputs.force }}" = "true" ]; then
+            echo "force=true, building regardless of changes"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          elif [ -z "${{ steps.prev.outputs.sha }}" ]; then
+            echo "No previous daily build found (first run) - building"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          elif git diff --quiet ${{ steps.prev.outputs.sha }}..HEAD -- AscomAlpacaProxy src; then
+            echo "No changes under AscomAlpacaProxy/ or src/ since the last daily build - skipping"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Changes found since the last daily build - building"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  publish:
+    needs: check
+    if: needs.check.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute this build's daily version
+        id: ver
+        run: |
+          PROXY_BASE=$(jq -r '.proxyVersion' AscomAlpacaProxy/build_scripts/release_version.json)
+          FW_BASE=$(jq -r '.firmwareVersion' AscomAlpacaProxy/build_scripts/release_version.json)
+          DATE=$(date -u +%Y%m%d)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          echo "proxy_version=${PROXY_BASE}-daily.${DATE}+${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "fw_version=${FW_BASE}-daily.${DATE}+${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      # Only ever committed locally in this runner's checkout, never pushed to main - the
+      # "daily" tag (moved below) is the only thing that will ever reference this commit. Once
+      # tomorrow's run force-moves the tag past it, it becomes unreachable and Git's normal
+      # garbage collection cleans it up on its own - the usual pattern for a rolling nightly tag.
+      - name: Bump release_version.json and sync it into versioninfo.json / config_manager.h
+        run: |
+          jq -n \
+            --arg pv "${{ steps.ver.outputs.proxy_version }}" \
+            --arg fv "${{ steps.ver.outputs.fw_version }}" \
+            '{proxyVersion: $pv, firmwareVersion: $fv}' \
+            > AscomAlpacaProxy/build_scripts/release_version.json
+          bash AscomAlpacaProxy/build_scripts/sync_versions.sh "$(pwd)" "$(pwd)/AscomAlpacaProxy"
+
+      - name: Commit the version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add AscomAlpacaProxy/build_scripts/release_version.json AscomAlpacaProxy/versioninfo.json src/config_manager.h
+          git commit -m "Daily build ${{ steps.ver.outputs.proxy_version }}"
+
+      - name: Generate release notes from what changed since the last daily build
+        run: |
+          if [ -n "${{ needs.check.outputs.prev_sha }}" ]; then
+            git log ${{ needs.check.outputs.prev_sha }}..HEAD~1 --oneline > release-notes.txt
+          else
+            echo "First daily build." > release-notes.txt
+          fi
+          cat release-notes.txt
+
+      - name: Move the rolling 'daily' tag and (re)publish the prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete daily --yes --cleanup-tag || true
+          git tag -f daily
+          git push origin daily --force
+          gh release create daily \
+            --prerelease \
+            --title "Daily build $(date -u +%Y-%m-%d)" \
+            --notes-file release-notes.txt
+
+  firmware:
+    needs: publish
+    uses: ./.github/workflows/release-firmware.yml
+    with:
+      release_tag: daily
+    secrets: inherit
+
+  windows:
+    needs: firmware
+    uses: ./.github/workflows/release-windows.yml
+    with:
+      release_tag: daily
+    secrets: inherit
+
+  linux:
+    needs: windows
+    uses: ./.github/workflows/release-linux.yml
+    with:
+      release_tag: daily
+    secrets: inherit
