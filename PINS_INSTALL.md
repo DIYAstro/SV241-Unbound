@@ -224,7 +224,7 @@ anything you depend on. Set `SV241_RELEASE_TAG` when installing instead of using
 command:
 
 ```bash
-curl -sSL https://github.com/DIYAstro/SV241-Unbound/releases/latest/download/install_linux.sh | sudo SV241_RELEASE_TAG=daily bash
+curl -sSL https://github.com/DIYAstro/SV241-Unbound/releases/download/daily/install_linux.sh | sudo SV241_RELEASE_TAG=daily bash
 ```
 
 (Note the env var comes right after `sudo`, not before the whole command - `sudo` doesn't pass
