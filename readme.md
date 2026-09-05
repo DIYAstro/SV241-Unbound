@@ -17,11 +17,11 @@ This is a replacement firmware for the **Svbony SV241 Pro**.
 ## 📚 Documentation
 
 **Getting Started**
-- 🚀 [Quick Start Guide](./docs/QUICK_START.md) - install, flash, connect
+- 🚀 [Quick Start Guide (Windows)](./docs/QUICK_START.md)
 - 🐧 [Linux / Raspberry Pi Install](./docs/PINS_INSTALL.md)
 
 **Using the Proxy**
-- 🔌 [ASCOM Alpaca Proxy Overview](./docs/ASCOM_PROXY.md) - security, setup access
+- 🔌 [ASCOM Alpaca Proxy Overview](./docs/ASCOM_PROXY.md)
 - 🖥️ [Web Interface Guide](./docs/WEB_INTERFACE.md)
 - 📊 [Telemetry & Data Explorer](./docs/TELEMETRY.md)
 - 🛰️ [Driver Installation](./docs/DRIVER_INSTALLATION.md)

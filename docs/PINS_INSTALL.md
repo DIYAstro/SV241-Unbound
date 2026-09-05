@@ -1,5 +1,7 @@
 # Installing the SV241 Proxy on a PINS Raspberry Pi
 
+[← Back to main readme](../readme.md)
+
 > **Experimental, not regularly tested.** The Linux install path (this guide, `install_linux.sh`,
 > and the CH340 driver it relies on) has been verified end-to-end against real Raspberry Pi
 > hardware, but the maintainer doesn't run Linux day-to-day and this isn't part of any ongoing

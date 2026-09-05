@@ -1,8 +1,9 @@
-# Quick Start Guide
+# Quick Start Guide (Windows)
 
 [← Back to main readme](../readme.md)
 
-Follow these steps to get up and running quickly.
+Follow these steps to get up and running quickly. Running on Linux or a Raspberry Pi
+instead? See [PINS_INSTALL.md](./PINS_INSTALL.md).
 
 ## 1. Install the ASCOM Alpaca Proxy
 

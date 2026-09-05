@@ -1,5 +1,7 @@
 # Troubleshooting Guide
 
+[← Back to main readme](../readme.md)
+
 ## 0. USB Drivers (Critical First Step)
 
 If you encounter connection issues or timeouts, the very first step should always be to ensure you have the latest official drivers installed. Windows sometimes uses generic drivers that can be unstable with high-speed serial communication.
