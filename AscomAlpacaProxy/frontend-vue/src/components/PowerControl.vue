@@ -85,8 +85,24 @@ function checkTruncation() {
     switchRefs.value.forEach((el, index) => {
         if (el) {
             const nameEl = el.querySelector('.name');
-            if (nameEl && nameEl.scrollWidth > nameEl.clientWidth) {
-                truncatedSwitches.value.add(index);
+            if (nameEl) {
+                // scrollWidth/clientWidth are both rounded to whole pixels, which can lose a
+                // borderline sub-pixel overflow entirely - both then round to the *same* integer,
+                // so no tolerance added to that comparison can recover the lost precision.
+                // Chromium/Edge and Firefox don't always round the same borderline case the same
+                // way, so a name could correctly show the ellipsis in both (that part's pure CSS,
+                // sub-pixel precise) while this scrollWidth/clientWidth check only catches it in
+                // one of them. A Range over the text's own content reports its actual (sub-pixel
+                // precise) rendered width regardless of the parent's overflow:hidden clipping -
+                // comparing that against the equally precise getBoundingClientRect() of the
+                // (possibly clipped) container avoids integer rounding on either side.
+                const range = document.createRange();
+                range.selectNodeContents(nameEl);
+                const fullWidth = range.getBoundingClientRect().width;
+                const visibleWidth = nameEl.getBoundingClientRect().width;
+                if (fullWidth > visibleWidth + 0.5) {
+                    truncatedSwitches.value.add(index);
+                }
             }
         }
     });
