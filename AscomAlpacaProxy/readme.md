@@ -42,6 +42,7 @@ The project also includes a standalone ASCOM Alpaca proxy driver written in Go. 
 *   Manages the connection to the device automatically.
 *   Desktop notifications for device connection and disconnection events.
 *   **Hardware-Internet Hybrid Sourcing:** Integrated Open-Meteo weather service to supplement or fallback for environmental metrics (Wind, Clouds, etc.) when hardware sensors are missing or initializing.
+*   **Multi-Box / Per-Rig Naming:** Switch names, sensor labels, and related preferences are remembered per physical SV241 box (identified by its factory serial), not just per installation - swap boxes between rigs or plug a different box into the same computer and the right names follow automatically.
 *   Helper scripts for easy, automated ASCOM driver creation.
 
 ## Important Security Notice
@@ -150,8 +151,8 @@ Configure power switch behavior:
 *   **Custom Name:** Assign user-friendly names that appear in ASCOM clients.
 *   **Voltage:** Set the adjustable converter output voltage (1-15V).
 
-> [!IMPORTANT]
-> **ASCOM Client Reconnection Required:** When you enable or disable switches, the ASCOM switch IDs change dynamically. Your astronomy software (NINA, SGP, etc.) must **disconnect and reconnect** to the Switch device to see the updated switch list.
+> [!NOTE]
+> **Names Follow the Box, Not the Computer:** Custom switch names (along with the Lens Temp label, dew heater auto-enable-leader preference, and weather source priorities) are stored per physical SV241 box, identified by its factory-set serial number - not per proxy installation. Plug a different box into the same computer and it gets its own clean set of names instead of inheriting the previous box's; plug a box you've configured before back in (even on a different computer, via a restored backup) and its names come right back. Give a box a friendly label under **System Tab > Connected Box** ("Rig Name") - it then appears in the header badge and lets you tell boxes apart at a glance instead of by raw serial number.
 
 #### Dew Heaters Tab
 Configure the two PWM dew heater outputs:
@@ -211,7 +212,7 @@ Configure the proxy application itself:
 #### System Tab
 Maintenance and backup functions:
 *   **Manual Actions:** Trigger a sensor drying cycle manually.
-*   **Backup & Restore:** Export or import the complete configuration (both proxy and firmware settings).
+*   **Backup & Restore:** Export or import the complete configuration (both proxy and firmware settings). A backup remembers which physical box its firmware settings (calibration offsets, heater configuration, etc.) came from; restoring it while a *different* box is connected is blocked with a warning by default, since applying one box's on-device settings to another is rarely what you want - confirm explicitly if that's intentional (e.g. replacing one box with another).
 *   **Danger Zone:** Contains critical device operations:
     *   **Update Firmware:** Opens the integrated web flasher to update the SV241 firmware directly from the browser using the Web Serial API—no additional tools required.
         > **Note:** Flashing requires the browser (Chrome/Edge) to run on the **same machine** where the SV241-Box is connected via USB. Alternatively, use the [standalone Web Flasher](https://diyastro.github.io/SV241-Unbound/).
@@ -236,7 +237,7 @@ The collapsible log viewer shows real-time proxy activity:
 The proxy driver includes a robust telemetry system that logs sensor data to a local SQLite database and provides interactive visualization with CSV export.
 
 ### Automatic Database Logging
-*   **Storage:** Telemetry data is stored in a local SQLite database (`telemetry.db`) in the configuration directory.
+*   **Storage:** Telemetry data is stored in a local SQLite database (`alpaca_proxy.db`) in the configuration directory. Each recorded point is tagged with the physical box that logged it, so history stays correctly attributed even if you swap boxes on the same computer.
 *   **Frequency:** Configurable logging interval from 1-10 seconds, or disabled entirely (0 seconds). Default is 10 seconds.
 *   **Data Points:** Logs all sensor values including voltage, current, power, temperatures, humidity, dew point, switch states, and heater PWM levels.
 *   **Rotation:** Uses a "Noon-to-Noon" rotation strategy. A single imaging night is contained in one session, even if it spans midnight.
@@ -252,12 +253,13 @@ The web interface features a built-in **Data Explorer** for interactive telemetr
 *   **Reset View:** Click "🔄 Reset View" to return to the full time range after zooming.
 *   **Custom Names:** Sensors display your custom switch names (e.g., "DC 1 (Telescope Mount)").
 *   **Disabled Filtering:** Switches and heaters marked as "Disabled" are automatically hidden from the sensor list.
+*   **Rig Filter:** If the proxy has ever seen more than one box, a "Rig" dropdown lets you show just one box's history at a time (labeled by Rig Name where set); switch names in the chart legend then resolve from that box's own profile rather than whichever box is currently connected.
 
 ### CSV Export
 Export telemetry data for external analysis:
 
 *   **Download:** Click "Download Selection CSV" in the Data Explorer to export only the selected sensors.
-*   **Headers:** CSV headers include custom names in the format `key (custom_name)` for easy identification.
+*   **Headers:** CSV headers include custom names in the format `key (custom_name)` for easy identification. Each row also includes a **Device** column identifying which box recorded it (by Rig Name, falling back to the raw serial, or "Unknown" for rows logged before this tracking existed).
 *   **Time Format:** Timestamps are exported in ISO 8601 format (RFC3339).
 
 ### External API Access
@@ -584,6 +586,18 @@ Here is an example of the `proxy_config.json` file structure:
     "pwm1": true,
     "pwm2": true
   },
+  "deviceProfiles": {
+    "AA:BB:CC:11:22:33": {
+      "rigName": "Imaging Rig",
+      "switchNames": {
+        "dc1": "Camera",
+        "dc2": "Mount"
+      },
+      "lensTempName": "Box Ambient Temp",
+      "heaterAutoEnableLeader": { "pwm1": true, "pwm2": true },
+      "weatherSourcePriority": { "temperature": "hybrid" }
+    }
+  },
   "alwaysShowLensTemp": true,
   "lensTempName": "Box Ambient Temp",
   "enableWeatherService": true,
@@ -616,6 +630,7 @@ Here is an example of the `proxy_config.json` file structure:
 *   `enableMasterPower` (boolean): When `true`, a "Master Power" switch is exposed via ASCOM that controls all outputs simultaneously. Default is `false`.
 *   `switchNames` (object): A map that allows you to assign custom, user-friendly names to the internal switch identifiers. The `key` is the internal name (e.g., `"dc1"`) and the `value` is the custom name you want to see in ASCOM clients and the web interface.
 *   `heaterAutoEnableLeader` (object): Controls automatic leader activation for PID-Sync mode. When a follower heater (in mode 3) is enabled, the proxy can automatically enable its leader heater. Keys are `"pwm1"` and `"pwm2"`, values are `true`/`false`.
+*   `deviceProfiles` (object): The actual per-box storage for `switchNames`, `lensTempName`, `heaterAutoEnableLeader`, and `weatherSourcePriority` - keyed by the MAC address of each SV241 box the proxy has ever seen, each also carrying its own `rigName` label. The top-level `switchNames`/`lensTempName`/`heaterAutoEnableLeader`/`weatherSourcePriority` fields above are kept as a live mirror of whichever box is *currently* connected - reading or writing them (via the API, the config file, or the web UI) always reflects/updates that active box's own entry here. The very first box a proxy install ever sees inherits whatever those top-level fields already held (the upgrade path for existing single-box setups); any box after that starts with clean default names rather than inheriting an unrelated box's. You normally don't need to hand-edit this - the web UI's Rig Name field (System Tab) and the Switches/Sensors tabs manage it for you.
 *   `alwaysShowLensTemp` (boolean): When `true`, the "Lens Temperature" sensor switch is always exposed to ASCOM, even if the heater modes that require it (PID/MinTemp) are disabled. Handy for monitoring the sensor value (reading) in Manual Mode. Default is `false`.
 *   `lensTempName` (string): Allows you to override the default name "Lens Temperature" with a custom name (e.g., "Ambient Box Temp"). If empty, the default name is used.
 

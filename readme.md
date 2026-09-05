@@ -146,7 +146,7 @@ The controller communicates over serial at **115200 baud**. Commands are sent as
 *   **Manual Sensor Drying:** `{"command": "dry_sensor"}`
     *   Triggers the SHT40 internal heater to remove condensation. This is a blocking operation.
 *   **Get Firmware Version:** `{"get": "version"}`
-    *   **Response:** A JSON object containing the firmware version (e.g., `{"version": "1.0.0"}`).
+    *   **Response:** A JSON object containing the firmware version and the device's factory MAC address, used by the Proxy as a per-box serial number to keep switch names and related settings tied to this specific physical box (e.g., `{"version": "1.0.0", "mac": "AA:BB:CC:11:22:33"}`).
 
 ### Get/Set Full Configuration
 
