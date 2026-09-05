@@ -433,8 +433,9 @@ func handleCreateBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	backup := config.CombinedConfig{
-		ProxyConfig:    config.Get(),
-		FirmwareConfig: json.RawMessage(firmwareConfigJSON),
+		ProxyConfig:          config.Get(),
+		FirmwareConfig:       json.RawMessage(firmwareConfigJSON),
+		FirmwareConfigSerial: config.GetActiveDeviceSerial(),
 	}
 	backupJSON, err := json.MarshalIndent(backup, "", "  ")
 	if err != nil {
@@ -469,6 +470,32 @@ func handleRestoreBackup(w http.ResponseWriter, r *http.Request) {
 	if backup.ProxyConfig == nil || backup.FirmwareConfig == nil {
 		http.Error(w, "Incomplete backup file", http.StatusBadRequest)
 		return
+	}
+
+	// Guard against silently pushing one box's on-device settings (calibration offsets, heater
+	// config, power startup states, etc.) onto a different, currently-connected box - confirmed
+	// live against real hardware that this otherwise happens with no warning at all. A backup
+	// from before FirmwareConfigSerial existed ("") can't be verified either way, so it's treated
+	// the same as a genuine mismatch rather than assumed safe. ?force=true (sent only after the
+	// user confirms a specific "different box detected" dialog, e.g. because they're deliberately
+	// replacing one box with another) skips this check.
+	currentSerial := config.GetActiveDeviceSerial()
+	force := r.URL.Query().Get("force") == "true"
+	if !force && (backup.FirmwareConfigSerial == "" || backup.FirmwareConfigSerial != currentSerial) {
+		logger.Warn("Backup restore blocked: backup's device (serial=%q) doesn't match the currently connected device (serial=%q). Retry with ?force=true to override.", backup.FirmwareConfigSerial, currentSerial)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":               "device_mismatch",
+			"backupDeviceSerial":  backup.FirmwareConfigSerial,
+			"backupRigName":       config.GetRigNameForSerial(backup.FirmwareConfigSerial),
+			"currentDeviceSerial": currentSerial,
+			"currentRigName":      config.GetActiveRigName(),
+		})
+		return
+	}
+	if force && (backup.FirmwareConfigSerial == "" || backup.FirmwareConfigSerial != currentSerial) {
+		logger.Warn("Restoring a backup from a different/unknown device (serial=%q) onto the currently connected device (serial=%q) - overridden by user.", backup.FirmwareConfigSerial, currentSerial)
 	}
 
 	// Restore Firmware Config

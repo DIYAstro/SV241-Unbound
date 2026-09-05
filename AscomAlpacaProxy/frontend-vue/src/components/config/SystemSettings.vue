@@ -68,60 +68,85 @@ function restoreConfig() {
     document.getElementById('restore-input').click();
 }
 
+// Sends the actual restore request. force=true skips the backend's device-mismatch check - used
+// on retry once the user has explicitly confirmed the "different box detected" dialog below, e.g.
+// because they're deliberately replacing one box with another.
+async function performRestore(configContent, force = false) {
+    modal.loading('Please wait while the configuration is restored to the device…', 'Restoring Configuration');
+    try {
+        const url = force ? '/api/v1/backup/restore?force=true' : '/api/v1/backup/restore';
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(configContent)
+        });
+
+        if (response.status === 409) {
+            const mismatch = await response.json();
+            const backupLabel = mismatch.backupRigName || mismatch.backupDeviceSerial || 'an unknown box';
+            const currentLabel = mismatch.currentRigName || mismatch.currentDeviceSerial || 'the connected box';
+            modal.confirm(
+                `This backup was taken from "${backupLabel}", but "${currentLabel}" is currently connected. ` +
+                `Restoring it will overwrite the connected box's on-device settings (calibration, heater configuration, ` +
+                `power startup states, etc.) with the ones from the backup. Continue anyway?`,
+                {
+                    title: 'Different Box Detected',
+                    confirmText: 'Restore Anyway',
+                    cancelText: 'Cancel',
+                    onConfirm: () => performRestore(configContent, true)
+                }
+            );
+            return;
+        }
+
+        if (!response.ok) throw new Error(response.statusText);
+
+        // Show success modal with reboot option
+        modal.show({
+            icon: '✅',
+            title: 'Restore Successful',
+            message: 'Configuration restored successfully! Would you like to reboot the device to apply all settings?',
+            buttons: [
+                {
+                    text: 'Reboot Now',
+                    action: async () => {
+                        modal.close();
+                        await fetch('/api/v1/command', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ command: 'reboot' })
+                        });
+                        setTimeout(() => location.reload(), 5000);
+                    },
+                    primary: true
+                },
+                {
+                    text: 'Skip',
+                    action: () => { modal.close(); location.reload(); }
+                }
+            ]
+        });
+    } catch (err) {
+        modal.error('Restore failed: ' + err.message);
+    }
+}
+
 async function onFileSelected(event) {
     const file = event.target.files[0];
     if (!file) return;
-    
+
     event.target.value = '';
 
     const reader = new FileReader();
     reader.onload = async (e) => {
         try {
             const configContent = JSON.parse(e.target.result);
-            
+
             modal.confirm('This will overwrite your current configuration with the backup. Continue?', {
                 title: 'Restore Configuration',
                 confirmText: 'Restore',
                 cancelText: 'Cancel',
-                onConfirm: async () => {
-                    modal.loading('Please wait while the configuration is restored to the device…', 'Restoring Configuration');
-                    try {
-                        const response = await fetch('/api/v1/backup/restore', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(configContent)
-                        });
-                        if (!response.ok) throw new Error(response.statusText);
-                        
-                        // Show success modal with reboot option
-                        modal.show({
-                            icon: '✅',
-                            title: 'Restore Successful',
-                            message: 'Configuration restored successfully! Would you like to reboot the device to apply all settings?',
-                            buttons: [
-                                { 
-                                    text: 'Reboot Now', 
-                                    action: async () => {
-                                        modal.close();
-                                        await fetch('/api/v1/command', {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({ command: 'reboot' })
-                                        });
-                                        setTimeout(() => location.reload(), 5000);
-                                    }, 
-                                    primary: true 
-                                },
-                                { 
-                                    text: 'Skip', 
-                                    action: () => { modal.close(); location.reload(); }
-                                }
-                            ]
-                        });
-                    } catch (err) {
-                        modal.error('Restore failed: ' + err.message);
-                    }
-                }
+                onConfirm: () => performRestore(configContent)
             });
         } catch (e) {
             modal.error('Invalid backup file: ' + e.message);

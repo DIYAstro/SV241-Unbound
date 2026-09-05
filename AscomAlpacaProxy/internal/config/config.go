@@ -75,6 +75,12 @@ type ProxyConfig struct {
 type CombinedConfig struct {
 	ProxyConfig    *ProxyConfig    `json:"proxyConfig"`
 	FirmwareConfig json.RawMessage `json:"firmwareConfig"`
+	// FirmwareConfigSerial is the MAC of whichever device FirmwareConfig was actually captured
+	// from, so a restore can warn before applying one box's on-device settings (calibration
+	// offsets, heater config, power startup states, etc.) to a *different* physical box. "" for
+	// backups made before this field existed - treated as "unknown, can't verify" at restore
+	// time, same as a genuine mismatch.
+	FirmwareConfigSerial string `json:"firmwareConfigSerial,omitempty"`
 }
 
 // PowerStartupStates defines the startup state of standard switches.
