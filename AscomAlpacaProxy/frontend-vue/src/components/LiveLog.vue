@@ -158,25 +158,4 @@ function toggleCollapse() {
     background-color: rgba(255, 255, 255, 0.3);
     border-radius: 4px;
 }
-
-.collapsible-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    cursor: pointer;
-    user-select: none;
-    padding: 0.5rem 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    margin-bottom: 1rem;
-}
-
-.collapsible-header:hover .toggle-icon {
-    border-color: #fff;
-}
-
-.collapsible-header h2 {
-    margin: 0;
-    font-size: 1.25rem;
-    font-weight: 500;
-}
 </style>
