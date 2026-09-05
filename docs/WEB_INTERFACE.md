@@ -52,6 +52,17 @@ Configure the two PWM dew heater outputs:
     - *Minimum Temperature:* Maintains a minimum lens temperature.
     - *Disabled:* Heater is hidden from UI and ASCOM.
 
+#### How PID Mode Works
+
+In **PID Mode**, the controller automatically adjusts heater power to maintain the lens temperature at a safe level above the dew point:
+
+*   **Lens Temp:** The current temperature of the lens, measured by an external sensor.
+*   **Target Temp / Minimum Temp:** The desired temperature offset above the ambient dew point. A typical value is 3-5°C.
+
+The controller calculates the dew point from ambient temperature and humidity, adds the target offset, and adjusts heater power to maintain that temperature.
+
+> **Important:** The lens temperature sensor (labeled **TEMP** on the SV241) must be positioned **under or adjacent to the dew heater strap**. This ensures the sensor measures the heated area and provides accurate feedback for the PID controller.
+
 #### Simplified PID Tuning Guide
 PID mode automatically regulates the heater to keep your optics dry. If you notice unstable temperatures, use this guide to tune the parameters:
 

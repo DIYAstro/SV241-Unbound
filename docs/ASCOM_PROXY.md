@@ -8,7 +8,6 @@ The project also includes a standalone ASCOM Alpaca proxy driver written in Go. 
 
 ## Table of Contents
 
-- [Documentation Map](#documentation-map)
 - [Features](#features)
 - [Important Security Notice](#important-security-notice)
   - [Manually Creating a Firewall Rule](#manually-creating-a-firewall-rule)
@@ -16,19 +15,25 @@ The project also includes a standalone ASCOM Alpaca proxy driver written in Go. 
 - [Accessing the Setup Page](#accessing-the-setup-page)
 - [Development & Building](#development--building)
 
-## Documentation Map
+## 📚 Documentation
 
-| Topic | Where |
-|---|---|
-| Features, security, setup access | This page |
-| Web interface walkthrough (all tabs) | [WEB_INTERFACE.md](./WEB_INTERFACE.md) |
-| Telemetry history, Data Explorer, CSV export | [TELEMETRY.md](./TELEMETRY.md) |
-| Registering a classic ASCOM driver | [DRIVER_INSTALLATION.md](./DRIVER_INSTALLATION.md) |
-| REST endpoints, curl/PowerShell examples | [REST_API.md](./REST_API.md) |
-| `proxy_config.json` field reference | [CONFIGURATION_REFERENCE.md](./CONFIGURATION_REFERENCE.md) |
-| Building from source, dev server | [AscomAlpacaProxy/build_scripts/readme.md](../AscomAlpacaProxy/build_scripts/readme.md) |
-| Fixing problems | [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) |
-| Linux / Raspberry Pi install | [PINS_INSTALL.md](./PINS_INSTALL.md) |
+**Using the Proxy**
+- 🖥️ [Web Interface Guide](./WEB_INTERFACE.md)
+- 📊 [Telemetry & Data Explorer](./TELEMETRY.md)
+- 🛰️ [Driver Installation](./DRIVER_INSTALLATION.md) - for classic ASCOM clients
+
+**When Something Goes Wrong**
+- 🛠️ [Troubleshooting](./TROUBLESHOOTING.md)
+
+**Reference**
+- ⚙️ [REST API & Automation](./REST_API.md)
+- 📄 [proxy_config.json Reference](./CONFIGURATION_REFERENCE.md)
+
+**Other Platforms**
+- 🐧 [Linux / Raspberry Pi Install](./PINS_INSTALL.md)
+
+**Contributing**
+- 🏗️ [Build From Source](../AscomAlpacaProxy/build_scripts/readme.md)
 
 ## Features
 
