@@ -5,13 +5,28 @@ compiling and bundling the matching ESP32 firmware.
 
 ## Table of Contents
 
+- [Project Structure](#project-structure)
 - [Single Source of Truth: `release_version.json`](#single-source-of-truth-release_versionjson)
 - [Firmware isn't committed to the repo](#firmware-isnt-committed-to-the-repo)
 - [Windows (actively maintained)](#windows-actively-maintained)
+- [Local Development (Hot Reload)](#local-development-hot-reload)
 - [Linux (not actively maintained)](#linux-not-actively-maintained)
 - [GitHub Actions: `release-*.yml`](#github-actions-release-yml)
 - [Cutting a beta / pre-release](#cutting-a-beta--pre-release)
 - [Prerequisites](#prerequisites)
+
+## Project Structure
+
+```
+AscomAlpacaProxy/
+├── frontend-vue/     # Vue 3 SPA (web interface)
+│   ├── src/          # Vue components & stores
+│   ├── public/       # Static assets (flasher, favicon)
+│   └── dist/         # Build output (generated)
+├── internal/         # Go backend modules
+├── build/            # Compiled .exe (generated)
+└── install/          # Installer output (generated)
+```
 
 ## Single Source of Truth: `release_version.json`
 
@@ -46,7 +61,7 @@ automatically.
 ## Firmware isn't committed to the repo
 
 `frontend-vue/public/flasher/firmware/*.bin` (the in-app flasher's asset folder) and
-`docs/firmware/*.bin` (the standalone GitHub Pages flasher's) are `.gitignore`d, not committed.
+`webflasher/firmware/*.bin` (the standalone GitHub Pages flasher's) are `.gitignore`d, not committed.
 Every build path below regenerates them from `src/` before it needs them - there's exactly one
 place firmware bytes come from (compiling the C++ source, pinned to a specific `platformio.ini`
 platform version for reproducibility), never a hand-maintained binary that can silently drift out
@@ -70,8 +85,8 @@ Builds the plain `AscomAlpacaProxy.exe` (no installer). Steps:
 1. Sync versions from `release_version.json` (see above).
 2. Build the firmware with PlatformIO (`pio run`) and copy `bootloader.bin`/`partitions.bin`/
    `firmware.bin` into `frontend-vue/public/flasher/firmware/`, the in-app web flasher's asset
-   folder. (This does **not** touch `docs/firmware/`, the separate GitHub Pages flasher - that
-   stays a deliberate, manual release step.)
+   folder. (This does **not** touch `webflasher/firmware/`, the separate GitHub Pages flasher -
+   that stays a deliberate, manual release step.)
 3. Build the Vue frontend (`npm install && npm run build`).
 4. Extract the firmware version from `config_manager.h` into
    `frontend-vue/dist/flasher/firmware/version.json` (used by the flasher's "bundled firmware"
@@ -101,6 +116,14 @@ The Inno Setup template. Worth knowing:
   cleanup, also removes logs/configs.
 - Also installs `Helper/Create-Driver.bat` + `Helper/Create-AscomDriver.ps1` (the classic-ASCOM
   driver registration helper - separate from this build pipeline).
+
+## Local Development (Hot Reload)
+
+```bash
+cd AscomAlpacaProxy/frontend-vue
+npm run dev     # Dev server: http://localhost:5173
+```
+> **Note:** The dev server proxies API requests to the running Go proxy on port 32241.
 
 ## Linux (not actively maintained)
 
@@ -236,10 +259,10 @@ release notes, mark as pre-release if it's a beta).
   hand, crashing immediately on Linux) that `.gitattributes` fixes at the source but this catches
   again just in case.
 - **`release-webflasher.yml`** - downloads `firmware.zip`, substitutes its version into
-  `docs/index.html`'s `__FIRMWARE_VERSION__` placeholder, deploys the standalone flasher page via
-  GitHub's Actions-based Pages deployment (`actions/upload-pages-artifact` +
-  `actions/deploy-pages`) - **not** by committing to `docs/`. Requires the repo's Pages source set
-  to "GitHub Actions" in Settings > Pages (already done), not "Deploy from a branch".
+  `webflasher/index.html`'s `__FIRMWARE_VERSION__` placeholder, deploys the standalone flasher
+  page via GitHub's Actions-based Pages deployment (`actions/upload-pages-artifact` +
+  `actions/deploy-pages`) - **not** by committing to `webflasher/`. Requires the repo's Pages
+  source set to "GitHub Actions" in Settings > Pages (already done), not "Deploy from a branch".
 - **`release-all.yml`** - runs all four in order, Firmware → Windows → Linux → Webflasher,
   strictly sequential (`needs:` chain, not parallel) so a failure stops the chain before anything
   downstream builds against a bad artifact. **For a normal stable release only** - see below for

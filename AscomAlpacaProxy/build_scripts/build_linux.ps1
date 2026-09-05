@@ -52,7 +52,7 @@ if ($env:SKIP_FIRMWARE_BUILD -eq "1") {
         Copy-Item -Path "$fwBuildDir\$f" -Destination "$flasherFwDir\$f" -Force
     }
 }
-# Note: docs/firmware/ (the separate GitHub Pages flasher) is deliberately NOT touched here -
+# Note: webflasher/firmware/ (the separate GitHub Pages flasher) is deliberately NOT touched here -
 # publishing there is release-webflasher.yml's job.
 
 # 3. Ensure the CGO cross-compile toolchain (Zig + libusb-1.0 sysroots) is present.

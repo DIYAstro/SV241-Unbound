@@ -1,8 +1,9 @@
 name: Build & Publish Web Flasher (GitHub Pages)
 
 # Manual only, on purpose - matches the other release-*.yml workflows. Deploys the standalone
-# GitHub Pages flasher (docs/index.html) via GitHub's Actions-based Pages deployment - not by
-# committing to docs/. Firmware comes from release-firmware.yml's firmware.zip, never built here.
+# GitHub Pages flasher (webflasher/index.html) via GitHub's Actions-based Pages deployment - not
+# by committing to webflasher/. Firmware comes from release-firmware.yml's firmware.zip, never
+# built here.
 #
 # Requires the repo's Pages source to be set to "GitHub Actions" (Settings > Pages) rather than
 # "Deploy from a branch" - already done.
@@ -62,10 +63,11 @@ jobs:
           gh release download "${{ steps.tag.outputs.tag }}" -p firmware.zip -O firmware.zip
           mkdir -p site/firmware
           unzip -o firmware.zip -d site/firmware
-          cp docs/index.html site/index.html
+          cp webflasher/index.html site/index.html
 
-      # docs/index.html carries a __FIRMWARE_VERSION__ placeholder instead of a hand-maintained
-      # version string - substitute it here from the same version.json bundled in firmware.zip
+      # webflasher/index.html carries a __FIRMWARE_VERSION__ placeholder instead of a
+      # hand-maintained version string - substitute it here from the same version.json bundled
+      # in firmware.zip
       # (produced by release-firmware.yml from the same build, guaranteed to match firmware.bin).
       - name: Inject firmware version into the page
         run: |

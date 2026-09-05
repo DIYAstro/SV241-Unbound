@@ -88,7 +88,7 @@ else
         cp "$FW_BUILD_DIR/$f" "$FLASHER_FW_DIR/$f"
     done
 fi
-# Note: docs/firmware/ (the separate GitHub Pages flasher) is deliberately NOT touched here -
+# Note: webflasher/firmware/ (the separate GitHub Pages flasher) is deliberately NOT touched here -
 # publishing there is release-webflasher.yml's job.
 
 # 3. Build Frontend

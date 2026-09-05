@@ -44,7 +44,7 @@ Download and install the official CH340 drivers from the manufacturer:
    Make sure no other apps are using the port (serial monitors, other astronomy software, etc.)
 
 6. **Edit config file directly**  
-   If the Setup page is not accessible, you can [manually configure the port](./AscomAlpacaProxy/readme.md#manual-configuration-proxy_configjson):
+   If the Setup page is not accessible, you can [manually configure the port](./CONFIGURATION_REFERENCE.md#manual-configuration-proxy_configjson):
    1. Close the proxy completely
    2. Navigate to `%APPDATA%\SV241AlpacaProxy`
    3. Edit `proxy_config.json` and set:

@@ -16,21 +16,38 @@ This is a replacement firmware for the **Svbony SV241 Pro**.
 
 ## Table of Contents
 
+*   [Documentation Map](#documentation-map)
 *   [Project Overview](#project-overview)
 *   [Quick Start Guide](#quick-start-guide)
     *   [1. Install the ASCOM Alpaca Proxy](#1-install-the-ascom-alpaca-proxy)
     *   [2. Flashing the Firmware](#2-flashing-the-firmware)
     *   [3. Connecting from Astronomy Software](#3-connecting-from-astronomy-software)
 *   [The ASCOM Alpaca Proxy](#the-ascom-alpaca-proxy)
-*   [Advanced: Serial Command Interface](#advanced-serial-command-interface)
-*   [Troubleshooting](./TROUBLESHOOTING.md)
-*   [Linux/PINS Installation Guide](./PINS_INSTALL.md)
+
+## Documentation Map
+
+This readme covers the quick start. Everything else lives in [`docs/`](./docs/):
+
+| Topic | Where |
+|---|---|
+| Quick start, features, project overview | This page |
+| Firmware serial JSON protocol reference | [docs/SERIAL_API.md](./docs/SERIAL_API.md) |
+| Hardware specs / GPIO pinout | [docs/HARDWARE.md](./docs/HARDWARE.md) |
+| ASCOM Alpaca Proxy overview, security, setup access | [docs/ASCOM_PROXY.md](./docs/ASCOM_PROXY.md) |
+| Proxy web interface walkthrough | [docs/WEB_INTERFACE.md](./docs/WEB_INTERFACE.md) |
+| Proxy telemetry & Data Explorer | [docs/TELEMETRY.md](./docs/TELEMETRY.md) |
+| Registering a classic ASCOM driver | [docs/DRIVER_INSTALLATION.md](./docs/DRIVER_INSTALLATION.md) |
+| Proxy REST API & automation | [docs/REST_API.md](./docs/REST_API.md) |
+| `proxy_config.json` reference | [docs/CONFIGURATION_REFERENCE.md](./docs/CONFIGURATION_REFERENCE.md) |
+| Building the proxy from source | [AscomAlpacaProxy/build_scripts/readme.md](./AscomAlpacaProxy/build_scripts/readme.md) |
+| Fixing problems | [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) |
+| Linux / Raspberry Pi install | [docs/PINS_INSTALL.md](./docs/PINS_INSTALL.md) |
 
 ## Project Overview
 
 This project consists of two main components:
 1.  **Custom Firmware:** A replacement firmware for the ESP32-based Svbony SV241 Pro controller. It unlocks advanced control over power outputs and dew heaters.
-2.  **ASCOM Alpaca Proxy:** A standalone application that runs on your computer. It connects to the controller via USB and exposes its functions as standard ASCOM devices. It should work with any ASCOM Alpaca compatible astronomy software (tested with [NINA](https://nighttime-imaging.eu/), validated with [Conform Universal](https://github.com/ASCOMInitiative/ConformU)). For software without native Alpaca support, the installer includes a helper script to register a classic ASCOM driver (see [Driver Installation](./AscomAlpacaProxy/readme.md#driver-installation)).
+2.  **ASCOM Alpaca Proxy:** A standalone application that runs on your computer. It connects to the controller via USB and exposes its functions as standard ASCOM devices. It should work with any ASCOM Alpaca compatible astronomy software (tested with [NINA](https://nighttime-imaging.eu/), validated with [Conform Universal](https://github.com/ASCOMInitiative/ConformU)). For software without native Alpaca support, the installer includes a helper script to register a classic ASCOM driver (see [Driver Installation](./docs/DRIVER_INSTALLATION.md#driver-installation)).
 
 ### Firmware Features
 *   Control for 5 DC outputs, 2 USB groups, and 1 adjustable voltage output (0-15V, powered by a [Southchip SC8903](https://datasheet.lcsc.com/lcsc/2107141624_Southchip-Semicon-SC8903QDHR_C252424.pdf) buck-boost converter).
@@ -52,7 +69,7 @@ The controller calculates the dew point from ambient temperature and humidity, a
 *   On-board sensor suite for monitoring power, ambient temperature/humidity, and lens temperature. The firmware is resilient to sensor failures.
 *   Experimental automatic drying cycle for the SHT40 humidity sensor.
 *   Configuration persistence across reboots.
-*   A powerful JSON-based serial command interface for direct control and integration.
+*   A powerful JSON-based serial command interface for direct control and integration - see [docs/SERIAL_API.md](./docs/SERIAL_API.md).
 
 ## Quick Start Guide
 
@@ -103,260 +120,4 @@ It includes features like auto-detection and custom ASCOM actions.
 
 **For detailed information on its features, configuration, and usage, please see the dedicated documentation:**
 
-[**ASCOM Alpaca Proxy Documentation**](./AscomAlpacaProxy/)
-
----
-
-## Advanced: Serial Command Interface
-
-<details>
-<summary><strong>Click to expand the detailed Serial Command Reference</strong></summary>
-
-The controller communicates over serial at **115200 baud**. Commands are sent as JSON strings, terminated by a newline character (`\n`).
-
-> **Important:** All JSON commands must be sent as a single, continuous line of text without any line breaks, followed by a single newline character (`\n`) to execute the command.
-
-### Get Sensor Data
-
-*   **Request:** `{"get": "sensors"}`
-*   **Response:** A JSON object with the latest sensor readings.
-    *   `v`: Input Voltage (V), `i`: Input Current (mA), `p`: Input Power (W)
-    *   `t_amb`: Ambient Temp (°C), `h_amb`: Ambient Humidity (%), `d`: Dew Point (°C)
-    *   `t_lens`: Lens Temp (°C), `pwm1`/`pwm2`: Heater Power (%)
-    *   `hf`, `hmf`, `hma`, `hs`: Heap memory statistics (Bytes)
-
-### Get Power Status
-
-*   **Request:** `{"get": "status"}`
-*   **Response:** A JSON object with the on/off state (`1`/`0`) of all outputs.
-    *   Example: `{"status":{"d1":1,"d2":1,"d3":0,...},"dm":[0,1]}`
-    *   `dm`: Dew heater modes array (0: Manual, 1: PID, 2: Ambient Tracking, 3: PID-Sync, 4: Min Temp, 5: Disabled)
-
-### Set Power State
-
-*   **Request:** `{"set": {"<output_name>": <state>, ...}}`
-*   **`<output_name>`:** `d1`-`d5`, `u12`, `u34`, `adj`, `pwm1`, `pwm2`, or `all`.
-*   **`<state>`:** `1` or `true` for ON, `0` or `false` for OFF.
-*   **Response:** The new power status JSON, reflecting the state after the change has been applied.
-
-### System Commands
-
-*   **Reboot:** `{"command": "reboot"}`
-*   **Factory Reset:** `{"command": "factory_reset"}`
-*   **Manual Sensor Drying:** `{"command": "dry_sensor"}`
-    *   Triggers the SHT40 internal heater to remove condensation. This is a blocking operation.
-*   **Get Firmware Version:** `{"get": "version"}`
-    *   **Response:** A JSON object containing the firmware version and the device's factory MAC address, used by the Proxy as a per-box serial number to keep switch names and related settings tied to this specific physical box (e.g., `{"version": "1.0.0", "mac": "AA:BB:CC:11:22:33"}`).
-
-### Get/Set Full Configuration
-
-*   **Get Config Request:** `{"get": "config"}`
-*   **Set Config Request:** `{"sc": { ... }}`
-*   **Response (for both):** The complete configuration JSON, reflecting the state after the change has been applied.
-
-#### Configuration Object Structure
-*   **Parameter Breakdown:**
-    The body of the request is a JSON object containing one or more of the following top-level keys. You only need to send the keys for the settings you wish to change.
-
-For numerical parameters without explicit ranges, typical values are expected. Refer to the firmware's source code for precise limits if needed.
-
-| Key | Description | Value Type |
-|:----|:------------------------------------------------------------------|:-----------|
-| `so` | **S**ensor **O**ffsets: Sets calibration offsets for sensor readings. | `object` |
-| `ui` | **U**pdate **I**ntervals: Sets the update frequency for sensors. | `object` |
-| `ps` | **P**ower **S**tartup: Defines the on/off state of outputs at boot. | `object` |
-| `ac` | **A**veraging **C**ounts: Controls the samples for the median filter. | `object` |
-| `av` | **A**djustable **V**oltage: Sets the preset voltage for the converter. | `float` |
-| `ad` | **A**uto **D**ry: Configures the automatic sensor drying feature. | `object` |
-| `dh` | **D**ew **H**eaters: Configures the two dew heaters. | `array` |
-
----
-
-#### `so` (Sensor Offsets)
-| Sub-Key | Description | Value Type |
-|:---|:--------------------------------|:-----------|
-| `st` | SHT40 Temperature offset (°C) | `float` |
-| `sh` | SHT40 Humidity offset (%) | `float` |
-| `dt` | DS18B20 Temperature offset (°C) | `float` |
-| `iv` | INA219 Voltage offset (V) | `float` |
-| `ic` | INA219 Current offset (mA) | `float` |
-
-#### `ui` (Update Intervals)
-| Sub-Key | Description | Value Type |
-|:---|:--------------------------------|:---------------|
-| `i` | INA219 (Power) interval (ms) | `unsigned long`|
-| `s` | SHT40 (Ambient) interval (ms) | `unsigned long`|
-| `d` | DS18B20 (Lens) interval (ms) | `unsigned long`|
-
-#### `ps` (Power Startup States)
-| Sub-Key | Description | Value Type |
-|:---|:------------------------------------------------|:---------|
-| `d1`-`d5` | Startup state for DC Outputs 1-5 | `boolean`|
-| `u12` | Startup state for USB Group 1/2 | `boolean`|
-| `u34` | Startup state for USB Group 3/4/5 | `boolean`|
-| `adj` | Startup state for the Adjustable Voltage Converter | `boolean`|
-
-#### `ac` (Averaging Counts)
-| Sub-Key | Description | Value Type |
-|:---|:-----------------------------------|:---------|
-| `st` | Sample count for SHT40 temperature | `int` |
-| `sh` | Sample count for SHT40 humidity | `int` |
-| `dt` | Sample count for DS18B20 temperature | `int` |
-| `iv` | Sample count for INA219 voltage | `int` |
-| `ic` | Sample count for INA219 current | `int` |
-
-#### `ad` (Auto Dry)
-| Sub-Key | Description | Value Type |
-|:---|:------------------------------------------------------------------------------------------------|:---------------|
-| `en` | **En**able the auto-dry feature (`true`/`false`). | `boolean` |
-| `ht` | **H**umidity **T**hreshold: The humidity (%) above which the trigger timer starts (e.g., `99.0`). | `float` |
-| `td` | **T**rigger **D**uration: The time in **seconds** the humidity must stay above the threshold to trigger the heater (e.g., `300` for 5 minutes). | `unsigned long`|
-
-
----
-
-#### `dh` (Dew Heaters)
-This is an array that can contain up to two heater configuration objects. To update a specific heater, you place its configuration object at the corresponding index (0 for PWM1, 1 for PWM2).
-
-**Common Heater Properties:**
-| Key | Description | Value Type |
-|:----|:------------------------------------------------------------------------------------------------|:---------|
-| `n` | Name of the heater (e.g., "PWM1"). This is read-only. | `string` |
-| `en` | **En**abled on startup: `true` to enable the heater on boot. | `boolean` |
-| `m` | **M**ode: Sets the control mode for the heater (0: Manual, 1: PID, 2: Ambient Tracking, 3: PID-Sync, 4: Minimum Temperature, 5: Disabled). | `int` |
-| `xd` | **M**ax **D**uty: Hard safety limit (0-100%) on the raw PWM duty cycle, enforced in *every* mode. Default `100` (no limit). Useful for heater bands rated below the 12V supply voltage. | `int` (0-100) |
-
-> **Note on `xd`:** This limit acts on the raw electrical duty cycle, not on the "power %" values (`mp`, `xp`, PID output) used elsewhere in this API. Those values pass through a non-linear gamma curve before becoming a duty cycle, so a limit expressed in "power %" would not reliably cap the real voltage/power delivered to the heater. `xd` bypasses that curve and caps the hardware output directly. There is no fixed formula to translate a target voltage (e.g. "never exceed 5V on a 12V rail") into an exact `xd` percentage, since the real relationship depends on your heater's electrical characteristics — start conservatively low and verify with a multimeter or by monitoring temperature before relying on it unattended. In PID-Sync (Mode 3), the follower's `xd` is independent of the leader's `xd`. At very low `xd` values (roughly below 15%), the reported power percentage (`pwm1`/`pwm2` in `{"get":"sensors"}`, the web UI) may show `0%` even though the heater is still outputting a small, real, nonzero duty cycle up to the configured limit — this is a display rounding artifact only; the actual hardware output always tracks `xd` as closely as possible without ever exceeding it.
-
-**Mode-Specific Properties:**
-
-*   **Mode 0: Manual**
-    | Key | Description | Value Type |
-    |:----|:-------------------------------------------|:-----------|
-    | `mp` | **M**anual **P**ower (0-100%). | `int` (0-100) |
-
-*   **Mode 1: PID (Lens Sensor)**
-    | Key | Description | Value Type |
-    |:----|:------------------------------------------------------------------------------------------------|:-----------|
-    | `to` | **T**arget **O**ffset: Desired temperature difference above the dew point (e.g., `3.0` for 3°C warmer). | `float` |
-    | `kp` | **P**roportional gain: Reacts proportionally to the current temperature error. Higher values lead to a stronger, faster reaction. | `double` |
-    | `ki` | **I**ntegral gain: Accumulates past errors to correct small, constant offsets over time. Helps eliminate steady-state errors. | `double` |
-    | `kd` | **D**erivative gain: Reacts to the rate of temperature change. Helps to dampen overshoot and oscillations. | `double` |
-
-*   **Mode 2: Ambient Tracking (Sensorless)**
-    | Key | Description | Value Type |
-    |:----|:------------------------------------------------------------------------------------------------|:-----------|
-    | `sd` | **S**tart **D**elta: Temp difference (Ambient - Dew Point) at which heating begins. | `float` |
-    | `ed` | **E**nd **D**elta: Temp difference at which the heater reaches its maximum configured power. | `float` |
-    | `xp` | Ma**x** **P**ower (0-100%): The maximum power the heater is allowed to use in this mode. | `int` (0-100) |
-
-*   **Mode 3: PID-Sync (Follower)**
-    This mode allows a heater (the "follower") to mirror the power output of another heater running in PID mode (the "leader"). It is ideal for a guidescope heater that should follow the main scope's heater without needing its own sensor.
-    | Key | Description | Value Type |
-    |:----|:------------------------------------------------------------------------------------------------|:-----------|
-    | `psf` | **P**ID **S**ync **F**actor: A multiplier for the leader's power (e.g., `0.8` means the follower runs at 80% of the leader's power). | `float` |
-
-*   **Mode 4: Minimum Temperature**
-    This mode works like PID mode, but ensures the lens temperature never drops below a configured minimum, regardless of the dew point.
-    | Key | Description | Value Type |
-    |:----|:------------------------------------------------------------------------------------------------|:-----------|
-    | `to` | **T**arget **O**ffset: Desired temperature difference above the dew point (same as PID mode). | `float` |
-    | `mt` | **M**inimum **T**emperature: The absolute minimum lens temperature to maintain (e.g., `5.0` for 5°C). | `float` |
-    | `kp`, `ki`, `kd` | PID tuning parameters (same as Mode 1). | `double` |
-
-*   **Mode 5: Disabled**
-    This mode completely disables the heater output and hides it from the ASCOM interface. Useful if you don't use one of the heater channels.
-
-
-*   **Examples:**
-
-    *   **Change Adjustable Converter Voltage:**
-        ```json
-        {"sc": {"av": 9.5}}
-        ```
-
-    *   **Set Heater 1 (PWM1) to Manual 50% power:**
-        ```json
-        {"sc": {"dh": [{"m": 0, "mp": 50}]}}
-        ```
-        *(Note: `[{"m":...}]` targets the first heater. The array index matters.)*
-
-    *   **Configure Heater 2 (PWM2) for Ambient Tracking:**
-        ```json
-        {"sc": {"dh": [null, {"m": 2, "sd": 6.0, "ed": 1.5, "xp": 75}]}}
-        ```
-        *(Note: `null` is used as a placeholder to indicate that Heater 1's configuration should not be changed.)*
-
-    *   **Comprehensive Example: Change multiple settings at once:**
-        This example sets the startup state for DC1 to ON, changes the voltage preset, and configures Heater 1 for PID control.
-        ```json
-        {"sc":{"ps":{"d1":true},"av":8.5,"dh":[{"m":1,"to":2.5,"kp":150}]}}
-        ```
-
----
-
-### Using PowerShell for Direct Serial Communication
-
-You can send commands directly to the controller via PowerShell without the proxy. Replace `COM9` with your actual COM port.
-
-**Generic Template:**
-```powershell
-$port = New-Object System.IO.Ports.SerialPort "COM9", 115200
-$port.Open()
-$port.WriteLine('{"get": "sensors"}')  # Your command here
-Start-Sleep -Milliseconds 200
-$port.ReadExisting()
-$port.Close()
-```
-
-**Example: Read Sensor Data**
-```powershell
-$port.WriteLine('{"get": "sensors"}')
-# Response: {"v":12.8,"i":802,"p":10.3,"t_amb":18.5,"h_amb":65,...}
-```
-
-**Example: Turn DC1 On**
-```powershell
-$port.WriteLine('{"set": {"d1": true}}')
-# Response: {"status":{"d1":1,"d2":0,...}}
-```
-
-**Example: Set Heater 1 to Manual 50%**
-```powershell
-$port.WriteLine('{"sc": {"dh": [{"m": 0, "mp": 50}]}}')
-# Response: Full config JSON
-```
-
-> **Tip:** For interactive testing, use a serial terminal like **PuTTY** (115200 baud) or the **Arduino IDE Serial Monitor**.
-
-</details>
-
----
-
-<details>
-<summary><strong>Hardware SV241 Pro</strong></summary>
-
-### Microcontroller Specifications
-*   **Model:** ESP32-PICO-D4 (Espressif Systems)
-*   **Architecture:** Xtensa LX6 Dual-Core up to 240 MHz
-*   **Flash Memory:** 4 MB Embedded
-*   **Connectivity:** Wi-Fi / Bluetooth (Hardware capability only; software uses USB-only communication)
-
-### GPIO Pinout Mapping
-| GPIO | Function | Description |
-|------|----------|--------------|
-| 12 | DC2 | 12V Switched Output |
-| 13 | DC1 | 12V Switched Output |
-| 14 | DC3 | 12V Switched Output |
-| 18 | USB 3/4/5 | USB-A Ports |
-| 19 | USB-C 1/2 | USB-C Ports |
-| 21 | I2C SDA | Data Line (Sensors) |
-| 22 | I2C SCL | Clock Line (Sensors) |
-| 23 | OneWire | DS18B20 Lens Sensor |
-| 25 | Adj. Voltage | PWM for Southchip SC8903 (Adjustable Output) |
-| 26 | DC5 | 12V Switched Output |
-| 27 | DC4 | 12V Switched Output |
-| 32 | PWM2 | Dew Heater 2 |
-| 33 | PWM1 | Dew Heater 1 |
-
-</details>
+[**ASCOM Alpaca Proxy Documentation**](./docs/ASCOM_PROXY.md)

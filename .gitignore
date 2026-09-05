@@ -13,5 +13,5 @@ ROADMAP.md
 # a single source of truth (the C++ source + release_version.json), not two.
 AscomAlpacaProxy/frontend-vue/public/flasher/firmware/*.bin
 AscomAlpacaProxy/frontend-vue/public/flasher/firmware/version.json
-docs/firmware/*.bin
-docs/firmware/version.json
+webflasher/firmware/*.bin
+webflasher/firmware/version.json

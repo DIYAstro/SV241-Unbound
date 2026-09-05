@@ -66,7 +66,7 @@ if "%SKIP_FIRMWARE_BUILD%"=="1" (
         )
     )
 )
-REM Note: docs/firmware/ (the separate GitHub Pages flasher) is deliberately NOT touched here -
+REM Note: webflasher/firmware/ (the separate GitHub Pages flasher) is deliberately NOT touched here -
 REM publishing there is release-webflasher.yml's job.
 
 REM 3. Build Frontend
