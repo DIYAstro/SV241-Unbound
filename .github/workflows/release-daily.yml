@@ -178,7 +178,16 @@ jobs:
           git tag -f daily
           git push origin daily --force
           if gh release view daily >/dev/null 2>&1; then
+            # Toggling draft -> published resets GitHub's `published_at` timestamp to now - a
+            # plain `gh release edit` (title/notes only, what this used to be) never touches it,
+            # so the "released X ago" badge on the release page kept showing this release's
+            # original creation date forever, even though the content underneath (title, notes,
+            # tag target, and any assets that did change) is rebuilt fresh every day. Unverified
+            # beyond this one intended effect - if a real run shows an unwanted side effect (e.g.
+            # briefly unpublished, other metadata reset), revert to a plain `gh release edit`.
+            gh release edit daily --draft
             gh release edit daily \
+              --draft=false \
               --title "Daily build $(date -u +%Y-%m-%d)" \
               --notes-file release-notes.txt
           else
