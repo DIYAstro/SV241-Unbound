@@ -167,8 +167,7 @@ func SetProxyMaps(switchNames map[string]string, heaterAutoEnableLeader map[stri
 // SetDeviceProfiles atomically replaces every known device's profile, e.g. when restoring a full
 // backup - this is what makes a backup taken on one computer carry every box's names correctly to
 // another. Re-applies whichever device is currently active from the newly-restored data
-// afterwards (see ResyncActiveDeviceProfile), since the restored map may not even contain an entry
-// for it yet.
+// afterwards, since the restored map may not even contain an entry for it yet.
 func SetDeviceProfiles(profiles map[string]DeviceProfile) {
 	ProxyConfigMutex.Lock()
 	defer ProxyConfigMutex.Unlock()
@@ -201,6 +200,19 @@ func GetActiveRigName() string {
 		return ""
 	}
 	return Get().DeviceProfiles[activeDeviceSerial].RigName
+}
+
+// GetRigNameForSerial returns the rig name for an arbitrary (not necessarily currently active)
+// device serial, or "" if that serial has no known profile or no rig name set. Used to label
+// historical telemetry by whichever device actually recorded it, rather than whichever device
+// happens to be connected right now - see GetActiveRigName for that. Thread-safe.
+func GetRigNameForSerial(serial string) string {
+	ProxyConfigMutex.RLock()
+	defer ProxyConfigMutex.RUnlock()
+	if serial == "" {
+		return ""
+	}
+	return Get().DeviceProfiles[serial].RigName
 }
 
 // SetActiveRigName sets the user-facing label for the currently active device's profile. No-op if

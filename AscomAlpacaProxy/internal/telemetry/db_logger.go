@@ -136,16 +136,17 @@ func logTelemetry() {
 	}
 
 	record := database.TelemetryRecord{
-		Timestamp: time.Now().Unix(),
-		Voltage:   getFloat("v"),
-		Current:   getFloat("i"),
-		Power:     getFloat("p"),
-		TempAmb:   getFloat("t_amb"),
-		HumAmb:    getFloat("h_amb"),
-		DewPoint:  getFloat("d"),
-		TempLens:  getFloat("t_lens"),
-		PWM1:      getInt("pwm1"),
-		PWM2:      getInt("pwm2"),
+		Timestamp:    time.Now().Unix(),
+		DeviceSerial: config.GetActiveDeviceSerial(),
+		Voltage:      getFloat("v"),
+		Current:      getFloat("i"),
+		Power:        getFloat("p"),
+		TempAmb:      getFloat("t_amb"),
+		HumAmb:       getFloat("h_amb"),
+		DewPoint:     getFloat("d"),
+		TempLens:     getFloat("t_lens"),
+		PWM1:         getInt("pwm1"),
+		PWM2:         getInt("pwm2"),
 	}
 
 	// Add switch states

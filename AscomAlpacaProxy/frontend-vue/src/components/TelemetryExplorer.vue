@@ -29,16 +29,27 @@ ChartJS.register(
 )
 
 const store = useDeviceStore()
-const { config, switchNames } = storeToRefs(store)
+const { config, switchNames, proxyConfig } = storeToRefs(store)
 const emit = defineEmits(['close'])
 
 // Stats & Selection
 const startDate = ref('')
 const endDate = ref('')
 const selectedSensors = ref([]) // No default selection
+const selectedDevice = ref('') // '' = All Devices
 const chartRef = ref(null) // Chart reference for reset zoom
 const chartContainerRef = ref(null) // Container ref for ResizeObserver
 let resizeObserver = null
+
+// One entry per box this install has ever seen (see config.DeviceProfiles), for the device filter
+// dropdown - labeled by rig name where set, otherwise the raw serial.
+const deviceOptions = computed(() => {
+    const profiles = proxyConfig.value?.deviceProfiles || {}
+    return Object.entries(profiles).map(([serial, profile]) => ({
+        serial,
+        label: profile.rigName || serial
+    }))
+})
 
 // Mapping from internal keys to short keys (for config.ps lookup)
 const switchMapping = {
@@ -46,9 +57,15 @@ const switchMapping = {
     "usbc12": "u12", "usb345": "u34", "adj_conv": "adj", "pwm1": "pwm1", "pwm2": "pwm2",
 }
 
-// Helper to get custom name with fallback
+// Helper to get custom name with fallback. When a specific device is selected, resolves from
+// *that* device's own profile - switchNames (the live mirror) reflects whichever device is
+// currently connected, which isn't necessarily the one whose history is being viewed, and would
+// mislabel another box's data with the wrong names. "All Devices" keeps today's behavior.
 function getLabel(key, defaultLabel) {
-    const customName = switchNames.value?.[key];
+    const names = selectedDevice.value
+        ? (proxyConfig.value?.deviceProfiles?.[selectedDevice.value]?.switchNames || {})
+        : (switchNames.value || {});
+    const customName = names[key];
     if (customName && customName !== key) {
         return `${defaultLabel} (${customName})`;
     }
@@ -169,7 +186,8 @@ async function fetchData() {
     const endTs = new Date(endDate.value).getTime() / 1000;
 
     try {
-        const url = `/api/v1/telemetry/history?start=${startTs}&end=${endTs}`;
+        let url = `/api/v1/telemetry/history?start=${startTs}&end=${endTs}`;
+        if (selectedDevice.value) url += `&device=${encodeURIComponent(selectedDevice.value)}`;
         const res = await fetch(url);
         if (res.ok) {
             let data = await res.json();
@@ -193,8 +211,9 @@ function downloadCSV() {
     // Remove duplicates
     const uniqueCols = [...new Set(exportCols)];
     const cols = uniqueCols.join(',');
-    
-    const url = `/api/v1/telemetry/download?start=${startTs}&end=${endTs}&cols=${cols}`;
+
+    let url = `/api/v1/telemetry/download?start=${startTs}&end=${endTs}&cols=${cols}`;
+    if (selectedDevice.value) url += `&device=${encodeURIComponent(selectedDevice.value)}`;
     window.location.href = url;
 }
 
@@ -356,6 +375,14 @@ const chartOptions = {
                 <input type="datetime-local" v-model="startDate">
                 <input type="datetime-local" v-model="endDate">
                 <button class="apply-btn" @click="fetchData">Load Data</button>
+            </div>
+
+            <div class="control-group" v-if="deviceOptions.length > 1">
+                <label>Rig</label>
+                <select v-model="selectedDevice" @change="fetchData">
+                    <option value="">All Devices</option>
+                    <option v-for="d in deviceOptions" :key="d.serial" :value="d.serial">{{ d.label }}</option>
+                </select>
             </div>
 
             <div class="control-group">

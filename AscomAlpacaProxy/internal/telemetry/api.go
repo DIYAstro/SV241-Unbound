@@ -33,6 +33,9 @@ type DataPoint struct {
 	USBC12    int     `json:"usbc12"`
 	USB345    int     `json:"usb345"`
 	AdjConv   float64 `json:"adj_conv"`
+	// Device is the MAC of the box that recorded this point, or "" for rows logged before the
+	// per-box naming feature existed (or before any device had connected).
+	Device string `json:"device"`
 }
 
 // HandleGetHistory reads from the DB and returns JSON data.
@@ -41,6 +44,7 @@ func HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 	endParam := r.URL.Query().Get("end")
 	dateParam := r.URL.Query().Get("date")
 	durationParam := r.URL.Query().Get("duration")
+	deviceParam := r.URL.Query().Get("device") // "" = all devices
 
 	var start, end int64
 	end = time.Now().Unix()
@@ -77,7 +81,7 @@ func HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 		start = time.Now().Add(-12 * time.Hour).Unix()
 	}
 
-	records, err := database.GetHistory(start, end)
+	records, err := database.GetHistory(start, end, deviceParam)
 	if err != nil {
 		logger.Error("DB Query failed: %v", err)
 		http.Error(w, "Database error", http.StatusInternalServerError)
@@ -118,6 +122,7 @@ func HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 			USBC12:    r.USBC12,
 			USB345:    r.USB345,
 			AdjConv:   r.AdjConv,
+			Device:    r.DeviceSerial,
 		})
 	}
 
@@ -141,12 +146,28 @@ func HandleGetLogDates(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(dates)
 }
 
+// deviceLabel resolves a telemetry row's recording device to a human-readable CSV value: its rig
+// name if one was set, otherwise the raw serial, otherwise "Unknown" for rows predating the
+// per-box naming feature (or logged before any device had connected). Deliberately looks up the
+// rig name *for that row's own serial*, not whichever device happens to be active right now - the
+// same reasoning as GetRigNameForSerial's doc comment.
+func deviceLabel(serial string) string {
+	if serial == "" {
+		return "Unknown"
+	}
+	if rigName := config.GetRigNameForSerial(serial); rigName != "" {
+		return rigName
+	}
+	return serial
+}
+
 // HandleDownloadCSV generates a CSV from DB for the request date or range.
 func HandleDownloadCSV(w http.ResponseWriter, r *http.Request) {
 	startParam := r.URL.Query().Get("start")
 	endParam := r.URL.Query().Get("end")
 	dateParam := r.URL.Query().Get("date")
-	colsParam := r.URL.Query().Get("cols") // comma-separated keys
+	colsParam := r.URL.Query().Get("cols")     // comma-separated keys
+	deviceParam := r.URL.Query().Get("device") // "" = all devices
 
 	var start, end int64
 	filename := "telemetry_export.csv"
@@ -176,7 +197,7 @@ func HandleDownloadCSV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	records, err := database.GetHistory(start, end)
+	records, err := database.GetHistory(start, end, deviceParam)
 	if err != nil {
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
@@ -225,7 +246,7 @@ func HandleDownloadCSV(w http.ResponseWriter, r *http.Request) {
 
 	// Write Header with custom names
 	// Format: key (customName) if custom name exists and differs from key
-	header := []string{"timestamp"}
+	header := []string{"timestamp", "device"}
 	for _, col := range selectedCols {
 		colHeader := col
 		if customName := config.GetSwitchName(col); customName != "" && customName != col {
@@ -240,6 +261,7 @@ func HandleDownloadCSV(w http.ResponseWriter, r *http.Request) {
 
 		var row []string
 		row = append(row, ts) // Timestamp first
+		row = append(row, deviceLabel(r.DeviceSerial))
 
 		for _, col := range selectedCols {
 			var val string

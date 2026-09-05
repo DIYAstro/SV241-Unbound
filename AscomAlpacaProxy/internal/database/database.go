@@ -53,7 +53,48 @@ func Init(dbPath string) error {
 		return fmt.Errorf("failed to create schema: %w", err)
 	}
 
+	if err := migrateAddDeviceSerialColumn(); err != nil {
+		return fmt.Errorf("failed to migrate telemetry_log schema: %w", err)
+	}
+
 	return nil
+}
+
+// migrateAddDeviceSerialColumn adds telemetry_log.device_serial for installs whose database
+// predates the per-box naming feature - SQLite has no "ADD COLUMN IF NOT EXISTS", so this checks
+// PRAGMA table_info first. Existing rows get NULL (meaning "recorded before this existed / unknown
+// device"), which read/display code treats explicitly rather than backfilling - there's no way to
+// know after the fact which device actually recorded them.
+func migrateAddDeviceSerialColumn() error {
+	rows, err := db.Query("PRAGMA table_info(telemetry_log)")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	hasColumn := false
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull, pk int
+		var dfltValue sql.NullString
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &dfltValue, &pk); err != nil {
+			return err
+		}
+		if name == "device_serial" {
+			hasColumn = true
+			break
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if hasColumn {
+		return nil
+	}
+
+	_, err = db.Exec("ALTER TABLE telemetry_log ADD COLUMN device_serial TEXT")
+	return err
 }
 
 // Close closes the database connection.
@@ -94,6 +135,10 @@ type TelemetryRecord struct {
 	USBC12    int
 	USB345    int
 	AdjConv   float64
+	// DeviceSerial identifies which physical SV241 box recorded this row (the MAC address
+	// reported in {"get":"version"}, see config.GetActiveDeviceSerial) - "" for rows recorded
+	// before this field existed, or if no device had connected yet at logging time.
+	DeviceSerial string
 }
 
 // InsertTelemetry writes a record to the DB.
@@ -101,28 +146,44 @@ func InsertTelemetry(r TelemetryRecord) error {
 	query := `
 	INSERT INTO telemetry_log (
 		timestamp, voltage, current, power, temp_amb, hum_amb, dew_point, temp_lens, pwm1, pwm2,
-		dc1, dc2, dc3, dc4, dc5, usbc12, usb345, adj_conv
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		dc1, dc2, dc3, dc4, dc5, usbc12, usb345, adj_conv, device_serial
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	_, err := db.Exec(query,
 		r.Timestamp, r.Voltage, r.Current, r.Power, r.TempAmb, r.HumAmb, r.DewPoint, r.TempLens, r.PWM1, r.PWM2,
-		r.DC1, r.DC2, r.DC3, r.DC4, r.DC5, r.USBC12, r.USB345, r.AdjConv,
+		r.DC1, r.DC2, r.DC3, r.DC4, r.DC5, r.USBC12, r.USB345, r.AdjConv, nullIfEmpty(r.DeviceSerial),
 	)
 	return err
 }
 
-// GetHistory returns records between start and end timestamps.
+// nullIfEmpty turns "" into a real SQL NULL rather than storing an empty string - keeps
+// "unknown device" rows (old data, or logged before any device had connected) consistent whether
+// they predate the column entirely or were written by this exact build.
+func nullIfEmpty(s string) interface{} {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
+// GetHistory returns records between start and end timestamps, optionally filtered to a single
+// device's rows. Pass "" for deviceSerial to return every device's data (today's behavior).
 // limit: for downsampling (e.g. GET every Nth record could be done in SQL with row_number or MOD,
 // but simple filtering is easier first).
 // Actually, basic query is fine, downsampling can be done by API or SQL modulo if needed.
-func GetHistory(start, end int64) ([]TelemetryRecord, error) {
+func GetHistory(start, end int64, deviceSerial string) ([]TelemetryRecord, error) {
 	query := `SELECT timestamp, voltage, current, power, temp_amb, hum_amb, dew_point, temp_lens, pwm1, pwm2,
-	                 dc1, dc2, dc3, dc4, dc5, usbc12, usb345, adj_conv
-	          FROM telemetry_log 
-	          WHERE timestamp BETWEEN ? AND ? 
-	          ORDER BY timestamp ASC`
+	                 dc1, dc2, dc3, dc4, dc5, usbc12, usb345, adj_conv, COALESCE(device_serial, '')
+	          FROM telemetry_log
+	          WHERE timestamp BETWEEN ? AND ?`
+	args := []interface{}{start, end}
+	if deviceSerial != "" {
+		query += ` AND device_serial = ?`
+		args = append(args, deviceSerial)
+	}
+	query += ` ORDER BY timestamp ASC`
 
-	rows, err := db.Query(query, start, end)
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +194,7 @@ func GetHistory(start, end int64) ([]TelemetryRecord, error) {
 		var r TelemetryRecord
 		if err := rows.Scan(
 			&r.Timestamp, &r.Voltage, &r.Current, &r.Power, &r.TempAmb, &r.HumAmb, &r.DewPoint, &r.TempLens, &r.PWM1, &r.PWM2,
-			&r.DC1, &r.DC2, &r.DC3, &r.DC4, &r.DC5, &r.USBC12, &r.USB345, &r.AdjConv,
+			&r.DC1, &r.DC2, &r.DC3, &r.DC4, &r.DC5, &r.USBC12, &r.USB345, &r.AdjConv, &r.DeviceSerial,
 		); err != nil {
 			return nil, err
 		}
