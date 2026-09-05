@@ -1,15 +1,15 @@
-# Vixen Clamp - 3D Print Files
+# Losmandy Clamp - 3D Print Files
 
-This folder contains 3D printable mounting parts for attaching the SV241 controller to a Vixen-style dovetail bar.
+This folder contains 3D printable mounting parts for attaching the SV241 controller to a Losmandy-style dovetail bar.
 
 ## Files
 
 | File | Description |
 |------|-------------|
-| `vixen_clamp_a.3mf` | Main clamp part (ready-to-print) |
-| `vixen_clamp_a.FCStd` | FreeCAD source file for vixen_clamp_a |
-| `vixen_clamp_b.3mf` | Second clamp part (ready-to-print) |
-| `vixen_clamp_b.FCStd` | FreeCAD source file for vixen_clamp_b |
+| `losmandy_clamp_a.3mf` | Main clamp part (ready-to-print) |
+| `losmandy_clamp_a.FCStd` | FreeCAD source file for losmandy_clamp_a |
+| `losmandy_clamp_b.3mf` | Second clamp part (ready-to-print) |
+| `losmandy_clamp_b.FCStd` | FreeCAD source file for losmandy_clamp_b |
 
 ## Required Hardware
 
