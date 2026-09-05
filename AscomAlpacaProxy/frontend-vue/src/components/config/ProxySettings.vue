@@ -1,12 +1,24 @@
 <script setup>
 import { useDeviceStore } from '../../stores/device'
 import { useModalStore } from '../../stores/modal'
+import { useThemeStore } from '../../stores/theme'
 import { storeToRefs } from 'pinia'
 import { ref, watch, computed } from 'vue'
 
 const store = useDeviceStore()
 const modal = useModalStore()
 const { proxyConfig, availableIps } = storeToRefs(store)
+
+// Theme is a client-side/browser preference (localStorage-backed, applied instantly) -
+// deliberately kept separate from localConfig/hasChanges/save() below, which is for the
+// server-persisted ProxyConfig fields. It shouldn't need a "Save" click to take effect, same as
+// it never did in its previous home (the header).
+const themeStore = useThemeStore()
+const { currentTheme } = storeToRefs(themeStore)
+const { THEMES } = themeStore
+function handleThemeChange(event) {
+    themeStore.setTheme(event.target.value)
+}
 
 const localConfig = ref({})
 const hasChanges = ref(false)
@@ -48,7 +60,22 @@ async function save() {
 <template>
   <div class="config-group full-width-group proxy-settings">
       <h3>Proxy Settings</h3>
-      
+
+      <!-- Appearance Card - client-side only, applies instantly, no Save button needed -->
+      <div class="settings-card glass-panel">
+          <h4>Appearance</h4>
+          <div class="card-grid">
+              <div class="form-group">
+                  <label>Theme</label>
+                  <select :value="currentTheme" @change="handleThemeChange">
+                      <option :value="THEMES.DARK">Material Dark</option>
+                      <option :value="THEMES.DEFAULT">Deep Space</option>
+                      <option :value="THEMES.RED">Night Vision</option>
+                  </select>
+              </div>
+          </div>
+      </div>
+
       <!-- Connection Settings Card -->
       <div class="settings-card glass-panel">
           <h4>Connection Settings</h4>
