@@ -20,15 +20,37 @@ func defaultListenAddress() string {
 	return "127.0.0.1"
 }
 
+// DeviceProfile holds settings that belong to a specific physical SV241 box (identified by its
+// factory MAC address, see SetActiveDeviceSerial) rather than to this proxy installation. Keeping
+// these keyed by device rather than flat means swapping which box is plugged into this computer -
+// or moving a box to a different computer's proxy install via Backup/Restore - carries the right
+// names with it instead of leaving them behind.
+type DeviceProfile struct {
+	RigName                string            `json:"rigName"` // User-facing label shown instead of the raw MAC
+	SwitchNames            map[string]string `json:"switchNames"`
+	LensTempName           string            `json:"lensTempName"`
+	HeaterAutoEnableLeader map[string]bool   `json:"heaterAutoEnableLeader"`
+	WeatherSourcePriority  map[string]string `json:"weatherSourcePriority"`
+}
+
 // ProxyConfig stores configuration specific to the Go proxy itself.
 type ProxyConfig struct {
-	SerialPortName         string            `json:"serialPortName"`
-	AutoDetectPort         bool              `json:"autoDetectPort"`
-	NetworkPort            int               `json:"networkPort"`
-	ListenAddress          string            `json:"listenAddress"`
-	LogLevel               string            `json:"logLevel"`
-	SwitchNames            map[string]string `json:"switchNames"`
-	HeaterAutoEnableLeader map[string]bool   `json:"heaterAutoEnableLeader"`
+	SerialPortName string `json:"serialPortName"`
+	AutoDetectPort bool   `json:"autoDetectPort"`
+	NetworkPort    int    `json:"networkPort"`
+	ListenAddress  string `json:"listenAddress"`
+	LogLevel       string `json:"logLevel"`
+
+	// DeviceProfiles holds the per-box settings below, keyed by device MAC address (see
+	// SetActiveDeviceSerial). SwitchNames/LensTempName/HeaterAutoEnableLeader/WeatherSourcePriority
+	// are kept as top-level fields too, but only as a live mirror of whichever device is currently
+	// active (see applyActiveProfileLocked/syncActiveProfileFromFlatLocked) - every read/write
+	// call site elsewhere in the codebase keeps using them exactly as before, unaware that a
+	// specific box is involved at all. Access DeviceProfiles itself only through the Get*/Set*
+	// accessors below, never directly - same concurrency hazard as the map fields it contains.
+	DeviceProfiles         map[string]DeviceProfile `json:"deviceProfiles"`
+	SwitchNames            map[string]string        `json:"switchNames"`
+	HeaterAutoEnableLeader map[string]bool          `json:"heaterAutoEnableLeader"`
 
 	HistoryRetentionNights     int    `json:"historyRetentionNights"`
 	TelemetryInterval          int    `json:"telemetryInterval"`          // Seconds
@@ -91,7 +113,20 @@ func GetSwitchName(internalName string) string {
 func SetSwitchName(internalName, displayName string) {
 	ProxyConfigMutex.Lock()
 	defer ProxyConfigMutex.Unlock()
-	Get().SwitchNames[internalName] = displayName
+	conf := Get()
+	conf.SwitchNames[internalName] = displayName
+	syncActiveProfileFromFlatLocked(conf)
+}
+
+// SetLensTempName sets the custom display name for the Lens Temp sensor check, thread-safely. Use
+// this instead of assigning conf.LensTempName directly - a direct assignment would skip syncing
+// the change into the active device's profile (see syncActiveProfileFromFlatLocked).
+func SetLensTempName(name string) {
+	ProxyConfigMutex.Lock()
+	defer ProxyConfigMutex.Unlock()
+	conf := Get()
+	conf.LensTempName = name
+	syncActiveProfileFromFlatLocked(conf)
 }
 
 // GetHeaterAutoEnableLeader returns whether auto-enabling the leader is on for a follower heater
@@ -125,6 +160,156 @@ func SetProxyMaps(switchNames map[string]string, heaterAutoEnableLeader map[stri
 	}
 	if weatherSourcePriority != nil {
 		conf.WeatherSourcePriority = weatherSourcePriority
+	}
+	syncActiveProfileFromFlatLocked(conf)
+}
+
+// SetDeviceProfiles atomically replaces every known device's profile, e.g. when restoring a full
+// backup - this is what makes a backup taken on one computer carry every box's names correctly to
+// another. Re-applies whichever device is currently active from the newly-restored data
+// afterwards (see ResyncActiveDeviceProfile), since the restored map may not even contain an entry
+// for it yet.
+func SetDeviceProfiles(profiles map[string]DeviceProfile) {
+	ProxyConfigMutex.Lock()
+	defer ProxyConfigMutex.Unlock()
+	if profiles == nil {
+		return
+	}
+	conf := Get()
+	conf.DeviceProfiles = profiles
+	if activeDeviceSerial != "" {
+		if profile, exists := conf.DeviceProfiles[activeDeviceSerial]; exists {
+			applyActiveProfileLocked(conf, profile)
+		}
+	}
+}
+
+// GetActiveDeviceSerial returns the MAC address of whichever SV241 box is currently connected, or
+// "" if none has connected yet this run. Thread-safe.
+func GetActiveDeviceSerial() string {
+	ProxyConfigMutex.RLock()
+	defer ProxyConfigMutex.RUnlock()
+	return activeDeviceSerial
+}
+
+// GetActiveRigName returns the user-facing label for the currently active device's profile, or ""
+// if no device is active yet. Thread-safe.
+func GetActiveRigName() string {
+	ProxyConfigMutex.RLock()
+	defer ProxyConfigMutex.RUnlock()
+	if activeDeviceSerial == "" {
+		return ""
+	}
+	return Get().DeviceProfiles[activeDeviceSerial].RigName
+}
+
+// SetActiveRigName sets the user-facing label for the currently active device's profile. No-op if
+// no device is active yet. Thread-safe.
+func SetActiveRigName(name string) {
+	ProxyConfigMutex.Lock()
+	defer ProxyConfigMutex.Unlock()
+	if activeDeviceSerial == "" {
+		return
+	}
+	conf := Get()
+	profile := conf.DeviceProfiles[activeDeviceSerial]
+	profile.RigName = name
+	conf.DeviceProfiles[activeDeviceSerial] = profile
+}
+
+// SetActiveDeviceSerial records which physical box is currently connected (keyed by the MAC
+// address the firmware reports in {"get":"version"}) and switches the flat mirror fields
+// (SwitchNames, LensTempName, HeaterAutoEnableLeader, WeatherSourcePriority) over to that device's
+// own profile - every other accessor in this file keeps reading/writing those same flat fields
+// unaware a specific box is involved at all. Called once per successful connection by the serial
+// package, right after the device's MAC is read back.
+//
+// The very first device this install ever sees inherits whatever the flat fields already held
+// (DeviceProfiles is empty at that point) - this is the upgrade path for existing single-box
+// users, who should see their existing names completely unchanged. Any device after that starts
+// from the same clean defaults Load() gives a brand new install, rather than inheriting an
+// unrelated box's custom names.
+func SetActiveDeviceSerial(serial string) {
+	ProxyConfigMutex.Lock()
+	defer ProxyConfigMutex.Unlock()
+	if serial == "" || serial == activeDeviceSerial {
+		return
+	}
+	activeDeviceSerial = serial
+	conf := Get()
+	if conf.DeviceProfiles == nil {
+		conf.DeviceProfiles = make(map[string]DeviceProfile)
+	}
+	profile, exists := conf.DeviceProfiles[serial]
+	if !exists {
+		if len(conf.DeviceProfiles) == 0 {
+			profile = DeviceProfile{
+				SwitchNames:            conf.SwitchNames,
+				LensTempName:           conf.LensTempName,
+				HeaterAutoEnableLeader: conf.HeaterAutoEnableLeader,
+				WeatherSourcePriority:  conf.WeatherSourcePriority,
+			}
+		} else {
+			profile = newDefaultDeviceProfile()
+		}
+		conf.DeviceProfiles[serial] = profile
+	}
+	applyActiveProfileLocked(conf, profile)
+	logger.Info("Active device profile: serial=%s, rigName=%q", serial, profile.RigName)
+	go func() {
+		if err := Save(); err != nil {
+			logger.Error("Failed to save proxy config after switching active device profile: %v", err)
+		}
+	}()
+}
+
+// applyActiveProfileLocked copies a device profile's fields onto the flat mirror fields. Caller
+// must hold ProxyConfigMutex.
+func applyActiveProfileLocked(conf *ProxyConfig, profile DeviceProfile) {
+	conf.SwitchNames = profile.SwitchNames
+	conf.LensTempName = profile.LensTempName
+	conf.HeaterAutoEnableLeader = profile.HeaterAutoEnableLeader
+	conf.WeatherSourcePriority = profile.WeatherSourcePriority
+}
+
+// syncActiveProfileFromFlatLocked writes the flat mirror fields back into the active device's
+// entry in DeviceProfiles, so a change made through any of the Get*/Set* accessors above actually
+// persists per-box instead of only updating the transient mirror. No-op if no device has connected
+// yet (activeDeviceSerial == "") - the flat fields still work as a plain fallback in that case,
+// exactly as they did before this feature existed, and get adopted as the first profile the moment
+// a device does connect (see SetActiveDeviceSerial). Caller must hold ProxyConfigMutex.
+func syncActiveProfileFromFlatLocked(conf *ProxyConfig) {
+	if activeDeviceSerial == "" {
+		return
+	}
+	if conf.DeviceProfiles == nil {
+		conf.DeviceProfiles = make(map[string]DeviceProfile)
+	}
+	conf.DeviceProfiles[activeDeviceSerial] = DeviceProfile{
+		RigName:                conf.DeviceProfiles[activeDeviceSerial].RigName,
+		SwitchNames:            conf.SwitchNames,
+		LensTempName:           conf.LensTempName,
+		HeaterAutoEnableLeader: conf.HeaterAutoEnableLeader,
+		WeatherSourcePriority:  conf.WeatherSourcePriority,
+	}
+}
+
+// newDefaultDeviceProfile builds a fresh profile using the same defaults Load() gives a brand new
+// install - used for every device profile after the very first one (see SetActiveDeviceSerial).
+func newDefaultDeviceProfile() DeviceProfile {
+	SwitchMapMutex.RLock()
+	switchNames := make(map[string]string, len(SwitchIDMap))
+	for _, internalName := range SwitchIDMap {
+		switchNames[internalName] = internalName
+	}
+	SwitchMapMutex.RUnlock()
+	return DeviceProfile{
+		SwitchNames: switchNames,
+		HeaterAutoEnableLeader: map[string]bool{
+			"pwm1": true,
+			"pwm2": true,
+		},
+		WeatherSourcePriority: make(map[string]string),
 	}
 }
 
@@ -171,6 +356,10 @@ var (
 
 	proxyConfig     *ProxyConfig // Singleton instance
 	proxyConfigFile string       // Full path to the config file
+
+	// activeDeviceSerial is the MAC address of whichever SV241 box is currently connected, or ""
+	// if none has connected yet this run. Guarded by ProxyConfigMutex - see SetActiveDeviceSerial.
+	activeDeviceSerial string
 )
 
 // GetSwitchMapLength returns the number of switches in a thread-safe manner.
@@ -292,6 +481,9 @@ func Load() error {
 	if proxyConfig.LogLevel == "" {
 		logger.Warn("Configuration key 'LogLevel' not found, using default 'INFO'.")
 		proxyConfig.LogLevel = "INFO"
+	}
+	if proxyConfig.DeviceProfiles == nil {
+		proxyConfig.DeviceProfiles = make(map[string]DeviceProfile)
 	}
 	if proxyConfig.SwitchNames == nil {
 		proxyConfig.SwitchNames = make(map[string]string)

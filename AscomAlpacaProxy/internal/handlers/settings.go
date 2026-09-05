@@ -17,6 +17,10 @@ type SettingsResponse struct {
 	ActiveSwitches      map[int]string      `json:"active_switches"`
 	SerialPortConnected bool                `json:"serial_port_connected"`
 	ReconnectPaused     bool                `json:"reconnect_paused"`
+	// ActiveDeviceSerial/ActiveRigName identify whichever SV241 box is currently connected - both
+	// are "" until a device has connected at least once this run. See config.DeviceProfile.
+	ActiveDeviceSerial string `json:"active_device_serial"`
+	ActiveRigName      string `json:"active_rig_name"`
 }
 
 // HandleGetSettings provides the current proxy configuration and available IP addresses.
@@ -35,20 +39,39 @@ func HandleGetSettings(w http.ResponseWriter, r *http.Request) {
 		ActiveSwitches:      config.SwitchIDMap,
 		SerialPortConnected: serial.IsConnected(),
 		ReconnectPaused:     serial.IsReconnectPaused(),
+		ActiveDeviceSerial:  config.GetActiveDeviceSerial(),
+		ActiveRigName:       config.GetActiveRigName(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
 
+// postSettingsPayload is the POST /api/v1/settings request body. It embeds config.ProxyConfig for
+// every plain proxy-wide setting, plus ActiveRigName - which isn't a ProxyConfig field itself (it
+// lives on whichever DeviceProfile is currently active, see config.SetActiveRigName) but is edited
+// alongside everything else on the same settings page.
+//
+// ActiveRigName is a *string, not string, deliberately: a caller that posts its proxy_config
+// as-is (e.g. SwitchConfig.vue's save flow, which spreads store.proxyConfig - a shape that never
+// had this field, since it isn't part of ProxyConfig) omits this key entirely, which must leave
+// the rig name untouched rather than being decoded as "" and wiping out whatever was set before.
+// Same reasoning as SwitchNames/HeaterAutoEnableLeader/WeatherSourcePriority - nil means "not
+// provided", not "clear it" - see SetProxyMaps.
+type postSettingsPayload struct {
+	config.ProxyConfig
+	ActiveRigName *string `json:"active_rig_name"`
+}
+
 // HandlePostSettings updates the proxy configuration.
 func HandlePostSettings(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
-	var newConfig config.ProxyConfig
-	if err := json.NewDecoder(r.Body).Decode(&newConfig); err != nil {
+	var payload postSettingsPayload
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		http.Error(w, "Invalid JSON format", http.StatusBadRequest)
 		return
 	}
+	newConfig := payload.ProxyConfig
 
 	// Basic validation
 	if newConfig.NetworkPort <= 0 || newConfig.NetworkPort > 65535 {
@@ -82,7 +105,12 @@ func HandlePostSettings(w http.ResponseWriter, r *http.Request) {
 	conf.EnableMasterPower = newConfig.EnableMasterPower
 	conf.EnableNotifications = newConfig.EnableNotifications
 	conf.AlwaysShowLensTemp = newConfig.AlwaysShowLensTemp
-	conf.LensTempName = newConfig.LensTempName
+	// LensTempName is tied to the active device's profile (see config.SetLensTempName) - a direct
+	// assignment here would skip syncing the change into it.
+	config.SetLensTempName(newConfig.LensTempName)
+	if payload.ActiveRigName != nil {
+		config.SetActiveRigName(*payload.ActiveRigName)
+	}
 	conf.FirstRunComplete = newConfig.FirstRunComplete
 
 	// Update Weather Service Settings

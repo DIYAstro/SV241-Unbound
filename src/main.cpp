@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <esp_task_wdt.h>
+#include <esp_mac.h>
 #include "config_manager.h"
 #include "sensors.h"
 #include "power_control.h"
@@ -182,6 +183,19 @@ void serial_command_task(void *pvParameters) {
             String output_buffer;
             version_doc.clear();
             version_doc["version"] = FIRMWARE_VERSION;
+
+            // Device's factory-burned, permanent MAC address - used by the proxy as a per-box
+            // serial number so switch names/preferences stay tied to this specific physical box
+            // rather than to whichever computer's proxy install happens to be talking to it. Read
+            // directly via esp_read_mac() rather than WiFi.macAddress() - this firmware never uses
+            // WiFi, no need to pull in that whole stack just to read an always-available value.
+            uint8_t mac[6];
+            esp_read_mac(mac, ESP_MAC_WIFI_STA);
+            char mac_str[18];
+            snprintf(mac_str, sizeof(mac_str), "%02X:%02X:%02X:%02X:%02X:%02X",
+                     mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+            version_doc["mac"] = String(mac_str);
+
             serializeJson(version_doc, output_buffer);
 
             xSemaphoreTake(serial_mutex, portMAX_DELAY);

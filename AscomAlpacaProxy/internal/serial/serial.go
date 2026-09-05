@@ -771,6 +771,7 @@ func FetchFirmwareVersion() {
 
 	var versionResponse struct {
 		Version string `json:"version"`
+		Mac     string `json:"mac"`
 	}
 	if err := json.Unmarshal([]byte(resp), &versionResponse); err != nil {
 		logger.Warn("Could not parse firmware version response: %v", err)
@@ -780,6 +781,10 @@ func FetchFirmwareVersion() {
 	firmwareVersion = versionResponse.Version
 	firmwareVersionMu.Unlock()
 	logger.Info("Firmware version: %s", versionResponse.Version)
+
+	// Older firmware builds don't report "mac" yet - SetActiveDeviceSerial no-ops on "" rather
+	// than clobbering whatever profile (if any) was already active.
+	config.SetActiveDeviceSerial(versionResponse.Mac)
 }
 
 func logMemoryStatus(data map[string]interface{}) {

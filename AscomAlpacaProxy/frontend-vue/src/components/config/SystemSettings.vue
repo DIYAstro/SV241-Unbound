@@ -1,7 +1,27 @@
 <script setup>
 import { useModalStore } from '../../stores/modal'
+import { useDeviceStore } from '../../stores/device'
+import { storeToRefs } from 'pinia'
+import { ref, watch } from 'vue'
 
 const modal = useModalStore()
+const store = useDeviceStore()
+const { activeDeviceSerial, activeRigName } = storeToRefs(store)
+
+// Local edit buffer, separate from the store's live value so typing doesn't fight the 2s
+// settings poll (checkConnection) overwriting the field mid-edit - same pattern as
+// SwitchConfig.vue's `edits` ref.
+const rigNameEdit = ref(activeRigName.value)
+watch(activeRigName, (val) => { rigNameEdit.value = val })
+
+async function saveRigName() {
+    try {
+        await store.saveProxyConfig({ ...store.proxyConfig, active_rig_name: rigNameEdit.value })
+        modal.success('Rig name saved.')
+    } catch (e) {
+        modal.error('Error saving rig name: ' + e.message)
+    }
+}
 
 async function sendRebootCommand() {
     modal.confirm('Are you sure you want to reboot the device?', {
@@ -164,7 +184,25 @@ function openFlasher() {
 <template>
   <div class="config-group full-width-group">
       <h3>System Maintenance</h3>
-      
+
+      <!-- Device Identity: lets a user tell multiple boxes apart by a friendly label instead of
+           the raw MAC. Only shown once a device has actually connected (activeDeviceSerial set) -
+           there's nothing to name before that. -->
+      <div v-if="activeDeviceSerial" class="action-card glass-panel" style="margin-bottom: 1rem;">
+          <h4>Connected Box</h4>
+          <p class="card-description">
+              A friendly name for this specific SV241 box. Switch names, the Lens Temp label, and
+              heater/weather preferences all travel with this name if you use more than one box.
+          </p>
+          <div class="button-row">
+              <input type="text" v-model="rigNameEdit" placeholder="e.g. Imaging Rig" style="flex: 2;">
+              <button @click="saveRigName" class="btn-secondary">Save</button>
+          </div>
+          <small style="color: var(--text-muted); opacity: 0.8;" :title="activeDeviceSerial">
+              Serial: {{ activeDeviceSerial }}
+          </small>
+      </div>
+
       <!-- Top Row: Backup & Firmware (larger cards) -->
       <div class="actions-grid-2x2">
           <div class="action-card glass-panel">

@@ -487,7 +487,10 @@ func handleRestoreBackup(w http.ResponseWriter, r *http.Request) {
 	conf.LogLevel = backup.ProxyConfig.LogLevel
 	// See ProxyConfigMutex's doc comment (internal/config/config.go) - these are maps read
 	// concurrently elsewhere, direct assignment here would race those readers.
-	config.SetProxyMaps(backup.ProxyConfig.SwitchNames, backup.ProxyConfig.HeaterAutoEnableLeader, nil)
+	config.SetProxyMaps(backup.ProxyConfig.SwitchNames, backup.ProxyConfig.HeaterAutoEnableLeader, backup.ProxyConfig.WeatherSourcePriority)
+	// Restore every known device's profile wholesale (not just the currently active one) - this is
+	// what makes a backup taken on one computer carry every box's names to another correctly.
+	config.SetDeviceProfiles(backup.ProxyConfig.DeviceProfiles)
 	conf.HistoryRetentionNights = backup.ProxyConfig.HistoryRetentionNights
 	conf.TelemetryInterval = backup.ProxyConfig.TelemetryInterval
 	conf.EnableAlpacaVoltageControl = backup.ProxyConfig.EnableAlpacaVoltageControl

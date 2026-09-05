@@ -22,6 +22,11 @@ export const useDeviceStore = defineStore('device', () => {
     const powerStatus = ref({})
     const config = ref({})
     const proxyConfig = ref({})
+    // Identifies whichever SV241 box is currently connected - "" until one has connected at
+    // least once this run. See config.DeviceProfile (Go side) for why names/preferences are
+    // tied to this rather than just to the proxy install.
+    const activeDeviceSerial = ref('')
+    const activeRigName = ref('')
 
     // Actions
     async function fetchConfig() {
@@ -199,6 +204,9 @@ export const useDeviceStore = defineStore('device', () => {
                 availableIps.value = settings.available_ips;
             }
 
+            activeDeviceSerial.value = settings.active_device_serial || '';
+            activeRigName.value = settings.active_rig_name || '';
+
             isPaused.value = settings.reconnect_paused === true;
 
             if (proxyConf && proxyConf.serialPortName) {
@@ -305,6 +313,8 @@ export const useDeviceStore = defineStore('device', () => {
         powerStatus,
         config,
         proxyConfig,
+        activeDeviceSerial,
+        activeRigName,
         telemetryHistory,
         availableDates,
         availableIps,
