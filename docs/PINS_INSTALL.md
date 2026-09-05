@@ -1,7 +1,10 @@
-# Installing the SV241 Proxy on a PINS Raspberry Pi
+# Installing the SV241 Alpaca Proxy on a PINS Raspberry Pi
 
 [← Back to main readme](../readme.md)
 
+[PINS](https://touch-n-stars.eu/#pins) is a Linux port of [NINA](https://nighttime-imaging.eu/) for astrophotography that runs on a Raspberry Pi.
+
+> [!CAUTION]
 > **Experimental, not regularly tested.** The Linux install path (this guide, `install_linux.sh`,
 > and the CH340 driver it relies on) has been verified end-to-end against real Raspberry Pi
 > hardware, but the maintainer doesn't run Linux day-to-day and this isn't part of any ongoing
@@ -95,7 +98,7 @@ If you've got other CH340-based gear plugged into the SV241's own switchable USB
 3+4+5` / `USB-C 1+2`) specifically, you can guarantee an unambiguous very first connection instead
 of just relying on the above: set those outputs' startup state to **Off** (Switches tab in the web
 interface, or the firmware config). With them off at boot, whatever's plugged into them is
-electrically absent - not enumerated on the USB bus at all - so the Proxy's first-ever scan can
+electrically absent - not enumerated on the USB bus at all - so the proxy's first-ever scan can
 only ever see the SV241 itself. Once it's connected once (and so has a port pinned), it's safe to
 turn those outputs back on; only a fresh, un-pinned scan (e.g. after moving the SV241 to a
 different USB port) would need this trick again. Doesn't help with CH340 devices plugged into some
@@ -143,10 +146,10 @@ started) or the version shown in the web interface.
 
 ## 9. Updating the firmware
 
-The Proxy has a built-in web flasher, but it needs a browser running **on the Pi itself** - the
+The proxy has a built-in web flasher, but it needs a browser running **on the Pi itself** - the
 browser talks to the SV241 directly over USB, so it only works from the same machine the box is
 physically plugged into. **Opening it from another computer on the network will not work,** even
-though the Proxy's own web interface otherwise works fine remotely.
+though the proxy's own web interface otherwise works fine remotely.
 
 To get a browser on the Pi's own desktop, install PINS' VNC plugin first, then connect to the Pi
 over VNC. From inside that VNC session, open Chromium and go to:
@@ -160,18 +163,18 @@ click Connect and follow the on-screen instructions.
 
 ## Manually setting the serial port (advanced)
 
-Normally you never need this - the Proxy finds the SV241 on its own and, from then on, remembers
+Normally you never need this - the proxy finds the SV241 on its own and, from then on, remembers
 exactly which USB port it was on (see the note in step 4). But if you'd rather set it explicitly -
 say, you've got other CH340-based USB-serial gear on the Pi and want to skip relying on
 auto-detection even once - here's how.
 
 **Easiest way: let it find the SV241 once, then lock that in.** After a normal install and a
-successful connect (steps 1-6), the Proxy has already written the right value into its config.
+successful connect (steps 1-6), the proxy has already written the right value into its config.
 Open `~/.config/SV241AlpacaProxy/proxy_config.json` and look at `serialPortName` - it'll be
 something like `"ch340-usb:bus1:1.1.4.4"`, not a `/dev/ttyUSB0`-style path (see
 `internal/serial/ch340_linux.go` for why - the short version: this identifies the SV241 by its
 physical USB port, not by a device node name that can change). Set `"autoDetectPort": false` (via
-the web interface's Proxy Settings tab, or directly in this file) and you're done - the Proxy will
+the web interface's Proxy Settings tab, or directly in this file) and you're done - the proxy will
 only ever try that exact port from now on.
 
 **Setting it yourself, without ever letting auto-detect run:**
@@ -197,10 +200,10 @@ only ever try that exact port from now on.
    ```
    The `1-1.3` part is the bit you need - it's `<bus number>-<physical port path>` (here: bus `1`,
    port path `1.3`; on a Pi behind extra hubs/adapters it'll have more segments, e.g. `1-1.4.2`).
-4. Turn that into the Proxy's format by replacing the first `-` with `:bus` and adding a `:` after
+4. Turn that into the proxy's format by replacing the first `-` with `:bus` and adding a `:` after
    the bus number - `1-1.3` becomes `ch340-usb:bus1:1.3`.
 5. Edit `~/.config/SV241AlpacaProxy/proxy_config.json` (create the directory/file first if the
-   Proxy has never run yet):
+   proxy has never run yet):
    ```json
    "serialPortName": "ch340-usb:bus1:1.3",
    "autoDetectPort": false,
@@ -214,7 +217,7 @@ only ever try that exact port from now on.
 
 Got the format wrong, or the SV241 later moves to a different USB port? Nothing breaks - an
 unrecognized or non-matching value is simply treated the same as no preference at all, and the
-Proxy falls back to its normal auto-detection.
+proxy falls back to its normal auto-detection.
 
 ## Installing a daily build
 

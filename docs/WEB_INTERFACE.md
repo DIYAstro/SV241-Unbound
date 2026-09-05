@@ -2,7 +2,22 @@
 
 [← Back to proxy overview](./ASCOM_PROXY.md)
 
-This section provides a walkthrough of the web interface, explaining each panel and configuration tab.
+This guide provides a walkthrough of the web interface, explaining each panel and configuration tab.
+
+## Table of Contents
+
+- [Live Telemetry Panel](#live-telemetry-panel)
+- [Power Control Panel](#power-control-panel)
+- [Configuration Tabs](#configuration-tabs)
+  - [Switches Tab](#switches-tab)
+  - [Dew Heaters Tab](#dew-heaters-tab)
+    - [How PID Mode Works](#how-pid-mode-works)
+    - [Simplified PID Tuning Guide](#simplified-pid-tuning-guide)
+  - [Sensors Tab](#sensors-tab)
+  - [Weather Service Tab](#weather-service-tab)
+  - [Proxy Tab](#proxy-tab)
+  - [System Tab](#system-tab)
+- [Live Log Panel](#live-log-panel)
 
 ## Live Telemetry Panel
 
@@ -19,7 +34,8 @@ The top panel displays real-time sensor readings from the SV241 device:
 | **Lens Temp** | Objective/lens temperature from DS18B20 sensor (°C) |
 | **PWM 1/2** | Current dew heater power levels (%) |
 
-> **Tip:** Use the chart button in the telemetry panel header to open the **Telemetry Explorer** for interactive historical charts and data export.
+> [!TIP]
+> Use the chart button in the telemetry panel header to open the **Telemetry Explorer** for interactive historical charts and data export.
 
 ## Power Control Panel
 
@@ -36,7 +52,7 @@ The collapsible "Configuration & Settings" section contains six tabs:
 Configure power switch behavior:
 *   **State (Startup):** Set each switch to On, Off, or Disabled at device boot.
 *   **Custom Name:** Assign user-friendly names that appear in ASCOM clients.
-*   **Voltage:** Set the adjustable converter output voltage (1-15V).
+*   **Voltage:** Set the adjustable converter output voltage (0-15V).
 
 > [!NOTE]
 > **Names Follow the Box, Not the Computer:** Custom switch names (along with the Lens Temp label, dew heater auto-enable-leader preference, and weather source priorities) are stored per physical SV241 box, identified by its factory-set serial number - not per proxy installation. Plug a different box into the same computer and it gets its own clean set of names instead of inheriting the previous box's; plug a box you've configured before back in (even on a different computer, via a restored backup) and its names come right back. Give a box a friendly label under **System Tab > Connected Box** ("Rig Name") - it then appears in the header badge and lets you tell boxes apart at a glance instead of by raw serial number.
@@ -57,11 +73,12 @@ Configure the two PWM dew heater outputs:
 In **PID Mode**, the controller automatically adjusts heater power to maintain the lens temperature at a safe level above the dew point:
 
 *   **Lens Temp:** The current temperature of the lens, measured by an external sensor.
-*   **Target Temp / Minimum Temp:** The desired temperature offset above the ambient dew point. A typical value is 3-5°C.
+*   **Target Temp / Minimum Temp:** The desired temperature offset above the ambient dew point (Recommended: 2.0°C - 5.0°C).
 
 The controller calculates the dew point from ambient temperature and humidity, adds the target offset, and adjusts heater power to maintain that temperature.
 
-> **Important:** The lens temperature sensor (labeled **TEMP** on the SV241) must be positioned **under or adjacent to the dew heater strap**. This ensures the sensor measures the heated area and provides accurate feedback for the PID controller.
+> [!IMPORTANT]
+> The lens temperature sensor (labeled **TEMP** on the SV241) must be positioned **under or adjacent to the dew heater strap**. This ensures the sensor measures the heated area and provides accurate feedback for the PID controller.
 
 #### Simplified PID Tuning Guide
 PID mode automatically regulates the heater to keep your optics dry. If you notice unstable temperatures, use this guide to tune the parameters:
@@ -113,14 +130,16 @@ Maintenance and backup functions:
 *   **Backup & Restore:** Export or import the complete configuration (both proxy and firmware settings). A backup remembers which physical box its firmware settings (calibration offsets, heater configuration, etc.) came from; restoring it while a *different* box is connected is blocked with a warning by default, since applying one box's on-device settings to another is rarely what you want - confirm explicitly if that's intentional (e.g. replacing one box with another).
 *   **Danger Zone:** Contains critical device operations:
     *   **Update Firmware:** Opens the integrated web flasher to update the SV241 firmware directly from the browser using the Web Serial API—no additional tools required.
-        > **Note:** Flashing requires the browser (Chrome/Edge) to run on the **same machine** where the SV241-Box is connected via USB. Alternatively, use the [standalone Web Flasher](https://diyastro.github.io/SV241-Unbound/).
+        > [!NOTE]
+        > Flashing requires the browser (Chrome/Edge) to run on the **same machine** where the SV241 device is connected via USB. Alternatively, use the [standalone Web Flasher](https://diyastro.github.io/SV241-Unbound/).
     *   **Reboot Device:** Performs a soft restart of the SV241 device.
     *   **Factory Reset:** Erases all saved settings on the device and restores factory defaults.
 
 > [!IMPORTANT]
 > **ASCOM Client Reconnection Required:** Changes to the ASCOM Features settings (Master Power switch, Voltage Slider mode) also require your astronomy software to **disconnect and reconnect** to see the updated switch configuration.
 
-> **Note:** When disabling Auto-Detect Port, make sure to also specify a serial port name. See [Configuration Reference](./CONFIGURATION_REFERENCE.md#manual-configuration-proxy_configjson) for details.
+> [!NOTE]
+> When disabling Auto-Detect Port, make sure to also specify a serial port name. See [Configuration Reference](./CONFIGURATION_REFERENCE.md#manual-configuration-proxy_configjson) for details.
 
 ## Live Log Panel
 

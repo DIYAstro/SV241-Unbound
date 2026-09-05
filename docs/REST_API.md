@@ -2,7 +2,7 @@
 
 [← Back to proxy overview](./ASCOM_PROXY.md)
 
-This section covers advanced usage for power users who want to control the SV241 via command line, scripts, or custom integrations.
+This guide covers advanced usage for power users who want to control the SV241 via command line, scripts, or custom integrations.
 
 ## Custom ASCOM Actions
 
@@ -36,7 +36,8 @@ curl -X PUT -d "Action=MasterSwitchOff" http://localhost:32241/api/v1/switch/0/a
 curl -X PUT -d "Action=MasterSwitchOn" http://localhost:32241/api/v1/switch/0/action
 ```
 
-> **Note for Windows PowerShell users:** The standard `curl` command in PowerShell is an alias for `Invoke-WebRequest`, which has a different syntax and requires the `Content-Type` to be set explicitly. Here are the correct PowerShell commands:
+> [!NOTE]
+> **For Windows PowerShell users:** The standard `curl` command in PowerShell is an alias for `Invoke-WebRequest`, which has a different syntax and requires the `Content-Type` to be set explicitly. Here are the correct PowerShell commands:
 > ```powershell
 > # Turn all switches off
 > Invoke-WebRequest -Uri http://localhost:32241/api/v1/switch/0/action -Method PUT -Body "Action=MasterSwitchOff" -ContentType "application/x-www-form-urlencoded"
@@ -57,22 +58,33 @@ Invoke-WebRequest -Uri http://localhost:32241/api/v1/observingconditions/0/actio
 
 ## Reading Sensor Values (Sensor Switches)
 
-The power metrics and environmental sensors are exposed as read-only ASCOM Switch devices at **fixed IDs 0 through 5**. These can be used to display values in NINA gauges or any ASCOM client that supports analog switch values.
+The power metrics and environmental sensors are exposed as read-only ASCOM Switch devices. These can be used to display values in NINA gauges or any ASCOM client that supports analog switch values.
 
-| ID | Name | Unit | Description |
+**Input Voltage (ID 0), Total Current (ID 1), and Total Power (ID 2) are always at those
+fixed IDs.** The rest of the sensor slots are conditional on your dew heater
+configuration, so their IDs - and where the power switches start right after them - vary
+by configuration:
+
+| Slot (after ID 2) | Name | Unit | Present when... |
 |----|------|------|-------------|
-| 0 | Input Voltage | V | Input voltage from power supply |
-| 1 | Total Current | A | Total current draw of all outputs |
-| 2 | Total Power | W | Total power consumption |
-| 3 | Lens Temperature | °C | Objective/lens temperature (DS18B20) |
-| 4 | Heater 1 Output | % | Current power level of PWM 1 |
-| 5 | Heater 2 Output | % | Current power level of PWM 2 |
+| next free ID | Lens Temperature | °C | Any heater is in PID or Minimum Temperature mode, or "Persistent Lens Temp" is enabled in the Proxy Tab |
+| next free ID | Heater 1 Output | % | Heater 1's mode isn't Disabled |
+| next free ID | Heater 2 Output | % | Heater 2's mode isn't Disabled |
+
+So power switches (`dc1` onward) can start anywhere from **ID 3** (both heaters Disabled,
+Lens Temp not forced on) to **ID 6** (Lens Temp shown and both heaters enabled). A fresh
+install with both heaters left in the default Manual mode puts DC1 at **ID 5** (Lens Temp
+hidden, both Heater Output sensors present).
+
+> [!TIP]
+> Don't hardcode a switch's ID in a script - it depends on your current configuration.
+> Read `GET /api/v1/switch/0/maxswitch` for the current switch count, or
+> `GET /api/v1/switch/0/getswitchname?Id=X` to look up what a given ID currently points to.
 
 > [!NOTE]
-> **PWM Dual-Exposure:** Dew heaters are exposed twice—once as a read-only sensor at IDs 4/5 (showing current power %) and once as a toggle at the end of the switch list (allowing manual override).
-
-> [!NOTE]
-> **Sensor switch IDs are always fixed (0-5).** Unlike power switches, sensor IDs do not shift when hardware switches are disabled. Power switches start at **ID 6**.
+> **PWM Dual-Exposure:** Dew heaters are exposed twice—once as a read-only sensor (showing
+> current power %, at whichever ID applies per the table above) and once as a toggle at the
+> end of the switch list (allowing manual override).
 
 **Reading Sensor Values via API:**
 
@@ -100,7 +112,8 @@ Invoke-RestMethod -Uri "http://localhost:32241/api/v1/switch/0/getswitchvalue?Id
 Invoke-RestMethod -Uri "http://localhost:32241/api/v1/switch/0/getswitchvalue?Id=2"
 ```
 
-> **Tip for localized Windows:** `Invoke-RestMethod` parses JSON and displays numbers using your locale (e.g., `12,8` in German). To get the raw JSON with standard decimal format, use `Invoke-WebRequest` and access the `.Content` property:
+> [!TIP]
+> **For localized Windows:** `Invoke-RestMethod` parses JSON and displays numbers using your locale (e.g., `12,8` in German). To get the raw JSON with standard decimal format, use `Invoke-WebRequest` and access the `.Content` property:
 > ```powershell
 > # Get raw JSON (always uses period as decimal separator)
 > (Invoke-WebRequest -Uri "http://localhost:32241/api/v1/switch/0/getswitchvalue?Id=0").Content
@@ -124,7 +137,13 @@ Invoke-RestMethod -Uri "http://localhost:32241/api/v1/switch/0/getswitchvalue?Id
 Beyond the custom actions, you can directly control individual switches using the standard ASCOM Alpaca `Switch` endpoints.
 
 > [!IMPORTANT]
-> **Switch ID Schema:** Sensor switches (Voltage, Current, Power, Temp) always occupy IDs 0-5. Power switches start at ID 6. When you disable a power switch in the configuration, it is removed from the ASCOM device list, causing subsequent power switch IDs to shift down. Sensor IDs remain fixed.
+> **Switch ID Schema:** Voltage/Current/Power always occupy IDs 0-2. Lens Temperature and
+> the two Heater Output sensors conditionally occupy the next 0-3 slots depending on your
+> dew heater configuration (see [Reading Sensor
+> Values](#reading-sensor-values-sensor-switches) above) - power switches start right after
+> those. Disabling a power switch removes it from the ASCOM device list, causing subsequent
+> power switch IDs to shift down; changing a heater's mode can also shift where power
+> switches start, since it changes how many sensor slots exist.
 
 **Endpoints:**
 - `PUT /api/v1/switch/0/setswitch` – Set a switch on or off (parameters: `Id`, `State`)
@@ -135,13 +154,14 @@ Beyond the custom actions, you can directly control individual switches using th
 **Examples using native `curl` (Linux/Mac/Git Bash):**
 
 ```bash
-# Turn switch ID 3 (typically DC1) ON
+# Replace ID 3 with the actual ID of dc1 in your configuration (see Switch ID Schema note above)
+# Turn switch dc1 ON
 curl -X PUT -d "Id=3&State=true" http://localhost:32241/api/v1/switch/0/setswitch
 
-# Turn switch ID 3 OFF
+# Turn switch dc1 OFF
 curl -X PUT -d "Id=3&State=false" http://localhost:32241/api/v1/switch/0/setswitch
 
-# Get the current state of switch ID 3
+# Get the current state of switch dc1
 curl "http://localhost:32241/api/v1/switch/0/getswitch?Id=3"
 
 # Set adjustable converter to 9.5V (requires EnableAlpacaVoltageControl in proxy config)
@@ -155,13 +175,14 @@ curl "http://localhost:32241/api/v1/switch/0/getswitchvalue?Id=10"
 **Examples using Windows PowerShell:**
 
 ```powershell
-# Turn switch ID 3 (typically DC1) ON
+# Replace ID 3 with the actual ID of dc1 in your configuration (see Switch ID Schema note above)
+# Turn switch dc1 ON
 Invoke-WebRequest -Uri "http://localhost:32241/api/v1/switch/0/setswitch" -Method PUT -Body "Id=3&State=true" -ContentType "application/x-www-form-urlencoded"
 
-# Turn switch ID 3 OFF
+# Turn switch dc1 OFF
 Invoke-WebRequest -Uri "http://localhost:32241/api/v1/switch/0/setswitch" -Method PUT -Body "Id=3&State=false" -ContentType "application/x-www-form-urlencoded"
 
-# Get the current state of switch ID 3
+# Get the current state of switch dc1
 Invoke-RestMethod -Uri "http://localhost:32241/api/v1/switch/0/getswitch?Id=3"
 
 # Set adjustable converter to 9.5V (requires EnableAlpacaVoltageControl in proxy config)

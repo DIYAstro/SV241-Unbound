@@ -69,17 +69,20 @@ Here is an example of the `proxy_config.json` file structure:
 **Parameter Explanation:**
 
 *   `serialPortName` (string): The name of the serial port for the SV241 device (e.g., `"COM9"`). If this string is empty (`""`), the proxy will attempt to auto-detect the port on startup.
-    > **Note:** When `Auto-Detect Port` is enabled (or `serialPortName` is empty), the proxy probes all available USB serial ports to find the SV241. This "safe-but-aggressive" probing can potentially interfere with other sensitive devices (e.g., Mounts, Weather Stations). **Solution:** To prevent conflicts, connect the SV241 once to let it auto-detect, then **disable "Auto-Detect Port"** (or uncheck the box in the web UI) **and ensure a port name is configured**. The proxy will then strictly only open the configured port.
-    >
-    > **Important:** If you disable `Auto-Detect Port` but leave `serialPortName` empty, the proxy will still fall back to auto-detection. Both settings must be configured together: disable auto-detect AND specify the port name.
+    > [!NOTE]
+    > When `Auto-Detect Port` is enabled (or `serialPortName` is empty), the proxy probes all available USB serial ports to find the SV241. This "safe-but-aggressive" probing can potentially interfere with other sensitive devices (e.g., Mounts, Weather Stations). **Solution:** To prevent conflicts, connect the SV241 once to let it auto-detect, then **disable "Auto-Detect Port"** (or uncheck the box in the web UI) **and ensure a port name is configured**. The proxy will then strictly only open the configured port.
+
+    > [!IMPORTANT]
+    > If you disable `Auto-Detect Port` but leave `serialPortName` empty, the proxy will still fall back to auto-detection. Both settings must be configured together: disable auto-detect AND specify the port name.
 *   `autoDetectPort` (boolean): When `true`, the proxy will attempt to find the SV241 automatically if the configured port fails. When `false` **and** a `serialPortName` is specified, the proxy will only try the configured port. Default is `true`.
 *   `networkPort` (integer): The TCP port on which the Alpaca API server will listen for connections from client applications. The default is `32241`. A restart of the proxy is required for changes to this value to take effect.
 *   `listenAddress` (string): The IP address to bind the server to. Use `"127.0.0.1"` for local-only access (recommended for security) or `"0.0.0.0"` to allow network access. Default is `"127.0.0.1"`.
 *   `logLevel` (string): Controls the verbosity of the log file. Valid values are `"ERROR"`, `"WARN"`, `"INFO"`, and `"DEBUG"`. This setting is applied live when changed.
-*   `historyRetentionNights` (integer): The number of days/nights to retain CSV telemetry logs. Older files are automatically deleted at startup. Default is `10`.
+*   `historyRetentionNights` (integer): The number of days/nights of telemetry history to retain in the SQLite database (`alpaca_proxy.db`). Older rows are automatically pruned at startup. Default is `10`.
 *   `telemetryInterval` (integer): The interval in seconds between telemetry log entries. Default is `10`.
 *   `enableAlpacaVoltageControl` (boolean): When `true`, the adjustable voltage output can be controlled as a slider (0-15V) via ASCOM. When `false`, it behaves as a simple on/off switch. Default is `false`.
-    > **Caution:** If this setting is `false` (Switch Mode), ensure that the Adjustable Output has a pre-configured voltage > 0V (e.g., set via Web Interface or Startup Config). If the port is at 0V, switching it "ON" via ASCOM will technically succeed but remain at 0V, potentially causing ASCOM clients to time out or report failure because they don't see a voltage increase.
+    > [!CAUTION]
+    > If this setting is `false` (Switch Mode), ensure that the Adjustable Output has a pre-configured voltage > 0V (e.g., set via Web Interface or Startup Config). If the port is at 0V, switching it "ON" via ASCOM will technically succeed but remain at 0V, potentially causing ASCOM clients to time out or report failure because they don't see a voltage increase.
 *   `enableAlpacaDiscovery` (boolean): When `true`, the proxy responds to Alpaca discovery packets on UDP port 32227. This allows astronomy software like NINA to find the device automatically. If you have other Alpaca servers on the same PC, you may need to disable this to avoid port conflicts. Default is `true`.
 *   `enableMasterPower` (boolean): When `true`, a "Master Power" switch is exposed via ASCOM that controls all outputs simultaneously. Default is `false`.
 *   `switchNames` (object): A map that allows you to assign custom, user-friendly names to the internal switch identifiers. The `key` is the internal name (e.g., `"dc1"`) and the `value` is the custom name you want to see in ASCOM clients and the web interface.

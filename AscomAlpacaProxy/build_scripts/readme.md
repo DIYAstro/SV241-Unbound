@@ -1,6 +1,8 @@
 # Build Scripts
 
-This folder contains everything needed to build and package the ASCOM Alpaca Proxy, including
+[← Back to main readme](../../readme.md)
+
+This folder contains everything needed to build and package the SV241 Alpaca Proxy, including
 compiling and bundling the matching ESP32 firmware.
 
 ## Table of Contents
@@ -123,7 +125,8 @@ The Inno Setup template. Worth knowing:
 cd AscomAlpacaProxy/frontend-vue
 npm run dev     # Dev server: http://localhost:5173
 ```
-> **Note:** The dev server proxies API requests to the running Go proxy on port 32241.
+> [!NOTE]
+> The dev server proxies API requests to the running Go proxy on port 32241.
 
 ## Linux (not actively maintained)
 
@@ -142,7 +145,7 @@ present (see `ensure_linux_crosscompile_toolchain.ps1` below), then two `go buil
 `GOOS=linux GOARCH=amd64` → `build/AscomAlpacaProxy-linux-amd64`, and `GOOS=linux GOARCH=arm64`
 (Raspberry Pi 4/5, 64-bit) → `build/AscomAlpacaProxy-linux-arm64`.
 Useful for a local, ad-hoc Linux build from a Windows machine; the actual GitHub release binaries
-are now produced by the [`release-linux.yml`](#github-action-release-linuxyml) GitHub Action
+are now produced by the [`release-linux.yml`](#github-actions-release-yml) GitHub Action
 instead, which builds natively on real Linux runners rather than cross-compiling.
 
 CGO is required because `internal/serial/ch340_linux.go` (Linux-only) talks to the SV241's CH340
@@ -171,7 +174,7 @@ A native build script, meant to run directly on a Linux host (it relies on the h
 silently produce a Windows binary, not a Linux one). Detects its own architecture (`uname -m`,
 same `x86_64`→`amd64`/`aarch64`→`arm64` mapping `install_linux.sh` uses) and names its output
 `build/AscomAlpacaProxy-linux-<amd64|arm64>`, matching `build_linux.ps1`'s naming - this is what
-[`release-linux.yml`](#github-action-release-linuxyml) actually runs, on real `amd64`/`arm64`
+[`release-linux.yml`](#github-actions-release-yml) actually runs, on real `amd64`/`arm64`
 GitHub-hosted Linux runners, to produce the release binaries.
 
 Also builds the firmware itself (via PlatformIO, installed automatically via `pip` if the `pio`

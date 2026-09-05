@@ -33,7 +33,8 @@ The installer includes a helper script that automates the entire driver creation
 
 **Result:** The driver is now registered system-wide. You can now open your astronomy software and select the driver you just created (e.g., "SV241 Power Switch") directly from the device list.
 
-> **Note:** You can run this script multiple times to create drivers with different names or to create both a `Switch` and an `ObservingConditions` driver.
+> [!NOTE]
+> You can run this script multiple times to create drivers with different names or to create both a `Switch` and an `ObservingConditions` driver.
 
 ---
 
@@ -86,4 +87,5 @@ If you prefer to set up the driver manually, or if the helper script fails for a
 
 **Result:** Your manually configured driver "My Manual SV241 Switch" is now permanently registered in the ASCOM system. When you now start NINA (or other software), you can select it directly from the device list without having to enter the IP address again.
 
-> **Note:** Repeat this process for the `ObservingConditions` device to also add the environmental sensors manually.
+> [!NOTE]
+> Repeat this process for the `ObservingConditions` device to also add the environmental sensors manually.

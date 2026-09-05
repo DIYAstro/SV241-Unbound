@@ -1,10 +1,11 @@
-# ASCOM Alpaca Proxy Driver
+# SV241 Alpaca Proxy
 
 [← Back to main readme](../readme.md)
 
-The project also includes a standalone ASCOM Alpaca proxy driver written in Go. This application connects to the SV241 device via its serial port and exposes it to the ASCOM ecosystem as standard `Switch` and `ObservingConditions` devices.
+The project also includes the standalone SV241 Alpaca Proxy, written in Go. This application connects to the SV241 device via its serial port and exposes it to the ASCOM ecosystem as standard `Switch` and `ObservingConditions` devices.
 
-> **Note:** The proxy is written in Go with cross-platform support in mind, and includes build scripts and an installer for Linux. That said, the maintainer doesn't use Linux day-to-day, so it isn't actively tested there - it should work, but it hasn't seen the same real-world mileage as the Windows build. Pull requests improving Linux support are very welcome; just note that the maintainer won't be able to actively chase down Linux-specific issues, since testing them isn't realistically possible on this end.
+> [!NOTE]
+> The proxy is written in Go with cross-platform support in mind, and includes build scripts and an installer for Linux. That said, the maintainer doesn't use Linux day-to-day, so it isn't actively tested there - it should work, but it hasn't seen the same real-world mileage as the Windows build. Pull requests improving Linux support are very welcome; just note that the maintainer won't be able to actively chase down Linux-specific issues, since testing them isn't realistically possible on this end.
 
 ## Table of Contents
 
@@ -52,7 +53,8 @@ The project also includes a standalone ASCOM Alpaca proxy driver written in Go. 
 
 ## Important Security Notice
 
-> **Warning:** All traffic between the astronomy software (client) and this Alpaca proxy driver is transmitted **unencrypted** over the network (HTTP).
+> [!WARNING]
+> All traffic between the astronomy software (client) and the SV241 Alpaca Proxy is transmitted **unencrypted** over the network (HTTP).
 >
 > *   This means that **anyone on the same network** can potentially access the driver and control your device.
 > *   By default, the proxy now listens only on `127.0.0.1` (localhost) for enhanced security. If you configure it to be accessible over the network, it is strongly recommended to restrict access to the proxy port (default `32241`) using **firewall rules**.
@@ -60,7 +62,8 @@ The project also includes a standalone ASCOM Alpaca proxy driver written in Go. 
 
 ### Manually Creating a Firewall Rule
 
-> **Note:** This section only applies if you have configured the proxy to listen on a network address (e.g., `0.0.0.0`). If you are using the default `127.0.0.1` (localhost), no firewall rule is needed.
+> [!NOTE]
+> This section only applies if you have configured the proxy to listen on a network address (e.g., `0.0.0.0`). If you are using the default `127.0.0.1` (localhost), no firewall rule is needed.
 
 If you have configured network access and accidentally clicked "Cancel" or denied access when the Windows Defender Firewall prompt appeared, you will need to create a rule manually.
 
@@ -73,7 +76,8 @@ netsh advfirewall firewall add rule name="SV241 Alpaca Proxy" dir=in action=allo
 
 This command adds an inbound rule specifically for the `AscomAlpacaProxy.exe` application, allowing it to receive connections from other devices on your network.
 
-> **Note:** The proxy does **not** require administrator privileges to run. Running it as admin may cause permission issues with configuration files. Always run the proxy as a normal user.
+> [!NOTE]
+> The proxy does **not** require administrator privileges to run. Running it as admin may cause permission issues with configuration files. Always run the proxy as a normal user.
 
 
 ## Linux Installation

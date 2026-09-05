@@ -5,7 +5,7 @@
 Follow these steps to get up and running quickly. Running on Linux or a Raspberry Pi
 instead? See [PINS_INSTALL.md](./PINS_INSTALL.md).
 
-## 1. Install the ASCOM Alpaca Proxy
+## 1. Install the SV241 Alpaca Proxy
 
 1.  Download the latest installer (`SV241-AscomAlpacaProxy-Setup-x.x.exe`) from the [latest release page](https://github.com/DIYAstro/SV241-Unbound/releases/latest).
 2.  Run the installer. It's recommended to allow the proxy to start automatically with Windows.
@@ -13,7 +13,8 @@ instead? See [PINS_INSTALL.md](./PINS_INSTALL.md).
 
 ## 2. Flashing the Firmware
 
-> **Note:** The web flasher requires a modern browser with Web Serial API support (**Chrome** or **Edge**).
+> [!NOTE]
+> The web flasher requires a modern browser with Web Serial API support (**Chrome** or **Edge**).
 
 On first startup, the proxy will display a **First-Run Wizard** that guides you through the firmware installation:
 
@@ -22,7 +23,8 @@ On first startup, the proxy will display a **First-Run Wizard** that guides you 
 3.  If no firmware is detected, click **"Flash Firmware"** to open the integrated web flasher.
 4.  Select the correct COM port and follow the on-screen instructions.
 
-> **Warning:** Make sure you select the correct COM port! If you have other ESP32 devices connected, their firmware will be overwritten without further confirmation.
+> [!WARNING]
+> Make sure you select the correct COM port! If you have other ESP32 devices connected, their firmware will be overwritten without further confirmation.
 
 **Alternative:** Use the standalone **[SV241-Unbound Web Flasher](https://diyastro.github.io/SV241-Unbound/)** directly.
 

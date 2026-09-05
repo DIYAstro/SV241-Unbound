@@ -3,8 +3,8 @@
 [← Back to main readme](../readme.md)
 
 Low-level reference for the JSON-over-serial protocol the SV241 firmware speaks directly -
-useful for scripting, debugging, or talking to the device without the ASCOM Alpaca Proxy at
-all. Most users won't need this; the [ASCOM Alpaca Proxy](./ASCOM_PROXY.md) already exposes
+useful for scripting, debugging, or talking to the device without the SV241 Alpaca Proxy at
+all. Most users won't need this; the [SV241 Alpaca Proxy](./ASCOM_PROXY.md) already exposes
 this functionality over friendlier interfaces (web UI, REST API).
 
 ## Table of Contents
@@ -25,7 +25,8 @@ this functionality over friendlier interfaces (web UI, REST API).
 
 The controller communicates over serial at **115200 baud**. Commands are sent as JSON strings, terminated by a newline character (`\n`).
 
-> **Important:** All JSON commands must be sent as a single, continuous line of text without any line breaks, followed by a single newline character (`\n`) to execute the command.
+> [!IMPORTANT]
+> All JSON commands must be sent as a single, continuous line of text without any line breaks, followed by a single newline character (`\n`) to execute the command.
 
 ## Get Sensor Data
 
@@ -238,4 +239,5 @@ $port.WriteLine('{"sc": {"dh": [{"m": 0, "mp": 50}]}}')
 # Response: Full config JSON
 ```
 
-> **Tip:** For interactive testing, use a serial terminal like **PuTTY** (115200 baud) or the **Arduino IDE Serial Monitor**.
+> [!TIP]
+> For interactive testing, use a serial terminal like **PuTTY** (115200 baud) or the **Arduino IDE Serial Monitor**.

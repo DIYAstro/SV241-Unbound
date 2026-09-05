@@ -14,7 +14,7 @@ The proxy driver includes a robust telemetry system that logs sensor data to a l
 ## Data Explorer
 The web interface features a built-in **Data Explorer** for interactive telemetry visualization:
 
-*   **Access:** Click the 📊 button in the Live Telemetry panel to open the Data Explorer. This button is only visible when telemetry logging is enabled.
+*   **Access:** Click the 📊 button in the [Live Telemetry panel](./WEB_INTERFACE.md#live-telemetry-panel) to open the Data Explorer. This button is only visible when telemetry logging is enabled.
 *   **Time Range:** Choose from presets (1h, 12h, 24h, 7d) or select a custom date/time range.
 *   **Multi-Sensor Charts:** Select multiple sensors to display on the same chart for comparison.
 *   **Interactive Navigation:** Zoom and pan through the data using mouse wheel and drag.
