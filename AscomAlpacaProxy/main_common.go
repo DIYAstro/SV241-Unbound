@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"sv241pro-alpaca-proxy/internal/alpaca"
+	"sv241pro-alpaca-proxy/internal/backup"
 	"sv241pro-alpaca-proxy/internal/config"
 	"sv241pro-alpaca-proxy/internal/events"
 	"sv241pro-alpaca-proxy/internal/logger"
@@ -47,6 +48,11 @@ func startApp() {
 	if err := config.Load(); err != nil {
 		logger.Fatal("Failed to load proxy configuration: %v", err)
 	}
+
+	// 3a. Wire up automatic backups before the first connection attempt can happen, so the very
+	// first connect (not just later reconnects) triggers one too. See internal/backup.
+	serial.OnDeviceConnected = backup.OnConnected
+	go backup.RunDailySafetyNet()
 
 	// 4. Start background tasks for serial communication and cache updates.
 	// This will perform the initial connection attempt.

@@ -62,6 +62,12 @@ type ProxyConfig struct {
 	LensTempName               string `json:"lensTempName"`               // Custom name for Lens Temp sensor check
 	FirstRunComplete           bool   `json:"firstRunComplete"`           // Onboarding wizard completed
 
+	// Automatic Backups (see internal/backup) - a full config+firmware snapshot written to
+	// <config dir>/backups/ every time the SV241 connects, and at least once every 24h while it
+	// stays connected.
+	EnableAutoBackup         bool `json:"enableAutoBackup"`         // Master on/off switch
+	AutoBackupRetentionCount int  `json:"autoBackupRetentionCount"` // Keep this many automatic backups; <=0 means keep all
+
 	// Weather Service (Open-Meteo)
 	EnableWeatherService  bool              `json:"enableWeatherService"`
 	WeatherLatitude       float64           `json:"weatherLatitude"`
@@ -434,6 +440,14 @@ func init() {
 	proxyConfigFile = filepath.Join(appConfigDir, "proxy_config.json")
 }
 
+// GetConfigDir returns the application's configuration directory (the folder containing
+// proxy_config.json) - e.g. %APPDATA%\SV241AlpacaProxy on Windows or ~/.config/SV241AlpacaProxy
+// on Linux. Exported so other packages (like internal/backup) can locate their own files under
+// the same directory without re-deriving the os.UserConfigDir()-based path themselves.
+func GetConfigDir() string {
+	return filepath.Dir(proxyConfigFile)
+}
+
 // Load reads the configuration from the JSON file into the singleton instance.
 // If the file doesn't exist, it initializes a default configuration and saves it.
 func Load() error {
@@ -452,13 +466,15 @@ func Load() error {
 					"pwm1": true,
 					"pwm2": true,
 				},
-				HistoryRetentionNights: 10,   // Default to 10 nights
-				TelemetryInterval:      10,   // Default to 10 seconds
-				EnableAlpacaDiscovery:  true, // Default to discovery enabled
-				EnableNotifications:    true, // Default to notifications enabled
-				WeatherInterval:        5,    // Default to 5 minutes
-				WeatherModel:           "best_match",
-				WeatherSourcePriority:  make(map[string]string),
+				HistoryRetentionNights:   10,   // Default to 10 nights
+				TelemetryInterval:        10,   // Default to 10 seconds
+				EnableAlpacaDiscovery:    true, // Default to discovery enabled
+				EnableNotifications:      true, // Default to notifications enabled
+				WeatherInterval:          5,    // Default to 5 minutes
+				WeatherModel:             "best_match",
+				WeatherSourcePriority:    make(map[string]string),
+				EnableAutoBackup:         true, // Default to automatic backups enabled
+				AutoBackupRetentionCount: 50,   // Default to keeping the last 50 automatic backups
 			}
 			for _, internalName := range SwitchIDMap {
 				proxyConfig.SwitchNames[internalName] = internalName
@@ -482,6 +498,18 @@ func Load() error {
 		if _, exists := rawMap["enableAlpacaDiscovery"]; !exists {
 			logger.Info("Configuration key 'enableAlpacaDiscovery' not found, defaulting to true.")
 			tempConfig.EnableAlpacaDiscovery = true
+		}
+		// Same rawMap-existence check as above, not a zero-value check: 0 is a legitimate,
+		// explicitly-chosen "keep everything, never prune" value for AutoBackupRetentionCount, so
+		// a plain "== 0 -> default" like HistoryRetentionNights below would silently overwrite
+		// that choice on every subsequent load.
+		if _, exists := rawMap["enableAutoBackup"]; !exists {
+			logger.Info("Configuration key 'enableAutoBackup' not found, defaulting to true.")
+			tempConfig.EnableAutoBackup = true
+		}
+		if _, exists := rawMap["autoBackupRetentionCount"]; !exists {
+			logger.Info("Configuration key 'autoBackupRetentionCount' not found, defaulting to 50.")
+			tempConfig.AutoBackupRetentionCount = 50
 		}
 	}
 

@@ -72,6 +72,14 @@ var (
 	consecutiveReadFailures = 0
 )
 
+// OnDeviceConnected, if set, is called once after a fresh connection's firmware config sync
+// completes (see the TRIGGER CONFIG SYNC block in reconnect() below) - both on the very first
+// connect and on every later reconnect. Lets other packages (like automatic backups) hook the "a
+// connection just came up" moment without this package importing them directly, which would
+// create an import cycle (they need serial.SendCommand themselves). Wired up once at startup,
+// before StartManager() is called.
+var OnDeviceConnected func()
+
 // StartManager initializes all background tasks for serial communication.
 func StartManager() {
 	initDone := make(chan struct{})
@@ -587,6 +595,9 @@ func reconnect(newPortName string, preOpenedPort Port) {
 					FetchFirmwareVersion()
 					time.Sleep(1 * time.Second)
 					SyncFirmwareConfig()
+					if OnDeviceConnected != nil {
+						OnDeviceConnected()
+					}
 				}()
 			}
 		}

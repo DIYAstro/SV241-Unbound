@@ -7,10 +7,14 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"sv241pro-alpaca-proxy/internal/alpaca"
+	"sv241pro-alpaca-proxy/internal/backup"
 	"sv241pro-alpaca-proxy/internal/config"
 	"sv241pro-alpaca-proxy/internal/handlers"
 	"sv241pro-alpaca-proxy/internal/logger"
@@ -96,6 +100,8 @@ func setupRoutes(frontendFS fs.FS, appVersion string) {
 	http.HandleFunc("/api/v1/proxy/version", handleGetProxyVersion(appVersion))
 	http.HandleFunc("/api/v1/backup/create", handleCreateBackup)
 	http.HandleFunc("/api/v1/backup/restore", handleRestoreBackup)
+	http.HandleFunc("/api/v1/backup/list", handleListAutoBackups)
+	http.HandleFunc("/api/v1/backup/restore-auto", handleRestoreAutoBackup)
 	http.HandleFunc("/api/v1/telemetry/dates", telemetry.HandleGetLogDates)
 	http.HandleFunc("/api/v1/telemetry/history", telemetry.HandleGetHistory)
 	http.HandleFunc("/api/v1/telemetry/download", telemetry.HandleDownloadCSV)
@@ -427,17 +433,12 @@ func handleCreateBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logger.Info("Creating combined configuration backup...")
-	firmwareConfigJSON, err := serial.SendCommand(`{"get":"config"}`, true, 0)
+	snapshot, err := backup.BuildSnapshot()
 	if err != nil {
 		http.Error(w, "Failed to get firmware configuration", http.StatusInternalServerError)
 		return
 	}
-	backup := config.CombinedConfig{
-		ProxyConfig:          config.Get(),
-		FirmwareConfig:       json.RawMessage(firmwareConfigJSON),
-		FirmwareConfigSerial: config.GetActiveDeviceSerial(),
-	}
-	backupJSON, err := json.MarshalIndent(backup, "", "  ")
+	backupJSON, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
 		http.Error(w, "Failed to create backup file", http.StatusInternalServerError)
 		return
@@ -453,7 +454,7 @@ func handleRestoreBackup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	logger.Info("Restoring combined configuration from backup...")
+	logger.Info("Restoring combined configuration from uploaded backup...")
 	defer r.Body.Close()
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB limit
 	body, err := io.ReadAll(r.Body)
@@ -462,16 +463,133 @@ func handleRestoreBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var backup config.CombinedConfig
-	if err := json.Unmarshal(body, &backup); err != nil {
+	var backupData config.CombinedConfig
+	if err := json.Unmarshal(body, &backupData); err != nil {
 		http.Error(w, "Invalid backup file format", http.StatusBadRequest)
 		return
 	}
-	if backup.ProxyConfig == nil || backup.FirmwareConfig == nil {
+	if backupData.ProxyConfig == nil || backupData.FirmwareConfig == nil {
 		http.Error(w, "Incomplete backup file", http.StatusBadRequest)
 		return
 	}
+	force := r.URL.Query().Get("force") == "true"
+	applyBackupRestore(w, backupData, force)
+}
 
+// handleListAutoBackups lists the automatic backups written by internal/backup into
+// <config dir>/backups/, newest first, so the frontend can offer a "restore from automatic
+// backup" list instead of a file-upload dialog (browsers can't be told which folder that dialog
+// should start in - there's no API for it).
+func handleListAutoBackups(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+
+	dir := filepath.Join(config.GetConfigDir(), "backups")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		// No backups directory yet (e.g. never connected to a box) is not an error - just nothing
+		// to list.
+		json.NewEncoder(w).Encode([]autoBackupInfo{})
+		return
+	}
+
+	list := make([]autoBackupInfo, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasPrefix(e.Name(), backup.FilePrefix) || !strings.HasSuffix(e.Name(), backup.FileSuffix) {
+			continue
+		}
+		info := autoBackupInfo{Filename: e.Name()}
+		timestampPart := strings.TrimSuffix(strings.TrimPrefix(e.Name(), backup.FilePrefix), backup.FileSuffix)
+		if t, err := time.ParseInLocation(backup.TimestampForm, timestampPart, time.Local); err == nil {
+			info.Timestamp = t.Format(time.RFC3339)
+		}
+		// Best-effort: peek into the file for which device it came from, to label the entry.
+		if data, err := os.ReadFile(filepath.Join(dir, e.Name())); err == nil {
+			var partial struct {
+				FirmwareConfigSerial string `json:"firmwareConfigSerial"`
+			}
+			if json.Unmarshal(data, &partial) == nil {
+				info.DeviceSerial = partial.FirmwareConfigSerial
+				info.RigName = config.GetRigNameForSerial(partial.FirmwareConfigSerial)
+			}
+		}
+		list = append(list, info)
+	}
+	// Filenames sort lexically in the same order as their embedded timestamp - newest first.
+	sort.Slice(list, func(i, j int) bool { return list[i].Filename > list[j].Filename })
+	json.NewEncoder(w).Encode(list)
+}
+
+// autoBackupInfo is one entry in the GET /api/v1/backup/list response.
+type autoBackupInfo struct {
+	Filename     string `json:"filename"`
+	Timestamp    string `json:"timestamp"` // RFC3339, parsed from the filename; "" if unparseable
+	DeviceSerial string `json:"deviceSerial"`
+	RigName      string `json:"rigName"`
+}
+
+// handleRestoreAutoBackup restores one of the automatic backups listed by handleListAutoBackups,
+// identified by filename, read directly off disk (never sent through the browser).
+func handleRestoreAutoBackup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	filename := r.URL.Query().Get("file")
+	if filename == "" {
+		http.Error(w, "Missing 'file' parameter", http.StatusBadRequest)
+		return
+	}
+
+	dir := filepath.Join(config.GetConfigDir(), "backups")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		http.Error(w, "Could not list automatic backups", http.StatusInternalServerError)
+		return
+	}
+	// Only ever read a file whose name exactly matches one actually present in the backups
+	// directory - filename comes from a query parameter, so this is the path-traversal guard
+	// (a real directory entry's Name() never contains "/", "\", or "..").
+	found := false
+	for _, e := range entries {
+		if !e.IsDir() && e.Name() == filename {
+			found = true
+			break
+		}
+	}
+	if !found {
+		http.Error(w, "Backup file not found", http.StatusNotFound)
+		return
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, filename))
+	if err != nil {
+		http.Error(w, "Failed to read backup file", http.StatusInternalServerError)
+		return
+	}
+	var backupData config.CombinedConfig
+	if err := json.Unmarshal(data, &backupData); err != nil {
+		http.Error(w, "Invalid backup file format", http.StatusInternalServerError)
+		return
+	}
+	if backupData.ProxyConfig == nil || backupData.FirmwareConfig == nil {
+		http.Error(w, "Incomplete backup file", http.StatusInternalServerError)
+		return
+	}
+
+	logger.Info("Restoring combined configuration from automatic backup %q...", filename)
+	force := r.URL.Query().Get("force") == "true"
+	applyBackupRestore(w, backupData, force)
+}
+
+// applyBackupRestore contains the actual restore logic (device-mismatch check, sending the
+// firmware config to the device, restoring proxy settings, reconnecting) - shared by
+// handleRestoreBackup (uploaded file) and handleRestoreAutoBackup (one of our own automatic
+// backups), so the two entry points can never drift apart in behavior.
+func applyBackupRestore(w http.ResponseWriter, backupData config.CombinedConfig, force bool) {
 	// Guard against silently pushing one box's on-device settings (calibration offsets, heater
 	// config, power startup states, etc.) onto a different, currently-connected box - confirmed
 	// live against real hardware that this otherwise happens with no warning at all. A backup
@@ -480,26 +598,25 @@ func handleRestoreBackup(w http.ResponseWriter, r *http.Request) {
 	// user confirms a specific "different box detected" dialog, e.g. because they're deliberately
 	// replacing one box with another) skips this check.
 	currentSerial := config.GetActiveDeviceSerial()
-	force := r.URL.Query().Get("force") == "true"
-	if !force && (backup.FirmwareConfigSerial == "" || backup.FirmwareConfigSerial != currentSerial) {
-		logger.Warn("Backup restore blocked: backup's device (serial=%q) doesn't match the currently connected device (serial=%q). Retry with ?force=true to override.", backup.FirmwareConfigSerial, currentSerial)
+	if !force && (backupData.FirmwareConfigSerial == "" || backupData.FirmwareConfigSerial != currentSerial) {
+		logger.Warn("Backup restore blocked: backup's device (serial=%q) doesn't match the currently connected device (serial=%q). Retry with ?force=true to override.", backupData.FirmwareConfigSerial, currentSerial)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
 		json.NewEncoder(w).Encode(map[string]string{
 			"error":               "device_mismatch",
-			"backupDeviceSerial":  backup.FirmwareConfigSerial,
-			"backupRigName":       config.GetRigNameForSerial(backup.FirmwareConfigSerial),
+			"backupDeviceSerial":  backupData.FirmwareConfigSerial,
+			"backupRigName":       config.GetRigNameForSerial(backupData.FirmwareConfigSerial),
 			"currentDeviceSerial": currentSerial,
 			"currentRigName":      config.GetActiveRigName(),
 		})
 		return
 	}
-	if force && (backup.FirmwareConfigSerial == "" || backup.FirmwareConfigSerial != currentSerial) {
-		logger.Warn("Restoring a backup from a different/unknown device (serial=%q) onto the currently connected device (serial=%q) - overridden by user.", backup.FirmwareConfigSerial, currentSerial)
+	if force && (backupData.FirmwareConfigSerial == "" || backupData.FirmwareConfigSerial != currentSerial) {
+		logger.Warn("Restoring a backup from a different/unknown device (serial=%q) onto the currently connected device (serial=%q) - overridden by user.", backupData.FirmwareConfigSerial, currentSerial)
 	}
 
 	// Restore Firmware Config
-	compactFirmwareConfig, _ := json.Marshal(backup.FirmwareConfig)
+	compactFirmwareConfig, _ := json.Marshal(backupData.FirmwareConfig)
 	firmwareCommand := fmt.Sprintf(`{"sc":%s}`, string(compactFirmwareConfig))
 	if _, err := serial.SendCommand(firmwareCommand, true, 10*time.Second); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to send firmware config to device: %v", err), http.StatusServiceUnavailable)
@@ -509,20 +626,22 @@ func handleRestoreBackup(w http.ResponseWriter, r *http.Request) {
 
 	// Restore Proxy Config
 	conf := config.Get()
-	conf.NetworkPort = backup.ProxyConfig.NetworkPort
-	conf.ListenAddress = backup.ProxyConfig.ListenAddress
-	conf.LogLevel = backup.ProxyConfig.LogLevel
+	conf.NetworkPort = backupData.ProxyConfig.NetworkPort
+	conf.ListenAddress = backupData.ProxyConfig.ListenAddress
+	conf.LogLevel = backupData.ProxyConfig.LogLevel
 	// See ProxyConfigMutex's doc comment (internal/config/config.go) - these are maps read
 	// concurrently elsewhere, direct assignment here would race those readers.
-	config.SetProxyMaps(backup.ProxyConfig.SwitchNames, backup.ProxyConfig.HeaterAutoEnableLeader, backup.ProxyConfig.WeatherSourcePriority)
+	config.SetProxyMaps(backupData.ProxyConfig.SwitchNames, backupData.ProxyConfig.HeaterAutoEnableLeader, backupData.ProxyConfig.WeatherSourcePriority)
 	// Restore every known device's profile wholesale (not just the currently active one) - this is
 	// what makes a backup taken on one computer carry every box's names to another correctly.
-	config.SetDeviceProfiles(backup.ProxyConfig.DeviceProfiles)
-	conf.HistoryRetentionNights = backup.ProxyConfig.HistoryRetentionNights
-	conf.TelemetryInterval = backup.ProxyConfig.TelemetryInterval
-	conf.EnableAlpacaVoltageControl = backup.ProxyConfig.EnableAlpacaVoltageControl
-	conf.EnableMasterPower = backup.ProxyConfig.EnableMasterPower
-	conf.AutoDetectPort = backup.ProxyConfig.AutoDetectPort
+	config.SetDeviceProfiles(backupData.ProxyConfig.DeviceProfiles)
+	conf.HistoryRetentionNights = backupData.ProxyConfig.HistoryRetentionNights
+	conf.TelemetryInterval = backupData.ProxyConfig.TelemetryInterval
+	conf.EnableAlpacaVoltageControl = backupData.ProxyConfig.EnableAlpacaVoltageControl
+	conf.EnableMasterPower = backupData.ProxyConfig.EnableMasterPower
+	conf.AutoDetectPort = backupData.ProxyConfig.AutoDetectPort
+	conf.EnableAutoBackup = backupData.ProxyConfig.EnableAutoBackup
+	conf.AutoBackupRetentionCount = backupData.ProxyConfig.AutoBackupRetentionCount
 	conf.SerialPortName = "" // Clear port to trigger auto-detection
 	logger.Info("Serial port name cleared to trigger auto-detection.")
 	logger.SetLevelFromString(conf.LogLevel)
