@@ -129,6 +129,47 @@ const int HEATER_PINS[MAX_DEW_HEATERS] = {DEW_HEATER_1_PIN, DEW_HEATER_2_PIN};
 // Note: Arduino-ESP32 core 3.x manages LEDC channel assignment internally per pin
 // (ledcAttach/ledcWrite address the pin directly), so no explicit channel array is needed here.
 
+// --- Current-limit ramp state ---
+// Set once per dew_control_task() tick (see compute_current_limit_cap()) from the shared
+// total-current reading, then read back by is_current_limit_active() for reporting (sensors.cpp,
+// live status / telemetry). A plain bool shared across tasks without a mutex matches how
+// heater_power[]/heater_enabled[] above are already read cross-task - single-word writes/reads
+// on this target don't tear, and a status flag has no strict consistency requirement.
+static bool current_limit_active_flag = false;
+
+// The ramp starts this many amps below current_limit_amps and reaches 0% duty exactly at
+// current_limit_amps - same linear-ramp shape as Mode 2 (Ambient Tracking)'s start_delta/
+// end_delta below. A hard on/off at the limit would oscillate (throttle -> current drops ->
+// unthrottle -> current rises -> repeat); the ramp instead settles at whatever duty keeps
+// current near the limit.
+const float CURRENT_LIMIT_RAMP_WIDTH_A = 1.0f;
+
+// Returns the box-wide dynamic duty-cycle ceiling (0-100) for the current tick, derived from the
+// measured total input current vs. config.current_limit_amps. 100 (no-op) whenever the feature
+// is disabled or misconfigured (limit <= 0). Both heaters call this with the same
+// measured_current_a on the same tick, so they throttle and relax together rather than
+// fighting over a shared current budget.
+static int compute_current_limit_cap(float measured_current_a) {
+    xSemaphoreTake(config_mutex, portMAX_DELAY);
+    bool enabled = config.current_limit_enabled;
+    float limit = config.current_limit_amps;
+    xSemaphoreGive(config_mutex);
+
+    if (!enabled || limit <= 0) return 100;
+
+    float ramp_start = limit - CURRENT_LIMIT_RAMP_WIDTH_A;
+    if (measured_current_a <= ramp_start) return 100;
+    if (measured_current_a >= limit) return 0;
+
+    float fraction = (limit - measured_current_a) / CURRENT_LIMIT_RAMP_WIDTH_A; // 1..0
+    return (int)(fraction * 100.0f);
+}
+
+// See dew_control.h's doc comment.
+bool is_current_limit_active() {
+    return current_limit_active_flag;
+}
+
 // --- Task Handle ---
 static TaskHandle_t dew_control_task_handle = NULL;
 
@@ -218,6 +259,15 @@ void dew_control_task(void *pvParameters) {
 
         float dew_point = calculate_dew_point(sensor_values.sht_temperature, sensor_values.sht_humidity);
 
+        // Box-wide current-limit ceiling for this tick - combined (min()) with each heater's own
+        // static max_duty_percent at every set_heater_power_output() call below.
+        // sensor_values.ina_current is in mA (see sensors.cpp's final_current_mA), but
+        // current_limit_amps is user-facing and documented in A - convert here, once, at the
+        // one call site, rather than inside compute_current_limit_cap() where "measured_current"
+        // could otherwise be silently re-misread as already being in the right unit again later.
+        int current_limit_cap = compute_current_limit_cap(sensor_values.ina_current / 1000.0f);
+        current_limit_active_flag = (current_limit_cap < 100);
+
         // Two-phase calculation to solve PID-Sync timing issue:
         // Phase 1: Calculate power for all non-follower heaters (modes 0, 1, 2, 4, 5)
         // Phase 2: Calculate power for follower heaters (mode 3)
@@ -276,7 +326,7 @@ void dew_control_task(void *pvParameters) {
                     }
 
                     heater_demand[i] = power_percentage;
-                    set_heater_power_output(i, power_percentage, heater_config.max_duty_percent);
+                    set_heater_power_output(i, power_percentage, min(heater_config.max_duty_percent, current_limit_cap));
                     break;
                 }
 
@@ -300,7 +350,7 @@ void dew_control_task(void *pvParameters) {
 
                     int power_percentage = (int)pid_output[i];
                     heater_demand[i] = constrain(power_percentage, 0, 100);
-                    set_heater_power_output(i, power_percentage, heater_config.max_duty_percent);
+                    set_heater_power_output(i, power_percentage, min(heater_config.max_duty_percent, current_limit_cap));
                     break;
                 }
 
@@ -323,7 +373,7 @@ void dew_control_task(void *pvParameters) {
 
                     int power_percentage = (int)pid_output[i];
                     heater_demand[i] = constrain(power_percentage, 0, 100);
-                    set_heater_power_output(i, power_percentage, heater_config.max_duty_percent);
+                    set_heater_power_output(i, power_percentage, min(heater_config.max_duty_percent, current_limit_cap));
                     break;
                 }
 
@@ -344,7 +394,7 @@ void dew_control_task(void *pvParameters) {
                     power_percentage = constrain(power_percentage, 0, heater_config.max_power);
 
                     heater_demand[i] = (int)power_percentage;
-                    set_heater_power_output(i, (int)power_percentage, heater_config.max_duty_percent);
+                    set_heater_power_output(i, (int)power_percentage, min(heater_config.max_duty_percent, current_limit_cap));
                     break;
                 }
 
@@ -409,7 +459,7 @@ void dew_control_task(void *pvParameters) {
             }
 
             heater_demand[i] = follower_power_percentage;
-            set_heater_power_output(i, follower_power_percentage, heater_config.max_duty_percent);
+            set_heater_power_output(i, follower_power_percentage, min(heater_config.max_duty_percent, current_limit_cap));
         }
 
         esp_task_wdt_reset(); // Feed the watchdog

@@ -57,6 +57,10 @@ func Init(dbPath string) error {
 		return fmt.Errorf("failed to migrate telemetry_log schema: %w", err)
 	}
 
+	if err := migrateAddCurrentLimitActiveColumn(); err != nil {
+		return fmt.Errorf("failed to migrate telemetry_log schema: %w", err)
+	}
+
 	return nil
 }
 
@@ -94,6 +98,43 @@ func migrateAddDeviceSerialColumn() error {
 	}
 
 	_, err = db.Exec("ALTER TABLE telemetry_log ADD COLUMN device_serial TEXT")
+	return err
+}
+
+// migrateAddCurrentLimitActiveColumn adds telemetry_log.current_limit_active for installs whose
+// database predates the heater current-limit feature - same PRAGMA table_info check as
+// migrateAddDeviceSerialColumn above (SQLite has no "ADD COLUMN IF NOT EXISTS"). Existing rows
+// get NULL (0 via COALESCE on read, see GetHistory) - correctly reads as "not throttled", since
+// the feature doesn't exist yet on rows recorded before this column did.
+func migrateAddCurrentLimitActiveColumn() error {
+	rows, err := db.Query("PRAGMA table_info(telemetry_log)")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	hasColumn := false
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull, pk int
+		var dfltValue sql.NullString
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &dfltValue, &pk); err != nil {
+			return err
+		}
+		if name == "current_limit_active" {
+			hasColumn = true
+			break
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if hasColumn {
+		return nil
+	}
+
+	_, err = db.Exec("ALTER TABLE telemetry_log ADD COLUMN current_limit_active INTEGER")
 	return err
 }
 
@@ -135,6 +176,11 @@ type TelemetryRecord struct {
 	USBC12    int
 	USB345    int
 	AdjConv   float64
+	// CurrentLimitActive: 1 if the box-wide heater current-limit ramp (see config.
+	// current_limit_enabled/_amps) was reducing output at the moment this row was recorded, 0
+	// otherwise - including on rows recorded before this feature/column existed (see
+	// migrateAddCurrentLimitActiveColumn).
+	CurrentLimitActive int
 	// DeviceSerial identifies which physical SV241 box recorded this row (the MAC address
 	// reported in {"get":"version"}, see config.GetActiveDeviceSerial) - "" for rows recorded
 	// before this field existed, or if no device had connected yet at logging time.
@@ -146,12 +192,12 @@ func InsertTelemetry(r TelemetryRecord) error {
 	query := `
 	INSERT INTO telemetry_log (
 		timestamp, voltage, current, power, temp_amb, hum_amb, dew_point, temp_lens, pwm1, pwm2,
-		dc1, dc2, dc3, dc4, dc5, usbc12, usb345, adj_conv, device_serial
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		dc1, dc2, dc3, dc4, dc5, usbc12, usb345, adj_conv, current_limit_active, device_serial
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	_, err := db.Exec(query,
 		r.Timestamp, r.Voltage, r.Current, r.Power, r.TempAmb, r.HumAmb, r.DewPoint, r.TempLens, r.PWM1, r.PWM2,
-		r.DC1, r.DC2, r.DC3, r.DC4, r.DC5, r.USBC12, r.USB345, r.AdjConv, nullIfEmpty(r.DeviceSerial),
+		r.DC1, r.DC2, r.DC3, r.DC4, r.DC5, r.USBC12, r.USB345, r.AdjConv, r.CurrentLimitActive, nullIfEmpty(r.DeviceSerial),
 	)
 	return err
 }
@@ -173,7 +219,8 @@ func nullIfEmpty(s string) interface{} {
 // Actually, basic query is fine, downsampling can be done by API or SQL modulo if needed.
 func GetHistory(start, end int64, deviceSerial string) ([]TelemetryRecord, error) {
 	query := `SELECT timestamp, voltage, current, power, temp_amb, hum_amb, dew_point, temp_lens, pwm1, pwm2,
-	                 dc1, dc2, dc3, dc4, dc5, usbc12, usb345, adj_conv, COALESCE(device_serial, '')
+	                 dc1, dc2, dc3, dc4, dc5, usbc12, usb345, adj_conv,
+	                 COALESCE(current_limit_active, 0), COALESCE(device_serial, '')
 	          FROM telemetry_log
 	          WHERE timestamp BETWEEN ? AND ?`
 	args := []interface{}{start, end}
@@ -194,7 +241,7 @@ func GetHistory(start, end int64, deviceSerial string) ([]TelemetryRecord, error
 		var r TelemetryRecord
 		if err := rows.Scan(
 			&r.Timestamp, &r.Voltage, &r.Current, &r.Power, &r.TempAmb, &r.HumAmb, &r.DewPoint, &r.TempLens, &r.PWM1, &r.PWM2,
-			&r.DC1, &r.DC2, &r.DC3, &r.DC4, &r.DC5, &r.USBC12, &r.USB345, &r.AdjConv, &r.DeviceSerial,
+			&r.DC1, &r.DC2, &r.DC3, &r.DC4, &r.DC5, &r.USBC12, &r.USB345, &r.AdjConv, &r.CurrentLimitActive, &r.DeviceSerial,
 		); err != nil {
 			return nil, err
 		}

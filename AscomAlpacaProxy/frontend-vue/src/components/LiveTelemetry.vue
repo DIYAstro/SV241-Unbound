@@ -81,7 +81,11 @@ const emit = defineEmits(['open-explorer'])
 
         <!-- PWM 1 -->
         <div class="telemetry-item">
-        <span class="label">PWM 1</span>
+        <span class="label">
+            PWM 1
+            <span v-if="isConnected && liveStatus.cl" class="current-limit-dot"
+                  title="Heater output currently reduced by the box-wide current limit (see Power Protection in Dew Heater Configuration)."></span>
+        </span>
         <span class="value" id="status-pwm1">
             {{ isConnected ? Math.round(liveStatus.pwm1 || 0) : '--' }} <small>%</small>
         </span>
@@ -89,7 +93,11 @@ const emit = defineEmits(['open-explorer'])
 
         <!-- PWM 2 -->
         <div class="telemetry-item">
-        <span class="label">PWM 2</span>
+        <span class="label">
+            PWM 2
+            <span v-if="isConnected && liveStatus.cl" class="current-limit-dot"
+                  title="Heater output currently reduced by the box-wide current limit (see Power Protection in Dew Heater Configuration)."></span>
+        </span>
         <span class="value" id="status-pwm2">
             {{ isConnected ? Math.round(liveStatus.pwm2 || 0) : '--' }} <small>%</small>
         </span>
@@ -160,5 +168,17 @@ const emit = defineEmits(['open-explorer'])
   font-weight: 400;
   color: var(--text-muted);
   margin-left: 2px;
+}
+
+/* Red "Ampel" indicator - current-limit throttling currently active on this heater output. */
+.current-limit-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: var(--danger-color, #e04040);
+  vertical-align: middle;
+  cursor: help;
 }
 </style>

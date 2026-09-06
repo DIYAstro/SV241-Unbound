@@ -33,6 +33,9 @@ type DataPoint struct {
 	USBC12    int     `json:"usbc12"`
 	USB345    int     `json:"usb345"`
 	AdjConv   float64 `json:"adj_conv"`
+	// CurrentLimitActive: 1 if the box-wide heater current-limit ramp was reducing output at
+	// the moment this point was recorded, 0 otherwise (including rows predating the feature).
+	CurrentLimitActive int `json:"cl"`
 	// Device is the MAC of the box that recorded this point, or "" for rows logged before the
 	// per-box naming feature existed (or before any device had connected).
 	Device string `json:"device"`
@@ -104,25 +107,26 @@ func HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 		// We could optimize by only filling requested fields, but for JSON it handles omitempty if we wanted.
 		// For now send full object, it's not huge.
 		result = append(result, DataPoint{
-			Timestamp: r.Timestamp,
-			Voltage:   r.Voltage,
-			Current:   r.Current,
-			Power:     r.Power,
-			TempAmb:   r.TempAmb,
-			HumAmb:    r.HumAmb,
-			DewPoint:  r.DewPoint,
-			TempLens:  r.TempLens,
-			PWM1:      r.PWM1,
-			PWM2:      r.PWM2,
-			DC1:       r.DC1,
-			DC2:       r.DC2,
-			DC3:       r.DC3,
-			DC4:       r.DC4,
-			DC5:       r.DC5,
-			USBC12:    r.USBC12,
-			USB345:    r.USB345,
-			AdjConv:   r.AdjConv,
-			Device:    r.DeviceSerial,
+			Timestamp:          r.Timestamp,
+			Voltage:            r.Voltage,
+			Current:            r.Current,
+			Power:              r.Power,
+			TempAmb:            r.TempAmb,
+			HumAmb:             r.HumAmb,
+			DewPoint:           r.DewPoint,
+			TempLens:           r.TempLens,
+			PWM1:               r.PWM1,
+			PWM2:               r.PWM2,
+			DC1:                r.DC1,
+			DC2:                r.DC2,
+			DC3:                r.DC3,
+			DC4:                r.DC4,
+			DC5:                r.DC5,
+			USBC12:             r.USBC12,
+			USB345:             r.USB345,
+			AdjConv:            r.AdjConv,
+			CurrentLimitActive: r.CurrentLimitActive,
+			Device:             r.DeviceSerial,
 		})
 	}
 
@@ -214,6 +218,7 @@ func HandleDownloadCSV(w http.ResponseWriter, r *http.Request) {
 		"pwm1": true, "pwm2": true,
 		"dc1": true, "dc2": true, "dc3": true, "dc4": true, "dc5": true,
 		"usbc12": true, "usb345": true, "adj_conv": true,
+		"cl": true,
 	}
 
 	var selectedCols []string
@@ -235,7 +240,7 @@ func HandleDownloadCSV(w http.ResponseWriter, r *http.Request) {
 	if len(selectedCols) == 0 {
 		selectedCols = []string{
 			"voltage", "current", "power", "t_amb", "h_amb", "dew_point", "t_lens", "pwm1", "pwm2",
-			"dc1", "dc2", "dc3", "dc4", "dc5", "usbc12", "usb345", "adj_conv",
+			"dc1", "dc2", "dc3", "dc4", "dc5", "usbc12", "usb345", "adj_conv", "cl",
 		}
 	}
 
@@ -300,6 +305,8 @@ func HandleDownloadCSV(w http.ResponseWriter, r *http.Request) {
 				val = fmt.Sprintf("%d", r.USB345)
 			case "adj_conv":
 				val = fmt.Sprintf("%.1f", r.AdjConv)
+			case "cl":
+				val = fmt.Sprintf("%d", r.CurrentLimitActive)
 			}
 			row = append(row, val)
 		}

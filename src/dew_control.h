@@ -40,4 +40,9 @@ bool get_dew_heater_state(int heater_index);
 // Set RAM override for manual PWM (0-100). -1 to release override (use config).
 void set_dew_heater_pwm_ram(int heater_index, int pwm);
 
+// True if the box-wide current-limit ramp (see config.current_limit_enabled/_amps) is currently
+// reducing at least one heater's output below what it would otherwise be. Box-wide, not
+// per-heater, since the ramp responds to total input current shared by both channels.
+bool is_current_limit_active();
+
 #endif // DEW_CONTROL_H

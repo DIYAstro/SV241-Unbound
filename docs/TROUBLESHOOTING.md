@@ -99,6 +99,12 @@ If using the "Master Power" switch to turn on all devices, NINA may report a tim
 *   **Cause:** The Master Switch relies on the "Manual Power" configuration of the heaters. If a heater is configured to **0%** (Off), the Master Switch will turn it "On" to 0% power. Since the power output remains at 0, NINA (expecting a value > 0 for "On") thinks the command failed.
 *   **Solution:** Ensure that you have configured a valid power level (e.g., 10%) in the `Manual Power` settings *before* using the Master Switch. The Master Switch simply restores this configured value.
 
+### Dew Heater Weaker Than Configured
+
+*   **Symptom:** A heater's actual output (visible in Live Telemetry or via ASCOM) is lower than what you set, in any mode, and a small red dot appears next to the PWM value in the Live Telemetry panel.
+*   **Cause:** The **Power Protection** current limit (Dew Heaters Tab) is enabled and the total measured input current is near the configured limit - the heater is being deliberately throttled to stay under it, not malfunctioning.
+*   **Solution:** This is expected behavior, not a fault. If it happens more often than you'd like, either raise the current limit (if your power supply can actually handle it) or reduce the configured power/duty of one of the heaters. Check the Telemetry Explorer's "Current Limit Active" value to see how often and when this has been happening.
+
 ---
 
 ## Sensor Issues

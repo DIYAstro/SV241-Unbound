@@ -31,6 +31,8 @@ void populateDefaultConfig() {
     config.averaging_counts = {5, 5, 5, 5, 5};
     config.adj_conv_preset_v = 1.0f;
     config.poweron_stagger_delay_ms = 500;
+    config.current_limit_enabled = false;
+    config.current_limit_amps = 8.0f;
 
     // Default settings for SHT40 auto-dry feature
     config.sht40_auto_dry = {true, 99.0f, 300000}; // enabled, 99.0% threshold, 5 minutes duration
@@ -195,6 +197,8 @@ void serializeConfig(JsonDocument& doc) {
 
     doc["av"] = config.adj_conv_preset_v;
     doc["psd"] = config.poweron_stagger_delay_ms;
+    doc["cle"] = (int)config.current_limit_enabled;
+    doc["cla"] = config.current_limit_amps;
 
     JsonObject auto_dry_obj = doc["ad"].to<JsonObject>();
     auto_dry_obj["en"] = (int)config.sht40_auto_dry.enabled;
@@ -271,6 +275,16 @@ void updateConfig(const JsonObject& doc) {
         unsigned long delay_ms = doc["psd"].as<unsigned long>();
         if (delay_ms > 5000) delay_ms = 5000; // sanity cap
         config.poweron_stagger_delay_ms = delay_ms;
+    }
+
+    // "cle"/"cla" are read the same rawMap-existence-check way as every other field here -
+    // see this function's own pattern throughout. current_limit_enabled being a bool that's
+    // legitimately false most of the time makes an existence check the only correct choice.
+    if (!doc["cle"].isNull()) config.current_limit_enabled = doc["cle"];
+    if (!doc["cla"].isNull()) {
+        float amps = doc["cla"].as<float>();
+        if (amps < 0) amps = 0;
+        config.current_limit_amps = amps;
     }
 
     if (!doc["ad"].isNull()) {

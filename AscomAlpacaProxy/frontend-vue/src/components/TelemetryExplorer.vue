@@ -102,6 +102,9 @@ const availableSensors = computed(() => {
         { id: 'h_amb', label: 'Humidity (%)', color: '#1e90ff', axis: 'y_left' },        // Dodger Blue
         { id: 'dew_point', label: 'Dew Point (°C)', color: '#9370db', axis: 'y_left' },  // Medium Purple
         { id: 't_lens', label: 'Lens Temp (°C)', color: '#20b2aa', axis: 'y_left' },     // Light Sea Green
+        // Box-wide (not per-heater) - not tied to a switch/heater-disable state, so it doesn't
+        // go through the isSwitchDisabled-filtered switchSensors list below.
+        { id: 'current_limit', label: 'Current Limit Active', color: '#ff0000', isBool: true }, // Red
     ];
     
     // Switches/Heaters - only add if not disabled - distinct colors
@@ -206,6 +209,7 @@ function downloadCSV() {
     // Map computed columns to their source columns for export
     const exportCols = selectedSensors.value.map(col => {
         if (col === 'current_a') return 'current'; // current_a is computed from current
+        if (col === 'current_limit') return 'cl'; // frontend id differs from the backend column name
         return col;
     });
     // Remove duplicates
@@ -267,6 +271,7 @@ const chartData = computed(() => {
                     case 'usbc12': return d.usbc12;
                     case 'usb345': return d.usb345;
                     case 'adj_conv': return d.adj_conv;
+                    case 'current_limit': return d.cl;
                     default: return 0;
                 }
             }),

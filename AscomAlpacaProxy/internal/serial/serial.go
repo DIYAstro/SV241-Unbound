@@ -434,17 +434,17 @@ func probePortWithTimeout(portName string, timeout time.Duration) (Port, bool) {
 			logger.Debug("Port %s: Write failed: %v", portName, err)
 		} else {
 			for i := 0; i < 5; i++ {
-				line, readErr := readLine(p, 2 * time.Second)
+				line, readErr := readLine(p, 2*time.Second)
 				if readErr != nil {
 					logger.Debug("Port %s: Read failed or timed out: %v", portName, readErr)
 					break
 				}
-	
+
 				trimmed := strings.TrimSpace(line)
 				if trimmed == "" {
 					continue
 				}
-	
+
 				var js json.RawMessage
 				if json.Unmarshal([]byte(trimmed), &js) == nil {
 					logger.Info("Successfully probed port: %s", portName)
@@ -758,9 +758,22 @@ func updateConditionsCacheFromJSON(conditionsJSON string) {
 	var conditionsData map[string]interface{}
 	if err := json.Unmarshal([]byte(conditionsJSON), &conditionsData); err == nil {
 		Conditions.Lock()
-		defer Conditions.Unlock()
+		newActive, _ := conditionsData["cl"].(bool)
+		wasActive, _ := Conditions.Data["cl"].(bool) // nil map / missing key both read as false
 		Conditions.Data = conditionsData
 		Conditions.LastUpdate = time.Now()
+		Conditions.Unlock()
+
+		// Edge, not level: only notify on an actual transition, not on every 5s poll tick that
+		// happens to still be "active". Non-blocking send (buffered 1) - a systray-less build
+		// (or one where nobody's listening yet) must never block the cache updater.
+		if newActive != wasActive {
+			select {
+			case events.CurrentLimitStatusChan <- newActive:
+			default:
+			}
+		}
+
 		logMemoryStatus(conditionsData)
 		logger.Debug("Successfully updated conditions cache.")
 	} else {

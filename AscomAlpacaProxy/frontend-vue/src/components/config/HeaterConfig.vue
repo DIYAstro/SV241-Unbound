@@ -10,9 +10,15 @@ const { config, proxyConfig, switchNames, liveStatus } = storeToRefs(store)
 
 const localHeaters = ref([])
 // We need local state for names and auto-enable settings to allow editing before saving
-const localNames = ref({}) 
+const localNames = ref({})
 const localAutoEnable = ref({})
 const hasChanges = ref(false)
+
+// Box-wide (not per-heater) soft current limit - see config_manager.h's current_limit_enabled/
+// _amps doc comment. Local state so editing doesn't touch the store until Save, same pattern as
+// localHeaters below.
+const currentLimitEnabled = ref(false)
+const currentLimitAmps = ref(8)
 
 // Modes: 0:Manual, 1:PID(Lens), 2:Ambient, 3:Sync, 4:MinTemp, 5:Disabled
 const heaterModes = [
@@ -47,6 +53,15 @@ watch(() => config.value.dh, (newVal) => {
                 'pwm2': ae['pwm2'] || false
             };
         }
+    }
+}, { immediate: true, deep: true })
+
+// Current-limit fields are top-level on the firmware config (box-wide), not nested under "dh" -
+// same load-once-then-respect-hasChanges guard as the proxyConfig watcher below.
+watch(() => config.value, (newVal) => {
+    if (newVal && !hasChanges.value) {
+        currentLimitEnabled.value = !!newVal.cle
+        currentLimitAmps.value = newVal.cla ?? 8
     }
 }, { immediate: true, deep: true })
 
@@ -118,8 +133,10 @@ function isOptionDisabled(heaterIndex, optionVal) {
 }
 
 async function save() {
-    // 1. Prepare Firmware Payload (dh)
+    // 1. Prepare Firmware Payload (dh + box-wide current-limit fields)
     const dhPayload = {
+        cle: currentLimitEnabled.value ? 1 : 0,
+        cla: parseFloat(currentLimitAmps.value) || 0,
         dh: localHeaters.value.map(h => ({
             m: parseInt(h.m),
             en: h.en ? 1 : 0,  // Convert boolean to 0/1 for firmware
@@ -179,6 +196,29 @@ async function save() {
 <template>
   <div class="config-group full-width-group">
       <h3>Dew Heater Configuration</h3>
+
+      <!-- Box-wide current-limit protection - not per-heater, applies to both channels
+           together based on total measured input current. Deliberately separate from the
+           per-channel cards below. -->
+      <div class="glass-panel settings-card current-limit-card">
+          <h4>Power Protection</h4>
+          <div class="form-group checkbox-group">
+              <label title="When enabled, heater output is gradually reduced as the total measured input current approaches the threshold below, instead of relying only on the box's own hardware overcurrent protection. Does not affect DC/USB outputs.">
+                  <input type="checkbox" v-model="currentLimitEnabled" @change="onChange">
+                  Reduce heater power near a current limit
+              </label>
+          </div>
+          <div class="form-group" v-if="currentLimitEnabled">
+              <label>Current Limit (A)</label>
+              <input type="number" v-model.number="currentLimitAmps" min="0" step="0.1" @input="onChange">
+              <small class="duty-voltage-hint">
+                  Heater output starts ramping down 1 A below this value and reaches 0% at this
+                  value. The SV241's own input rating is 10 A - set this at or below whatever
+                  your power supply is actually rated for.
+              </small>
+          </div>
+      </div>
+
       <div v-for="(heater, index) in localHeaters" :key="index" class="glass-panel settings-card">
           <!-- Dynamic Header -->
           <h4>{{ localNames[getHeaterKey(index)] || `Heater ${index+1} (PWM${index+1})` }}</h4>
@@ -298,6 +338,11 @@ async function save() {
     margin: 0 0 1rem 0;
     color: var(--primary-color);
     font-weight: 600;
+}
+
+/* Visually set apart from the per-channel cards below - this one is box-wide, not per-heater. */
+.current-limit-card {
+    border-left: 3px solid var(--warning-color, #e0a030);
 }
 
 .mode-settings {

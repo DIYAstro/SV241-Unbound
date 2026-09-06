@@ -68,6 +68,18 @@ Configure the two PWM dew heater outputs:
     - *Minimum Temperature:* Maintains a minimum lens temperature.
     - *Disabled:* Heater is hidden from UI and ASCOM.
 
+**Power Protection** (box-wide, above the per-heater cards): optionally reduces both heaters'
+output as the total measured input current approaches a configurable limit, instead of relying
+solely on the SV241's own self-resetting hardware overcurrent protection. Disabled by default.
+Ramps down starting 1 A below the configured limit, reaching 0% at the limit - avoids the heater
+cycling on/off repeatedly right at the threshold. Set this at or below whatever your power
+supply is actually rated for, not necessarily the SV241's own 10 A input rating. Does not affect
+DC/USB outputs. While active, a red indicator appears next to the affected PWM value(s) in the
+Live Telemetry panel; a Windows notification fires once when it engages and once when it clears
+(if notifications are enabled). Also logged to the telemetry database as a filterable/plottable
+value ("Current Limit Active") for reviewing after the fact whether a heater was being throttled
+at a given time.
+
 #### How PID Mode Works
 
 In **PID Mode**, the controller automatically adjusts heater power to maintain the lens temperature at a safe level above the dew point:

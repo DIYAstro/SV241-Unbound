@@ -44,6 +44,7 @@ func OnReady(onStart func(), iconData []byte) {
 	// Start the main application logic in a goroutine.
 	go onStart()
 	events.StartListener(listenForComPortEvents)
+	events.StartCurrentLimitListener(listenForCurrentLimitEvents)
 
 	// Handle menu clicks.
 	go func() {
@@ -159,5 +160,22 @@ func listenForComPortEvents() {
 			}
 		}
 		logger.Info("Systray stopped listening for COM port events.")
+	}()
+}
+
+// listenForCurrentLimitEvents waits for edge transitions of the box-wide heater current-limit
+// ramp (see events.CurrentLimitStatusChan's doc comment) and shows a notification for each one -
+// once when it engages, once when it clears, never on every poll tick in between.
+func listenForCurrentLimitEvents() {
+	logger.Info("Systray is now listening for current-limit events.")
+	go func() {
+		for active := range events.CurrentLimitStatusChan {
+			if active {
+				go ShowNotification("SV241 Heater Output Reduced", "Dew heater power was reduced because the total input current is approaching the configured limit.")
+			} else {
+				go ShowNotification("SV241 Heater Output Restored", "Total input current dropped back below the configured limit - dew heater power is no longer being reduced.")
+			}
+		}
+		logger.Info("Systray stopped listening for current-limit events.")
 	}()
 }

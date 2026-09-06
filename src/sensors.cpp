@@ -384,6 +384,10 @@ void get_sensor_values_json(JsonDocument& doc) {
   
   doc["pwm1"] = get_heater_power(0);
   doc["pwm2"] = get_heater_power(1);
+  // Box-wide (not per-heater) current-limit ramp status - see dew_control.h. Reported here,
+  // right alongside pwm1/pwm2, so it lands in the same JSON that already feeds the live UI
+  // and (via serial.Conditions.Data in the proxy) the "cl" key logTelemetry() picks up.
+  doc["cl"] = is_current_limit_active();
 
   // Add memory statistics to the JSON response
   doc["hf"] = values.heap_free;

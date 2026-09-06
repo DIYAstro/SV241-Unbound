@@ -94,6 +94,15 @@ struct Config {
     DewHeaterConfig dew_heaters[MAX_DEW_HEATERS];
     unsigned long poweron_stagger_delay_ms; // Delay between staggered output enables during "all"
                                              // master power on and at boot. 0 = disabled (instant).
+
+    // Box-wide (not per-heater) soft current limit: as the measured total input current
+    // approaches current_limit_amps, dew heater output is ramped down (see dew_control.cpp's
+    // current-limit ramp) rather than left alone until the box's own self-resetting hardware
+    // overcurrent protection trips. Disabled by default - existing installs see no behavior
+    // change unless a user opts in. Does not touch DC/USB outputs (see project notes on why a
+    // cascading output shutdown was deliberately not implemented).
+    bool current_limit_enabled;
+    float current_limit_amps;
 };
 
 // Global configuration instance

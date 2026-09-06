@@ -135,18 +135,27 @@ func logTelemetry() {
 		return 0
 	}
 
+	// "cl" comes from the same get:sensors response as pwm1/pwm2 above (Conditions.Data, not
+	// Status.Data - that's only switch on/off state, see the switch-mapping block below), so it
+	// reads via the same `data` map, not `statusData`.
+	currentLimitActive := 0
+	if v, ok := data["cl"].(bool); ok && v {
+		currentLimitActive = 1
+	}
+
 	record := database.TelemetryRecord{
-		Timestamp:    time.Now().Unix(),
-		DeviceSerial: config.GetActiveDeviceSerial(),
-		Voltage:      getFloat("v"),
-		Current:      getFloat("i"),
-		Power:        getFloat("p"),
-		TempAmb:      getFloat("t_amb"),
-		HumAmb:       getFloat("h_amb"),
-		DewPoint:     getFloat("d"),
-		TempLens:     getFloat("t_lens"),
-		PWM1:         getInt("pwm1"),
-		PWM2:         getInt("pwm2"),
+		Timestamp:          time.Now().Unix(),
+		DeviceSerial:       config.GetActiveDeviceSerial(),
+		Voltage:            getFloat("v"),
+		Current:            getFloat("i"),
+		Power:              getFloat("p"),
+		TempAmb:            getFloat("t_amb"),
+		HumAmb:             getFloat("h_amb"),
+		DewPoint:           getFloat("d"),
+		TempLens:           getFloat("t_lens"),
+		PWM1:               getInt("pwm1"),
+		PWM2:               getInt("pwm2"),
+		CurrentLimitActive: currentLimitActive,
 	}
 
 	// Add switch states
