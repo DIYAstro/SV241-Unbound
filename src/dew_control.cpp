@@ -137,6 +137,10 @@ const int HEATER_PINS[MAX_DEW_HEATERS] = {DEW_HEATER_1_PIN, DEW_HEATER_2_PIN};
 // on this target don't tear, and a status flag has no strict consistency requirement.
 static bool current_limit_active_flag = false;
 
+// Damped output of compute_current_limit_cap() - persists across ticks, see that function's
+// doc comment for why. Starts unthrottled.
+static float smoothed_current_limit_cap = 100.0f;
+
 // The ramp starts this many amps below current_limit_amps and reaches 0% duty exactly at
 // current_limit_amps - same linear-ramp shape as Mode 2 (Ambient Tracking)'s start_delta/
 // end_delta below. A hard on/off at the limit would oscillate (throttle -> current drops ->
@@ -146,9 +150,10 @@ const float CURRENT_LIMIT_RAMP_WIDTH_A = 1.0f;
 
 // Returns the box-wide dynamic duty-cycle ceiling (0-100) for the current tick, derived from the
 // measured total input current vs. config.current_limit_amps. 100 (no-op) whenever the feature
-// is disabled or misconfigured (limit <= 0). Both heaters call this with the same
-// measured_current_a on the same tick, so they throttle and relax together rather than
-// fighting over a shared current budget.
+// is disabled or misconfigured (limit <= 0) - deliberately an immediate, undamped return, so
+// disabling the feature is exactly the instant no-op it was before this smoothing was added.
+// Both heaters call this with the same measured_current_a on the same tick, so they throttle
+// and relax together rather than fighting over a shared current budget.
 static int compute_current_limit_cap(float measured_current_a) {
     xSemaphoreTake(config_mutex, portMAX_DELAY);
     bool enabled = config.current_limit_enabled;
@@ -158,11 +163,28 @@ static int compute_current_limit_cap(float measured_current_a) {
     if (!enabled || limit <= 0) return 100;
 
     float ramp_start = limit - CURRENT_LIMIT_RAMP_WIDTH_A;
-    if (measured_current_a <= ramp_start) return 100;
-    if (measured_current_a >= limit) return 0;
+    int target_cap;
+    if (measured_current_a <= ramp_start) {
+        target_cap = 100;
+    } else if (measured_current_a >= limit) {
+        target_cap = 0;
+    } else {
+        float fraction = (limit - measured_current_a) / CURRENT_LIMIT_RAMP_WIDTH_A; // 1..0
+        target_cap = (int)(fraction * 100.0f);
+    }
 
-    float fraction = (limit - measured_current_a) / CURRENT_LIMIT_RAMP_WIDTH_A; // 1..0
-    return (int)(fraction * 100.0f);
+    // Damping: real-hardware testing under actual heater load (~3.4A swing against this 1A-wide
+    // ramp) showed that jumping straight to a freshly computed target_cap every 5s tick, with no
+    // memory of the previous value, produces a sustained limit-cycle oscillation - current (and
+    // the PWM duty that caused it) changes within the same tick, much faster than the 5s sample
+    // rate, so a memory-less proportional response has nothing damping it. Widening the ramp
+    // instead would only mask this for whatever specific heater happened to be tested with - the
+    // right width depends on that heater's own current-per-duty slope, which varies by
+    // installation - so only moving partway toward the target each tick, regardless of how large
+    // a swing the connected heater causes, actually generalizes.
+    const float SMOOTHING_ALPHA = 0.3f; // lower = smoother/slower, higher = snappier/twitchier
+    smoothed_current_limit_cap += SMOOTHING_ALPHA * (target_cap - smoothed_current_limit_cap);
+    return (int)smoothed_current_limit_cap;
 }
 
 // See dew_control.h's doc comment.
