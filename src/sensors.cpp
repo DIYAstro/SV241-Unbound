@@ -148,9 +148,25 @@ void setup_sensors() {
     // Explicit cast on the first operand: these constants come from separate unscoped enums
     // in Adafruit_INA219.h, and combining values from different enum types via `|` is
     // deprecated as of C++20. Casting here doesn't change the resulting bit pattern.
+    // 128-sample hardware averaging on BOTH channels (68.1 ms per conversion), not the
+    // single-shot 532 us the shunt channel used to run: the dew heaters are PWM'd at 100 Hz
+    // (10 ms period, see dew_control.cpp's PWM_FREQUENCY), so a 532 us conversion samples ~5% of
+    // one PWM cycle at an effectively random phase - it reads either the full "heater on" current
+    // or just the baseline "heater off" current, never the actual average. Measured on real
+    // hardware at a constant 60% duty: readings alternated between ~4.7 A and ~1.0 A clusters,
+    // with the true average (~2.8 A) essentially never reported. The median filter layered on top
+    // (calculate_median below) makes that worse rather than better - a median picks one of the two
+    // modes instead of averaging them. 68.1 ms spans 6.8 PWM periods, so the chip returns a real
+    // average; only the fractional period still contributes ripple (roughly +-6% of the swing).
+    // The bus voltage aliases the same way (supply sags during each "on" phase), which is why it
+    // gets the same treatment - the web UI's "average volts at this duty" hint for heater-band
+    // voltage limits reads that value.
+    //
+    // Costs nothing here: the chip free-runs in continuous mode, so a read just returns the last
+    // completed conversion, and this code only reads once per second (update_intervals_ms.ina219).
     uint16_t config_value = (uint16_t)INA219_CONFIG_BVOLTAGERANGE_32V |
-                      INA219_CONFIG_GAIN_8_320MV | INA219_CONFIG_BADCRES_12BIT |
-                      INA219_CONFIG_SADCRES_12BIT_1S_532US |
+                      INA219_CONFIG_GAIN_8_320MV | INA219_CONFIG_BADCRES_12BIT_128S_69MS |
+                      INA219_CONFIG_SADCRES_12BIT_128S_69MS |
                       INA219_CONFIG_MODE_SANDBVOLT_CONTINUOUS;
 
     // Write CONFIG register (separate I2C transaction per register)
