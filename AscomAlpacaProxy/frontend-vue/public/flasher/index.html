@@ -434,11 +434,18 @@
             }
         });
 
-        // Returns true if version string a is older than version string b (simple "x.y.z" numeric
-        // comparison - this project's firmware versions have never used pre-release suffixes).
+        // Returns true if version string a is older than version string b, comparing only the
+        // "x.y.z" numeric core. Any pre-release suffix (e.g. daily builds' "-daily.<short-sha>",
+        // or a manual "-beta.1") is stripped first - it's never purely numeric, and left in would
+        // silently break the segment-by-segment comparison below: Number("40-daily") is NaN, and
+        // every comparison with NaN (<, >, etc.) evaluates to false, which previously made *every*
+        // -daily./-beta. version compare as "not older than 0.9.15" no matter what its actual base
+        // version was (safe-by-accident here, since that only ever suppressed the one-time
+        // pre-0.9.15 auto-erase rather than triggering it - but still worth fixing properly).
         function isVersionOlder(a, b) {
-            const pa = a.split('.').map(Number);
-            const pb = b.split('.').map(Number);
+            const baseVersion = (v) => v.split('-')[0];
+            const pa = baseVersion(a).split('.').map(Number);
+            const pb = baseVersion(b).split('.').map(Number);
             for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
                 const na = pa[i] || 0, nb = pb[i] || 0;
                 if (na !== nb) return na < nb;
