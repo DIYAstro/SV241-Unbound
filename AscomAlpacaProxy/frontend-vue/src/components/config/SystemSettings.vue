@@ -355,6 +355,33 @@ function openFlasher() {
           </small>
       </div>
 
+      <!-- Automatic Backups: a full config+firmware snapshot written to disk every time the box
+           connects (plus at least once every 24h while it stays connected), so there's always a
+           recent backup without anyone having to remember to click "Download Backup". Just the
+           settings live here - the list itself and its restore buttons live in the Restore picker
+           modal (opened via "Restore Backup" below), so this card doesn't grow with every new
+           backup. Placed above Backup & Restore/Firmware Update since it's the thing that runs
+           automatically - the settings for it belong first. -->
+      <div class="action-card glass-panel" style="margin-bottom: 1rem;">
+          <h4>Automatic Backups</h4>
+          <p class="card-description">
+              Automatically backs up the full configuration (proxy + firmware) every time the box
+              connects, and at least once every 24 hours while it stays connected.
+          </p>
+          <div class="button-row auto-backup-settings-row">
+              <label class="checkbox-label">
+                  <input type="checkbox" v-model="autoBackupEnabled">
+                  Enabled
+              </label>
+              <label class="checkbox-label">
+                  Keep last
+                  <input type="number" v-model.number="autoBackupRetentionCount" min="0" style="width: 70px;">
+                  (0 = unlimited)
+              </label>
+              <button @click="saveAutoBackupSettings" class="btn-secondary">Save</button>
+          </div>
+      </div>
+
       <!-- Top Row: Backup & Firmware (larger cards) -->
       <div class="actions-grid-2x2">
           <div class="action-card glass-panel">
@@ -373,31 +400,6 @@ function openFlasher() {
               <div class="button-row">
                   <button @click="openFlasher" class="btn-secondary">Open Flasher Tool</button>
               </div>
-          </div>
-      </div>
-
-      <!-- Automatic Backups: a full config+firmware snapshot written to disk every time the box
-           connects (plus at least once every 24h while it stays connected), so there's always a
-           recent backup without anyone having to remember to click "Download Backup". Just the
-           settings live here - the list itself and its restore buttons live in the Restore modal
-           above (opened via "Restore Backup"), so this card doesn't grow with every new backup. -->
-      <div class="action-card glass-panel" style="margin-bottom: 1rem;">
-          <h4>Automatic Backups</h4>
-          <p class="card-description">
-              Automatically backs up the full configuration (proxy + firmware) every time the box
-              connects, and at least once every 24 hours while it stays connected.
-          </p>
-          <div class="button-row auto-backup-settings-row">
-              <label class="checkbox-label">
-                  <input type="checkbox" v-model="autoBackupEnabled">
-                  Enabled
-              </label>
-              <label class="checkbox-label">
-                  Keep last
-                  <input type="number" v-model.number="autoBackupRetentionCount" min="0" style="width: 70px;">
-                  (0 = unlimited)
-              </label>
-              <button @click="saveAutoBackupSettings" class="btn-secondary">Save</button>
           </div>
       </div>
 
