@@ -83,6 +83,15 @@ func HandlePostSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Reject a switch name that collides with a different switch's own identifier before
+	// anything else is applied - see config.ValidateSwitchNames's doc comment for why this
+	// matters (keeps name->switch lookups like the "DelayedOn"/"DelayedOff" custom Actions
+	// unambiguous).
+	if err := config.ValidateSwitchNames(newConfig.SwitchNames); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	conf := config.Get()
 	// Check if serial port settings have changed to trigger a reconnect
 	portChanged := conf.SerialPortName != newConfig.SerialPortName || conf.AutoDetectPort != newConfig.AutoDetectPort

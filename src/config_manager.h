@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include "ArduinoJson.h"
+#include "power_control.h" // for POWER_OUTPUT_COUNT (SwitchTimingConfig array sizing below)
 
 #define FIRMWARE_VERSION "0.9.40"
 
@@ -61,6 +62,17 @@ struct DewHeaterConfig {
     int max_duty_percent;
 };
 
+// Optional, per-switch fixed delay applied to ordinary on/off commands (not to Master Power -
+// see power_control.cpp's handling of "all", which always stays immediate/instant regardless of
+// this). 0 = no delay, i.e. today's existing immediate behavior, for both directions
+// independently. Only DC1-5/USBC12/USB345/AdjConv are meaningful targets - PWM1/PWM2 (dew
+// heaters) never reach the code path that reads this (see power_control.cpp's "standard
+// handling" branch), since their on/off is already governed by PID/Ambient-Tracking/etc.
+struct SwitchTimingConfig {
+    unsigned long delay_on_s;
+    unsigned long delay_off_s;
+};
+
 // Configuration for the SHT40 automatic drying feature
 struct Sht40AutoDryConfig {
     bool enabled;                           // Enables or disables the automatic drying feature
@@ -87,6 +99,10 @@ struct Config {
     // cascading output shutdown was deliberately not implemented).
     bool current_limit_enabled;
     float current_limit_amps;
+
+    // See SwitchTimingConfig's doc comment above. Indexed by PowerOutput; PWM1/PWM2 entries are
+    // always left at their zero-value default (unused/ignored - see that comment for why).
+    SwitchTimingConfig switch_timing[POWER_OUTPUT_COUNT];
 };
 
 // Global configuration instance

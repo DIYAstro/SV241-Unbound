@@ -46,4 +46,15 @@ bool get_power_output_state(PowerOutput output);
 // Call periodically (e.g. every ~100ms) from a background task. Non-blocking.
 void service_power_stagger_queue();
 
+// Schedules `output` to be turned on (turn_on=true) or off (turn_on=false) after `delay_ms`
+// milliseconds, independent of the host (proxy/PC) staying connected - the ESP32's own clock
+// keeps counting even if USB/the controlling computer disappears mid-countdown. Not persisted
+// across reboot. A new call for the same output overwrites any still-pending one for that output
+// (the newest request wins, regardless of direction).
+void schedule_delayed_action(PowerOutput output, bool turn_on, unsigned long delay_ms);
+
+// Processes any due delayed actions (see schedule_delayed_action). Call periodically (e.g. every
+// ~100ms) from a background task - same cadence as service_power_stagger_queue(). Non-blocking.
+void service_delayed_action_queue();
+
 #endif // POWER_CONTROL_H

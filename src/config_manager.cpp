@@ -31,6 +31,9 @@ void populateDefaultConfig() {
     config.poweron_stagger_delay_ms = 500;
     config.current_limit_enabled = false;
     config.current_limit_amps = 8.0f;
+    for (int i = 0; i < POWER_OUTPUT_COUNT; i++) {
+        config.switch_timing[i] = {0, 0};
+    }
 
     // Default settings for SHT40 auto-dry feature
     config.sht40_auto_dry = {true, 99.0f, 300000}; // enabled, 99.0% threshold, 5 minutes duration
@@ -186,6 +189,16 @@ void serializeConfig(JsonDocument& doc) {
     doc["cle"] = (int)config.current_limit_enabled;
     doc["cla"] = config.current_limit_amps;
 
+    // "dl" (Delay): per-switch fixed on/off delay, see SwitchTimingConfig's doc comment
+    // (config_manager.h). Only the plain DC/USB/Adj switches are meaningful targets - PWM1/PWM2
+    // are skipped (POWER_ADJ_CONV is the last relevant index; see power_control.h's enum order).
+    JsonObject switch_timing = doc["dl"].to<JsonObject>();
+    for (int i = 0; i <= POWER_ADJ_CONV; i++) {
+        JsonObject entry = switch_timing[get_power_output_name((PowerOutput)i)].to<JsonObject>();
+        entry["on"] = config.switch_timing[i].delay_on_s;
+        entry["off"] = config.switch_timing[i].delay_off_s;
+    }
+
     JsonObject auto_dry_obj = doc["ad"].to<JsonObject>();
     auto_dry_obj["en"] = (int)config.sht40_auto_dry.enabled;
     auto_dry_obj["ht"] = config.sht40_auto_dry.humidity_threshold;
@@ -236,6 +249,18 @@ void updateConfig(const JsonObject& doc) {
 
     if (!doc["av"].isNull()) {
         config.adj_conv_preset_v = doc["av"] | config.adj_conv_preset_v;
+    }
+
+    if (!doc["dl"].isNull()) {
+        JsonObjectConst switch_timing = doc["dl"];
+        for (int i = 0; i <= POWER_ADJ_CONV; i++) {
+            const char* key = get_power_output_name((PowerOutput)i);
+            if (!switch_timing[key].isNull()) {
+                JsonObjectConst entry = switch_timing[key];
+                if (!entry["on"].isNull()) config.switch_timing[i].delay_on_s = entry["on"];
+                if (!entry["off"].isNull()) config.switch_timing[i].delay_off_s = entry["off"];
+            }
+        }
     }
 
     if (!doc["psd"].isNull()) {

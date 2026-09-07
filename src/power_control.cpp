@@ -49,6 +49,11 @@ static int stagger_queue_pos = 0;
 static unsigned long stagger_due_at_ms = 0;
 static SemaphoreHandle_t stagger_mutex = NULL;
 
+// Forward declaration - defined further down alongside the rest of the delayed-action queue's
+// internals, but handle_set_power_command() (defined before that point in this file) needs to
+// call it too. See that definition's doc comment for why.
+static void clear_delayed_action_queue();
+
 void setup_power_outputs() {
   if (stagger_mutex == NULL) {
     stagger_mutex = xSemaphoreCreateMutex();
@@ -70,6 +75,13 @@ void setup_power_outputs() {
     (uint8_t)(config.dew_heaters[1].enabled_on_startup ? 1 : 0)
   };
   unsigned long stagger_delay_ms = config.poweron_stagger_delay_ms;
+  // Configured per-switch delay-on (see SwitchTimingConfig) - copied into a local array under
+  // the same config_mutex block as startup_states[]/stagger_delay_ms above, for the same reason:
+  // this loop runs unlocked below.
+  unsigned long delay_on_s[POWER_OUTPUT_COUNT];
+  for (int i = 0; i < POWER_OUTPUT_COUNT; i++) {
+    delay_on_s[i] = config.switch_timing[i].delay_on_s;
+  }
   xSemaphoreGive(config_mutex);
 
   // This runs in setup(), before any FreeRTOS tasks are created (setup_power_outputs() is
@@ -97,7 +109,16 @@ void setup_power_outputs() {
         }
         first_enable = false;
     }
-    set_power_output((PowerOutput)i, physical_state);
+
+    if (physical_state && delay_on_s[i] > 0) {
+      // Stagger sequencing above already happened regardless - only this one output's actual
+      // enable is pushed further out by its own configured delay, on top of its place in the
+      // boot sequence. Mirrors service_power_stagger_queue()'s equivalent handling for Master
+      // Power On.
+      schedule_delayed_action((PowerOutput)i, true, delay_on_s[i] * 1000UL);
+    } else {
+      set_power_output((PowerOutput)i, physical_state);
+    }
   }
 }
 
@@ -226,6 +247,12 @@ bool handle_set_power_command(JsonVariant set_command) {
         };
         xSemaphoreGive(config_mutex);
 
+        // Master Power is a decisive, complete action - any delayed action left over from an
+        // earlier individual command (explicit "DelayedOn"/"DelayedOff", or a configured
+        // per-switch delay) must not be allowed to override it later. See
+        // clear_delayed_action_queue()'s doc comment - found via real hardware testing.
+        clear_delayed_action_queue();
+
         if (all_state) {
             // Turning on: don't switch directly here (would block this task, and thus the
             // {"set":{"all":true}} response, for up to several seconds - see
@@ -310,11 +337,88 @@ bool handle_set_power_command(JsonVariant set_command) {
       // Standard handling for all (including PWM if not special)
       if (set_obj[name].is<bool>() || set_obj[name].is<int>()) {
         bool state = set_obj[name].as<bool>();
-        all_succeeded &= set_power_output((PowerOutput)i, state);
+
+        // Configured per-switch delay (see SwitchTimingConfig) - only ever reached for the plain
+        // DC/USB switches (ADJ_CONV/PWM1/PWM2 are already handled and `continue`d above), which
+        // is also the only scope this feature was built for. Deliberately not applied here to
+        // "all" (Master Power) - see handle_set_power_command's "all" branch above, which always
+        // stays immediate on purpose.
+        unsigned long delay_s = 0;
+        xSemaphoreTake(config_mutex, portMAX_DELAY);
+        delay_s = state ? config.switch_timing[i].delay_on_s : config.switch_timing[i].delay_off_s;
+        xSemaphoreGive(config_mutex);
+
+        if (delay_s > 0) {
+          schedule_delayed_action((PowerOutput)i, state, delay_s * 1000UL);
+          // Request accepted, just deferred - not a failure.
+        } else {
+          all_succeeded &= set_power_output((PowerOutput)i, state);
+        }
       }
     }
   }
   return all_succeeded;
+}
+
+// --- Delayed Action queue ---
+// Unlike stagger_queue above (which drains sequentially, one entry at a time with a shared
+// delay), each output here counts down independently to its own due time - multiple unrelated
+// delayed actions (on unrelated outputs, or even opposite directions) can be pending at once.
+// Deliberately NOT persisted to flash: a delayed action only makes sense in the context of the
+// live session that scheduled it - if the ESP32 itself reboots, that context is gone anyway.
+struct DelayedActionEntry {
+  bool pending;
+  bool turn_on;   // true = turn on when due, false = turn off
+  unsigned long due_at_ms;
+};
+static DelayedActionEntry delayed_action_queue[POWER_OUTPUT_COUNT];
+static SemaphoreHandle_t delayed_action_mutex = NULL;
+
+void schedule_delayed_action(PowerOutput output, bool turn_on, unsigned long delay_ms) {
+  if (output < 0 || output >= POWER_OUTPUT_COUNT) return;
+  if (delayed_action_mutex == NULL) {
+    delayed_action_mutex = xSemaphoreCreateMutex();
+  }
+  xSemaphoreTake(delayed_action_mutex, portMAX_DELAY);
+  delayed_action_queue[output].pending = true;
+  delayed_action_queue[output].turn_on = turn_on;
+  delayed_action_queue[output].due_at_ms = millis() + delay_ms;
+  xSemaphoreGive(delayed_action_mutex);
+}
+
+// Cancels every pending delayed action, regardless of output or direction. Call this whenever
+// "all" is used (see handle_set_power_command below) - found via real hardware testing: without
+// this, a delayed action scheduled shortly before a Master Power command would still fire later
+// on its own, silently undoing what Master Power just did (e.g. Master Power Off, followed
+// moments later by an unrelated output spontaneously turning back on once its stale delayed-on
+// came due). Master Power is meant to be a decisive, complete action - nothing should be able to
+// override it after the fact.
+static void clear_delayed_action_queue() {
+  if (delayed_action_mutex == NULL) return;
+  xSemaphoreTake(delayed_action_mutex, portMAX_DELAY);
+  for (int i = 0; i < POWER_OUTPUT_COUNT; i++) {
+    delayed_action_queue[i].pending = false;
+  }
+  xSemaphoreGive(delayed_action_mutex);
+}
+
+void service_delayed_action_queue() {
+  if (delayed_action_mutex == NULL) return; // nothing ever scheduled yet
+  for (int i = 0; i < POWER_OUTPUT_COUNT; i++) {
+    bool due = false, turn_on = false;
+    xSemaphoreTake(delayed_action_mutex, portMAX_DELAY);
+    if (delayed_action_queue[i].pending && millis() >= delayed_action_queue[i].due_at_ms) {
+      delayed_action_queue[i].pending = false;
+      due = true;
+      turn_on = delayed_action_queue[i].turn_on;
+    }
+    xSemaphoreGive(delayed_action_mutex);
+    // set_power_output() takes config_mutex/serial_mutex internally - call it outside
+    // delayed_action_mutex's critical section, same reasoning as service_power_stagger_queue().
+    if (due) {
+      set_power_output((PowerOutput)i, turn_on);
+    }
+  }
 }
 
 bool get_power_output_state(PowerOutput output) {
@@ -343,6 +447,18 @@ void service_power_stagger_queue() {
   // Call set_power_output() outside the stagger_mutex critical section - it takes config_mutex
   // internally, and there's no need to hold stagger_mutex while that happens.
   if (should_enable) {
-    set_power_output(output_to_enable, true);
+    unsigned long extra_delay_s = 0;
+    xSemaphoreTake(config_mutex, portMAX_DELAY);
+    extra_delay_s = config.switch_timing[output_to_enable].delay_on_s;
+    xSemaphoreGive(config_mutex);
+
+    if (extra_delay_s > 0) {
+      // Stagger sequencing already advanced above regardless of this - only this one output's
+      // actual enable is pushed further out by its own configured delay, on top of its place in
+      // the stagger order.
+      schedule_delayed_action(output_to_enable, true, extra_delay_s * 1000UL);
+    } else {
+      set_power_output(output_to_enable, true);
+    }
   }
 }

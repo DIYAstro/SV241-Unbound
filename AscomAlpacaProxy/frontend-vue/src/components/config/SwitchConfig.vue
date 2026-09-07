@@ -90,15 +90,24 @@ const displayRows = computed(() => {
             storeVoltage = '-';
         }
 
+        // Delay On/Off (config.dl[shortKey].on/off, seconds) - not meaningful for adj_conv,
+        // which has its own voltage-value-based handling and never reaches the plain on/off
+        // code path these delays hook into (see power_control.cpp's "standard handling" branch).
+        const storeDelayEntry = config.value.dl ? config.value.dl[shortKey] : undefined;
+        const storeDelayOn = storeDelayEntry?.on ?? 0;
+        const storeDelayOff = storeDelayEntry?.off ?? 0;
+
         // 2. Override with Edits if present
         const edit = edits.value[key] || {};
-        
+
         const currentName = (edit.currentName !== undefined) ? edit.currentName : storeName;
         const startupState = (edit.startupState !== undefined) ? edit.startupState : storeState;
         const rawValue = (edit.rawValue !== undefined) ? edit.rawValue : storeRawValue;
-        
+        const delayOn = (edit.delayOn !== undefined) ? edit.delayOn : storeDelayOn;
+        const delayOff = (edit.delayOff !== undefined) ? edit.delayOff : storeDelayOff;
+
         // Voltage display logic using MERGED value
-        let voltage = storeVoltage; 
+        let voltage = storeVoltage;
         // Note: For adj_conv, voltage display depends on rawValue.
         if (key === 'adj_conv') {
              voltage = rawValue + ' V';
@@ -113,6 +122,9 @@ const displayRows = computed(() => {
             startupState, // This binds to the select
             voltage,
             rawValue,
+            delayOn,
+            delayOff,
+            supportsDelay: key !== 'adj_conv',
             isPwm: (key === 'pwm1' || key === 'pwm2') // Flag for UI
         })
     }
@@ -137,27 +149,51 @@ function onStateChange(key, val) {
 
 function onVoltageChange(key, val) {
     const parsedValue = parseFloat(val);
-    
+
     // Validate minimum voltage for adj_conv
     if (key === 'adj_conv' && !isNaN(parsedValue) && parsedValue < 1.0) {
         modal.error('Preset voltage must be at least 1V.', 'Invalid Voltage');
         return;
     }
-    
+
     const edit = getEdit(key);
     edit.rawValue = parsedValue;
+}
+
+// Deliberately not the `parseX(val) || default` pattern - same reasoning as onPsdChange: 0 is a
+// valid, meaningful value (delay disabled), and `|| 0` would coincidentally do the right thing
+// here, but only by accident - an empty/invalid input should fall back to 0 (disabled), not
+// silently keep whatever was there before.
+function onDelayOnChange(key, val) {
+    const edit = getEdit(key);
+    const parsed = parseInt(val);
+    edit.delayOn = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+}
+
+function onDelayOffChange(key, val) {
+    const edit = getEdit(key);
+    const parsed = parseInt(val);
+    edit.delayOff = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
 }
 
 
 async function save() {
     let saved = false;
-    
+
     const newPs = config.value.ps ? { ...config.value.ps } : {};
     let newAv = config.value.av;
+    // Deep-ish copy: only the per-switch entries actually being edited get replaced below, the
+    // rest need to survive this save untouched (a single "dl" object covers every switch, unlike
+    // "ps" being sent whole is fine since every switch already has an entry there).
+    const newDl = {};
+    for (const k of Object.keys(config.value.dl || {})) {
+        newDl[k] = { ...config.value.dl[k] };
+    }
 
     const newNames = { ...store.proxyConfig.switchNames };
 
     let psChanged = false;
+    let dlChanged = false;
     let namesChanged = false;
 
     if (psdEdit.value !== undefined) {
@@ -168,7 +204,7 @@ async function save() {
     for (const key of Object.keys(edits.value)) {
         const edit = edits.value[key];
         const shortKey = switchMapping[key] || key;
-        
+
         // Validate adj_conv voltage before saving
         if (key === 'adj_conv' && edit.rawValue !== undefined) {
             if (edit.rawValue < 1.0) {
@@ -176,26 +212,36 @@ async function save() {
                 return;
             }
         }
-        
+
         if (edit.startupState !== undefined) {
              newPs[shortKey] = edit.startupState;
              psChanged = true;
         }
-        
+
         if (edit.rawValue !== undefined && key === 'adj_conv') {
             newAv = edit.rawValue;
             psChanged = true;
         }
-        
+
+        if (edit.delayOn !== undefined || edit.delayOff !== undefined) {
+            const existing = newDl[shortKey] || { on: 0, off: 0 };
+            newDl[shortKey] = {
+                on: edit.delayOn !== undefined ? edit.delayOn : existing.on,
+                off: edit.delayOff !== undefined ? edit.delayOff : existing.off,
+            };
+            dlChanged = true;
+        }
+
         if (edit.currentName !== undefined) {
             newNames[key] = edit.currentName;
             namesChanged = true;
         }
     }
 
-    if (psChanged) {
+    if (psChanged || dlChanged) {
         const payload = { ps: newPs, av: newAv };
         if (psdEdit.value !== undefined) payload.psd = psdEdit.value;
+        if (dlChanged) payload.dl = newDl;
         try {
             await store.saveConfig(payload);
             saved = true;
@@ -240,6 +286,8 @@ async function save() {
                       <th class="th-state">State (Startup)</th>
                       <th class="th-custom">Custom Name</th>
                       <th class="th-volt">Voltage</th>
+                      <th class="th-delay" title="Wait this many seconds after an on/off command before actually switching - e.g. to let a computer's own OS shutdown finish before cutting its power. Runs in the firmware itself, so it still completes even if the proxy/host is gone by then. 0 = immediate (unchanged behavior). Does not apply to Master Power.">Delay On (s)</th>
+                      <th class="th-delay" title="Same as Delay On, for the off direction.">Delay Off (s)</th>
                   </tr>
               </thead>
               <tbody>
@@ -261,6 +309,14 @@ async function save() {
                               <span>V</span>
                           </div>
                           <span v-else>{{ row.voltage }}</span>
+                      </td>
+                      <td>
+                          <input v-if="row.supportsDelay" type="number" :value="row.delayOn" @input="e => onDelayOnChange(row.key, e.target.value)" min="0" style="width: 80px;">
+                          <span v-else>-</span>
+                      </td>
+                      <td>
+                          <input v-if="row.supportsDelay" type="number" :value="row.delayOff" @input="e => onDelayOffChange(row.key, e.target.value)" min="0" style="width: 80px;">
+                          <span v-else>-</span>
                       </td>
                   </tr>
               </tbody>

@@ -137,6 +137,54 @@ func SetSwitchName(internalName, displayName string) {
 	syncActiveProfileFromFlatLocked(conf)
 }
 
+// GetInternalNameForDisplayName reverse-looks-up which switch's internal key currently carries
+// displayName as its custom SwitchNames entry (for the currently active device). Since
+// SwitchNames only ever contains entries for currently-active switches (see
+// PruneInactiveSwitchNames), a disabled switch's old name is never found here either - the
+// lookup fails exactly the way it should. Used by the "DelayedOn"/"DelayedOff" custom ASCOM
+// Actions to resolve the display name a user actually sees in their client into the internal key
+// the rest of this file already understands.
+func GetInternalNameForDisplayName(displayName string) (string, bool) {
+	ProxyConfigMutex.RLock()
+	defer ProxyConfigMutex.RUnlock()
+	for internalName, name := range Get().SwitchNames {
+		if name == displayName {
+			return internalName, true
+		}
+	}
+	return "", false
+}
+
+// reservedIdentifiersExcluding returns every switch's long AND short key except internalName's
+// own - the set of strings internalName must NOT be renamed to, since any of them would make
+// that other switch's identifier ambiguous between "its own key" and "someone else's custom
+// name". See ValidateSwitchNames.
+func reservedIdentifiersExcluding(internalName string) map[string]bool {
+	reserved := make(map[string]bool, len(ShortSwitchIDMap)*2)
+	for long, short := range ShortSwitchIDMap {
+		if long == internalName {
+			continue // a switch may always be named its own key - that's just the unmodified default
+		}
+		reserved[long] = true
+		reserved[short] = true
+	}
+	return reserved
+}
+
+// ValidateSwitchNames rejects a proposed SwitchNames map if any entry's display name collides
+// with a DIFFERENT switch's own long or short key. Call this before SetProxyMaps persists a new
+// SwitchNames map (see HandlePostSettings) - keeps name->switch lookups (e.g.
+// GetInternalNameForDisplayName) unambiguous by construction, rather than needing to guess at
+// lookup time.
+func ValidateSwitchNames(switchNames map[string]string) error {
+	for internalName, displayName := range switchNames {
+		if reservedIdentifiersExcluding(internalName)[displayName] {
+			return fmt.Errorf("name %q for %q conflicts with another switch's identifier", displayName, internalName)
+		}
+	}
+	return nil
+}
+
 // SetLensTempName sets the custom display name for the Lens Temp sensor check, thread-safely. Use
 // this instead of assigning conf.LensTempName directly - a direct assignment would skip syncing
 // the change into the active device's profile (see syncActiveProfileFromFlatLocked).

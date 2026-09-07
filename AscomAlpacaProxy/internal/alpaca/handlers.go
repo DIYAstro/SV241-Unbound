@@ -901,7 +901,7 @@ func (a *API) HandleSwitchSwitchStep(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) HandleSwitchSupportedActions(w http.ResponseWriter, r *http.Request) {
-	actions := []string{"MasterSwitchOn", "MasterSwitchOff"}
+	actions := []string{"MasterSwitchOn", "MasterSwitchOff", "DelayedOn", "DelayedOff"}
 	StringListResponse(w, r, actions)
 }
 
@@ -926,10 +926,56 @@ func (a *API) HandleSwitchAction(w http.ResponseWriter, r *http.Request) {
 			serial.SendCommand(command, true, 0)
 		}()
 		return
+	case "delayedon", "delayedoff":
+		a.handleDelayedAction(w, r, strings.ToLower(action) == "delayedon")
+		return
 	default:
 		ErrorResponse(w, r, http.StatusOK, 0x400, fmt.Sprintf("Action '%s' is not supported.", action))
 		return
 	}
+}
+
+// handleDelayedAction implements the "DelayedOn"/"DelayedOff" custom Actions. Parameters is a
+// JSON string: {"switch":"<name as shown in the ASCOM client>","minutes":<int>}. "switch" is
+// resolved against the display name the user actually sees
+// (config.GetInternalNameForDisplayName) - deliberately not the numeric Alpaca switch Id, which
+// can shift when the configuration changes (see docs/REST_API.md's Switch ID Schema note).
+//
+// This is a one-shot, explicit override - distinct from the per-switch configured default delay
+// (config.SwitchTimingConfig, applied automatically to ordinary setswitch calls) - and bypasses
+// it: whatever minutes value is given here is used as-is for this one call.
+func (a *API) handleDelayedAction(w http.ResponseWriter, r *http.Request, turnOn bool) {
+	paramsRaw, _ := GetFormValueIgnoreCase(r, "Parameters")
+	var params struct {
+		Switch  string `json:"switch"`
+		Minutes int    `json:"minutes"`
+	}
+	if err := json.Unmarshal([]byte(paramsRaw), &params); err != nil || params.Switch == "" || params.Minutes <= 0 {
+		ErrorResponse(w, r, http.StatusOK, 0x400, `Parameters must be {"switch":"<name>","minutes":<n>}`)
+		return
+	}
+
+	internalName, ok := config.GetInternalNameForDisplayName(params.Switch)
+	if !ok {
+		ErrorResponse(w, r, http.StatusOK, 0x400, fmt.Sprintf("Unknown or disabled switch: %q", params.Switch))
+		return
+	}
+	shortKey, ok := config.ShortSwitchIDMap[internalName]
+	if !ok {
+		ErrorResponse(w, r, http.StatusOK, 0x400, fmt.Sprintf("%q is not a switchable output", params.Switch))
+		return
+	}
+
+	direction := "off"
+	if turnOn {
+		direction = "on"
+	}
+	logger.Info("Scheduling delayed %s for %q (%s) in %d minutes", direction, params.Switch, shortKey, params.Minutes)
+	StringResponse(w, r, "") // ASCOM spec: respond immediately with an empty value
+	go func() {
+		command := fmt.Sprintf(`{"delay_set":{"port":"%s","state":%t,"minutes":%d}}`, shortKey, turnOn, params.Minutes)
+		serial.SendCommand(command, true, 0)
+	}()
 }
 
 // --- ObservingConditions Handlers ---

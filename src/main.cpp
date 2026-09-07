@@ -40,6 +40,7 @@ void power_stagger_task(void *pvParameters) {
   xSemaphoreGive(serial_mutex);
   for (;;) {
     service_power_stagger_queue();
+    service_delayed_action_queue();
     vTaskDelay(pdMS_TO_TICKS(100));
     esp_task_wdt_reset(); // Feed the watchdog
   }
@@ -155,6 +156,34 @@ void serial_command_task(void *pvParameters) {
               Serial.println();
               xSemaphoreGive(serial_mutex);
             }
+
+          } else if (doc["delay_set"].is<JsonObject>()) {
+            // Explicit, one-shot delayed on/off - see power_control.h's schedule_delayed_action()
+            // doc comment. Used by the proxy's "DelayedOn"/"DelayedOff" custom ASCOM Actions;
+            // distinct from the configured per-switch default delay (SwitchTimingConfig), which
+            // this bypasses/overrides for a single explicit call.
+            JsonObject params = doc["delay_set"].as<JsonObject>();
+            const char* port_name = params["port"];
+            bool state = params["state"] | false;
+            unsigned long minutes = params["minutes"] | 0;
+
+            PowerOutput target = POWER_OUTPUT_COUNT; // invalid sentinel
+            for (int i = 0; i < POWER_OUTPUT_COUNT; i++) {
+              if (port_name && strcmp(get_power_output_name((PowerOutput)i), port_name) == 0) {
+                target = (PowerOutput)i;
+                break;
+              }
+            }
+
+            xSemaphoreTake(serial_mutex, portMAX_DELAY);
+            if (target == POWER_OUTPUT_COUNT || minutes == 0) {
+              Serial.println("{\"error\":\"Invalid port or minutes for delay_set\"}");
+            } else {
+              schedule_delayed_action(target, state, minutes * 60000UL);
+              Serial.printf("{\"ok\":true,\"port\":\"%s\",\"state\":%s,\"minutes\":%lu}\n",
+                            port_name, state ? "true" : "false", minutes);
+            }
+            xSemaphoreGive(serial_mutex);
 
           } else if (doc["get"].is<const char*>() && strcmp(doc["get"], "config") == 0) {
             String output_buffer;
