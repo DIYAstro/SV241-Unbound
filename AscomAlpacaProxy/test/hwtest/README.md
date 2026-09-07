@@ -79,6 +79,8 @@ long burn-in run before it finishes.
 | `firmware_switches_test.go` | DC/USB/ADJ switches, `all`, staggering, Disabled interaction |
 | `firmware_heaters_test.go` | Both dew heaters, all modes, `xd` clamp, Sync follower |
 | `firmware_config_test.go` | Persistence across a real reset, `psd` clamp boundaries, unknown-key robustness |
+| `firmware_delayed_action_test.go` | Delayed on/off: configured per-switch delay (incl. Adj. Port), the explicit `delay_set` command, Master Power's immediate/clears-pending guarantees, boot-time and stagger-time stacking |
 | `firmware_burnin_test.go` | Opt-in long-running heap stability stress test |
 | `proxy_e2e_helper_test.go` | Spawns/manages the real proxy binary as an isolated subprocess |
 | `proxy_e2e_test.go` | REST + Alpaca Switch/ObservingConditions endpoints against the running proxy |
+| `proxy_e2e_delayed_action_test.go` | The `DelayedOn`/`DelayedOff` custom ASCOM Actions (display-name resolution, name-collision guard) and the delayed action's defining property - it survives the proxy process being killed entirely mid-countdown |

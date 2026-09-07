@@ -90,9 +90,9 @@ const displayRows = computed(() => {
             storeVoltage = '-';
         }
 
-        // Delay On/Off (config.dl[shortKey].on/off, seconds) - not meaningful for adj_conv,
-        // which has its own voltage-value-based handling and never reaches the plain on/off
-        // code path these delays hook into (see power_control.cpp's "standard handling" branch).
+        // Delay On/Off (config.dl[shortKey].on/off, seconds) - including adj_conv, which has its
+        // own dedicated delay handling in power_control.cpp's POWER_ADJ_CONV branch (separate
+        // from, but equivalent to, the plain on/off "standard handling" branch other switches use).
         const storeDelayEntry = config.value.dl ? config.value.dl[shortKey] : undefined;
         const storeDelayOn = storeDelayEntry?.on ?? 0;
         const storeDelayOff = storeDelayEntry?.off ?? 0;
@@ -124,7 +124,6 @@ const displayRows = computed(() => {
             rawValue,
             delayOn,
             delayOff,
-            supportsDelay: key !== 'adj_conv',
             isPwm: (key === 'pwm1' || key === 'pwm2') // Flag for UI
         })
     }
@@ -285,9 +284,9 @@ async function save() {
                       <th class="th-name">Switch Name</th>
                       <th class="th-state">State (Startup)</th>
                       <th class="th-custom">Custom Name</th>
+                      <th class="th-delay-on" title="Wait this many seconds after an on/off command before actually switching - e.g. to let a computer's own OS shutdown finish before cutting its power. Runs in the firmware itself, so it still completes even if the proxy/host is gone by then. 0 = immediate (unchanged behavior). Does not apply to Master Power.">Delay On (s)</th>
+                      <th class="th-delay-off" title="Same as Delay On, for the off direction.">Delay Off (s)</th>
                       <th class="th-volt">Voltage</th>
-                      <th class="th-delay" title="Wait this many seconds after an on/off command before actually switching - e.g. to let a computer's own OS shutdown finish before cutting its power. Runs in the firmware itself, so it still completes even if the proxy/host is gone by then. 0 = immediate (unchanged behavior). Does not apply to Master Power.">Delay On (s)</th>
-                      <th class="th-delay" title="Same as Delay On, for the off direction.">Delay Off (s)</th>
                   </tr>
               </thead>
               <tbody>
@@ -303,20 +302,18 @@ async function save() {
                       <td>
                           <input type="text" :value="row.currentName" @input="e => onNameChange(row.key, e.target.value)" :placeholder="row.defaultName">
                       </td>
+                      <td class="td-delay-on">
+                          <input type="number" :value="row.delayOn" @input="e => onDelayOnChange(row.key, e.target.value)" min="0" style="width: 70px;">
+                      </td>
+                      <td class="td-delay-off">
+                          <input type="number" :value="row.delayOff" @input="e => onDelayOffChange(row.key, e.target.value)" min="0" style="width: 70px;">
+                      </td>
                       <td>
                           <div v-if="row.key === 'adj_conv'" style="display: flex; align-items: center; gap: 0.5rem;">
                               <input type="number" :value="row.rawValue" @input="e => onVoltageChange(row.key, e.target.value)" step="0.1" min="0" max="15" style="width: 80px;">
                               <span>V</span>
                           </div>
                           <span v-else>{{ row.voltage }}</span>
-                      </td>
-                      <td>
-                          <input v-if="row.supportsDelay" type="number" :value="row.delayOn" @input="e => onDelayOnChange(row.key, e.target.value)" min="0" style="width: 80px;">
-                          <span v-else>-</span>
-                      </td>
-                      <td>
-                          <input v-if="row.supportsDelay" type="number" :value="row.delayOff" @input="e => onDelayOffChange(row.key, e.target.value)" min="0" style="width: 80px;">
-                          <span v-else>-</span>
                       </td>
                   </tr>
               </tbody>

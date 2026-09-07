@@ -49,10 +49,11 @@ static int stagger_queue_pos = 0;
 static unsigned long stagger_due_at_ms = 0;
 static SemaphoreHandle_t stagger_mutex = NULL;
 
-// Forward declaration - defined further down alongside the rest of the delayed-action queue's
+// Forward declarations - defined further down alongside the rest of the delayed-action queue's
 // internals, but handle_set_power_command() (defined before that point in this file) needs to
-// call it too. See that definition's doc comment for why.
+// call them too. See each definition's doc comment for why.
 static void clear_delayed_action_queue();
+static void clear_delayed_action_for(PowerOutput output);
 
 void setup_power_outputs() {
   if (stagger_mutex == NULL) {
@@ -93,9 +94,16 @@ void setup_power_outputs() {
   for (int i = 0; i < POWER_OUTPUT_COUNT; i++) {
     // Outputs managed by other modules are skipped here
     if ((PowerOutput)i == POWER_ADJ_CONV || (PowerOutput)i == POWER_PWM1 || (PowerOutput)i == POWER_PWM2) {
-        // Their state is set in their own setup function, but we need to track it here too.
-        // For standard switches, 2 means Disabled, which physically means Off.
-        power_output_states[i] = (startup_states[i] == 1);
+        // Their physical state is applied in their own setup function (setup_voltage_control(),
+        // dew heater setup), so this loop never calls set_power_output() for them - but we still
+        // need to track the resulting state here for get_power_status_json(). For standard
+        // switches, 2 means Disabled, which physically means Off. If that other setup function
+        // deferred its own enable via schedule_delayed_action() (configured delay_on_s > 0), the
+        // output isn't physically on yet either - stay false until the delayed action actually
+        // fires (it calls set_power_output() itself, which updates this array then). Currently
+        // only reachable for ADJ_CONV: PWM1/PWM2 never get a configured delay_on_s (SwitchConfig.
+        // vue's dl only covers dc1-5/usbc12/usb345/adj_conv), so delay_on_s[i] is always 0 there.
+        power_output_states[i] = (startup_states[i] == 1) && delay_on_s[i] == 0;
         continue;
     }
 
@@ -297,19 +305,43 @@ bool handle_set_power_command(JsonVariant set_command) {
 
       // Special handling for Adjustable Converter (0-15V RAM override)
       if ((PowerOutput)i == POWER_ADJ_CONV) {
+         bool state = false;
+         bool have_state = false;
          if (set_obj[name].is<bool>()) {
-             bool state = set_obj[name].as<bool>();
-             all_succeeded &= set_power_output((PowerOutput)i, state);
+             state = set_obj[name].as<bool>();
+             have_state = true;
          } else if (set_obj[name].is<int>() || set_obj[name].is<float>()) {
              float v = set_obj[name].as<float>();
-             if (v <= 0.0f) {
-                 all_succeeded &= set_power_output((PowerOutput)i, false);  // Turn off at 0V
+             state = (v > 0.0f);
+             have_state = true;
+             // Applied immediately regardless of any configured delay below - this only writes
+             // the RAM target voltage_control.cpp's set_adjustable_converter_state() reads once
+             // the output actually gets enabled (right away, or later via the delayed path); it
+             // does not itself energize anything.
+             if (state) set_adjustable_voltage_ram(v);
+         }
+
+         if (have_state) {
+             // Configured per-switch delay (see SwitchTimingConfig) - same mechanism as the
+             // "standard handling" branch further below, just applied here too now (this branch
+             // continue()s past that one, so it never runs it itself). Requested by the user
+             // after noticing Adj. Port was the only switch that ignored its configured delay.
+             unsigned long delay_s = 0;
+             xSemaphoreTake(config_mutex, portMAX_DELAY);
+             delay_s = state ? config.switch_timing[i].delay_on_s : config.switch_timing[i].delay_off_s;
+             xSemaphoreGive(config_mutex);
+
+             // See clear_delayed_action_for()'s doc comment: must run before the immediate branch
+             // below, or a still-pending delayed action from an earlier command on this same
+             // output could fire later and undo this one.
+             clear_delayed_action_for((PowerOutput)i);
+             if (delay_s > 0) {
+                 schedule_delayed_action((PowerOutput)i, state, delay_s * 1000UL);
              } else {
-                 set_adjustable_voltage_ram(v);
-                 all_succeeded &= set_power_output((PowerOutput)i, true);
+                 all_succeeded &= set_power_output((PowerOutput)i, state);
              }
-          }
-          continue;
+         }
+         continue;
       }
 
       // Special handling for PWM channels
@@ -348,6 +380,10 @@ bool handle_set_power_command(JsonVariant set_command) {
         delay_s = state ? config.switch_timing[i].delay_on_s : config.switch_timing[i].delay_off_s;
         xSemaphoreGive(config_mutex);
 
+        // See clear_delayed_action_for()'s doc comment: must run before the immediate branch
+        // below, or a still-pending delayed action from an earlier command on this same output
+        // could fire later and undo this one.
+        clear_delayed_action_for((PowerOutput)i);
         if (delay_s > 0) {
           schedule_delayed_action((PowerOutput)i, state, delay_s * 1000UL);
           // Request accepted, just deferred - not a failure.
@@ -383,6 +419,23 @@ void schedule_delayed_action(PowerOutput output, bool turn_on, unsigned long del
   delayed_action_queue[output].pending = true;
   delayed_action_queue[output].turn_on = turn_on;
   delayed_action_queue[output].due_at_ms = millis() + delay_ms;
+  xSemaphoreGive(delayed_action_mutex);
+}
+
+// Cancels any still-pending delayed action for a single output, regardless of direction. Call
+// this before handling any live "set" command for that same output (whether the command itself
+// ends up being immediate or newly delayed) - found via writing this feature's formal test suite:
+// without this, an immediate command (delay_s == 0, e.g. the opposite direction from whichever
+// one has a configured delay) would silently leave an earlier, now-contradicting delayed action
+// for the same output still pending, which then fires later and undoes what the immediate command
+// just did. schedule_delayed_action() already overwrites on its own for the "ends up delayed"
+// case, so calling this unconditionally beforehand is a harmless no-op there - this only matters
+// for the immediate path. Singular sibling of clear_delayed_action_queue() below (that one is for
+// Master Power, which affects every output at once).
+static void clear_delayed_action_for(PowerOutput output) {
+  if (delayed_action_mutex == NULL || output < 0 || output >= POWER_OUTPUT_COUNT) return;
+  xSemaphoreTake(delayed_action_mutex, portMAX_DELAY);
+  delayed_action_queue[output].pending = false;
   xSemaphoreGive(delayed_action_mutex);
 }
 

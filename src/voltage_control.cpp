@@ -1,6 +1,7 @@
 #include "voltage_control.h"
 #include "config_manager.h"
 #include "hardware_pins.h"
+#include "power_control.h" // POWER_ADJ_CONV, schedule_delayed_action() - see setup_voltage_control()
 
 // LEDC (PWM) settings
 // Note: Arduino-ESP32 core 3.x manages LEDC channel assignment internally per pin
@@ -80,12 +81,23 @@ void setup_voltage_control() {
   // energizing the output at boot even though the user asked to keep it off. Match the "== 1"
   // pattern power_control.cpp's setup_power_outputs() already uses for every other output.
   bool startup_state = (config.power_startup_states.adj_conv == 1);
+  unsigned long delay_on_s = config.switch_timing[POWER_ADJ_CONV].delay_on_s;
   // On startup, we always respect the config preset, so ensure RAM override is cleared.
   ram_voltage_target = -1.0f;
   xSemaphoreGive(config_mutex);
 
-  // Set the initial state based on config
-  set_adjustable_converter_state(startup_state);
+  if (startup_state && delay_on_s > 0) {
+    // Configured delay-on (see SwitchTimingConfig) - defer the actual enable the same way
+    // power_control.cpp's setup_power_outputs() does for the standard DC/USB outputs. Safe to
+    // call this early (still inside setup(), before any FreeRTOS tasks exist) - the queue is
+    // only drained once power_stagger_task starts running, further down in main.cpp's setup().
+    // power_control.cpp's setup_power_outputs() (called right after this) reads the same
+    // delay_on_s to keep power_output_states[POWER_ADJ_CONV] correctly false in the meantime.
+    schedule_delayed_action(POWER_ADJ_CONV, true, delay_on_s * 1000UL);
+  } else {
+    // Set the initial state based on config
+    set_adjustable_converter_state(startup_state);
+  }
 }
 
 void set_adjustable_converter_state(bool on) {

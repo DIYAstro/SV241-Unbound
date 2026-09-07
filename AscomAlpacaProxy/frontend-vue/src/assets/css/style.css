@@ -980,6 +980,28 @@ button {
     width: auto;
 }
 
+.th-delay-on,
+.th-delay-off {
+    width: 70px;
+    /* Fixed width, same idea as .th-volt */
+    white-space: nowrap;
+}
+
+/* Delay On/Off sit next to each other (between Custom Name and Voltage) and read as one related
+   pair, so the gap between just the two of them is pulled in tighter than the table's normal
+   0.5rem column gap - Custom Name->Delay On and Delay Off->Voltage keep the normal spacing.
+   Specificity needs to match/beat ".config-table th"/".config-table td" (which set the shorthand
+   `padding` all four sides) for these single-side overrides to actually win. */
+.config-table th.th-delay-on,
+.config-table td.td-delay-on {
+    padding-right: 0.15rem;
+}
+
+.config-table th.th-delay-off,
+.config-table td.td-delay-off {
+    padding-left: 0.15rem;
+}
+
 /* Restyle Inputs in Table */
 .custom-name-input,
 .adj-volt-input,
