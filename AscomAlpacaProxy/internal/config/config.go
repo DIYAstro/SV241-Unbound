@@ -176,6 +176,28 @@ func SetProxyMaps(switchNames map[string]string, heaterAutoEnableLeader map[stri
 	syncActiveProfileFromFlatLocked(conf)
 }
 
+// PruneInactiveSwitchNames removes any SwitchNames entry whose key is not in activeKeys, for both
+// the flat mirror field and the currently active device's own DeviceProfiles entry - called by
+// serial.SyncFirmwareConfig() after it rebuilds SwitchIDMap, so a switch/sensor that becomes
+// disabled doesn't leave a stale display name behind forever (previously it did - the map was
+// only ever added to, never pruned). No-op for every other known device - this proxy process has
+// no current activity information for a box that isn't connected right now.
+func PruneInactiveSwitchNames(activeKeys map[string]bool) {
+	ProxyConfigMutex.Lock()
+	defer ProxyConfigMutex.Unlock()
+	conf := Get()
+	changed := false
+	for k := range conf.SwitchNames {
+		if !activeKeys[k] {
+			delete(conf.SwitchNames, k)
+			changed = true
+		}
+	}
+	if changed {
+		syncActiveProfileFromFlatLocked(conf)
+	}
+}
+
 // SetDeviceProfiles atomically replaces every known device's profile, e.g. when restoring a full
 // backup - this is what makes a backup taken on one computer carry every box's names correctly to
 // another. Re-applies whichever device is currently active from the newly-restored data

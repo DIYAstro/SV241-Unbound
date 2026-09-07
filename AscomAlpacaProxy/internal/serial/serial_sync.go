@@ -155,5 +155,16 @@ func SyncFirmwareConfig() {
 	config.ShortSwitchKeyByID = newShortKeyByID
 	config.SwitchMapMutex.Unlock()
 
+	// Prune any SwitchNames entry that no longer corresponds to something active in the map just
+	// rebuilt above - otherwise a switch/sensor that becomes disabled leaves its display name
+	// behind forever (see this function's doc comment history / config.PruneInactiveSwitchNames).
+	// Built from newIDMap directly rather than the just-published config.SwitchIDMap, so this
+	// doesn't need to hold SwitchMapMutex again.
+	activeInternalNames := make(map[string]bool, len(newIDMap))
+	for _, name := range newIDMap {
+		activeInternalNames[name] = true
+	}
+	config.PruneInactiveSwitchNames(activeInternalNames)
+
 	logger.Info("Switch configuration sync complete. Total Switches: %d", len(newIDMap))
 }
