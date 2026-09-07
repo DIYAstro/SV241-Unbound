@@ -49,6 +49,8 @@ The project also includes the standalone SV241 Alpaca Proxy, written in Go. This
 *   Desktop notifications for device connection and disconnection events.
 *   **Hardware-Internet Hybrid Sourcing:** Integrated Open-Meteo weather service to supplement or fallback for environmental metrics (Wind, Clouds, etc.) when hardware sensors are missing or initializing.
 *   **Multi-Box / Per-Rig Naming:** Switch names, sensor labels, and related preferences are remembered per physical SV241 box (identified by its factory serial), not just per installation - swap boxes between rigs or plug a different box into the same computer and the right names follow automatically.
+*   **Power Protection:** Optional box-wide soft current limit that ramps down dew heater output as the total input current approaches a configurable threshold, instead of relying solely on the SV241's own self-resetting hardware overcurrent protection.
+*   **Configuration Profiles:** Save and switch between any number of named, complete configurations for a box.
 *   Helper scripts for easy, automated ASCOM driver creation.
 
 ## Important Security Notice

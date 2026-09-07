@@ -75,6 +75,8 @@ For numerical parameters without explicit ranges, typical values are expected. R
 | `so` | **S**ensor **O**ffsets: Sets calibration offsets for sensor readings. | `object` |
 | `ps` | **P**ower **S**tartup: Defines the on/off state of outputs at boot. | `object` |
 | `av` | **A**djustable **V**oltage: Sets the preset voltage for the converter. | `float` |
+| `cle` | **C**urrent **L**imit **E**nabled: box-wide soft current limit that ramps down both heaters' output as the total input current approaches `cla`, instead of relying solely on the SV241's own self-resetting hardware overcurrent protection. Default `false`. | `boolean` |
+| `cla` | **C**urrent **L**imit **A**mps: the threshold for `cle`. The ramp starts 1 A below this value and reaches 0% heater output exactly at it - a hard on/off at the threshold would cause the output to oscillate. Does not affect DC/USB outputs. | `float` |
 | `ad` | **A**uto **D**ry: Configures the automatic sensor drying feature. | `object` |
 | `dh` | **D**ew **H**eaters: Configures the two dew heaters. | `array` |
 

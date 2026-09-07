@@ -192,3 +192,72 @@ Invoke-WebRequest -Uri "http://localhost:32241/api/v1/switch/0/setswitchvalue" -
 # Get the current voltage of the adjustable converter
 Invoke-RestMethod -Uri "http://localhost:32241/api/v1/switch/0/getswitchvalue?Id=10"
 ```
+
+## Configuration Profiles
+
+Named, manually-saved snapshots of one box's configuration (firmware config + that box's own
+proxy-side settings - rig name, switch names, etc.), with no limit on how many you can keep.
+See also the [Profiles Tab](./WEB_INTERFACE.md#profiles-tab) in the web UI.
+
+**Endpoints:**
+- `GET /api/v1/profiles/list` - List all saved profiles (metadata only - name, filename, saved
+  timestamp, which device it was saved from, and whether that matches the currently connected
+  device).
+- `POST /api/v1/profiles/save` - Capture the current live configuration under a new profile.
+  Body: `{"name": "My Profile"}`.
+- `POST /api/v1/profiles/apply?file=<filename>` - Push a saved profile's settings live (a live
+  config merge, same as any normal settings change - no reboot or reconnect). Add
+  `&force=true` to apply a profile saved from a *different* box than the one currently
+  connected (see below).
+- `POST /api/v1/profiles/update?file=<filename>` - Overwrite a profile with the current live
+  configuration, keeping its name and filename.
+- `POST /api/v1/profiles/delete?file=<filename>` - Permanently delete a profile.
+
+`filename` is the value returned by `list`/`save`/`update` (e.g.
+`sv241_profile_20250115_143022.json`) - never construct it yourself.
+
+> [!NOTE]
+> **Device Mismatch Protection:** Like [Backup & Restore](./WEB_INTERFACE.md#system-tab),
+> applying a profile saved from a box other than the one currently connected is blocked by
+> default with an HTTP `409` response (`{"error":"device_mismatch","backupDeviceSerial":...,
+> "backupRigName":...,"currentDeviceSerial":...,"currentRigName":...}`). Retry the same request
+> with `&force=true` to apply it anyway (e.g. deliberately replacing one box with another).
+
+**Examples using native `curl` (Linux/Mac/Git Bash):**
+
+```bash
+# List saved profiles
+curl "http://localhost:32241/api/v1/profiles/list"
+
+# Save the current configuration as a new profile
+curl -X POST -H "Content-Type: application/json" -d '{"name":"Widefield Setup"}' \
+  http://localhost:32241/api/v1/profiles/save
+
+# Apply a saved profile (filename from the list/save response above)
+curl -X POST "http://localhost:32241/api/v1/profiles/apply?file=sv241_profile_20250115_143022.json"
+
+# Update a profile with the current configuration
+curl -X POST "http://localhost:32241/api/v1/profiles/update?file=sv241_profile_20250115_143022.json"
+
+# Delete a profile
+curl -X POST "http://localhost:32241/api/v1/profiles/delete?file=sv241_profile_20250115_143022.json"
+```
+
+**Examples using Windows PowerShell:**
+
+```powershell
+# List saved profiles
+Invoke-RestMethod -Uri "http://localhost:32241/api/v1/profiles/list"
+
+# Save the current configuration as a new profile
+Invoke-WebRequest -Uri "http://localhost:32241/api/v1/profiles/save" -Method POST -Body '{"name":"Widefield Setup"}' -ContentType "application/json"
+
+# Apply a saved profile (filename from the list/save response above)
+Invoke-WebRequest -Uri "http://localhost:32241/api/v1/profiles/apply?file=sv241_profile_20250115_143022.json" -Method POST
+
+# Update a profile with the current configuration
+Invoke-WebRequest -Uri "http://localhost:32241/api/v1/profiles/update?file=sv241_profile_20250115_143022.json" -Method POST
+
+# Delete a profile
+Invoke-WebRequest -Uri "http://localhost:32241/api/v1/profiles/delete?file=sv241_profile_20250115_143022.json" -Method POST
+```

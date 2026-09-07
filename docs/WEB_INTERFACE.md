@@ -15,6 +15,7 @@ This guide provides a walkthrough of the web interface, explaining each panel an
     - [Simplified PID Tuning Guide](#simplified-pid-tuning-guide)
   - [Sensors Tab](#sensors-tab)
   - [Weather Service Tab](#weather-service-tab)
+  - [Profiles Tab](#profiles-tab)
   - [Proxy Tab](#proxy-tab)
   - [System Tab](#system-tab)
 - [Live Log Panel](#live-log-panel)
@@ -46,7 +47,7 @@ This panel provides quick access to power output control:
 
 ## Configuration Tabs
 
-The collapsible "Configuration & Settings" section contains six tabs:
+The collapsible "Configuration & Settings" section contains seven tabs:
 
 ### Switches Tab
 Configure power switch behavior:
@@ -127,6 +128,26 @@ Configure supplemental environmental data:
 
 > [!NOTE]
 > **Data Exposure:** Data from the Weather Service is exclusively exposed through the ASCOM Alpaca `ObservingConditions` interface and is not displayed as primary telemetry in the Web UI.
+
+### Profiles Tab
+
+Save and switch between any number of named, complete configurations (proxy settings +
+firmware settings) for a box.
+
+*   **Save Current Configuration as Profile:** Give the current configuration a name and save
+    it. Captures the firmware config (heater modes, PID tunings, power startup states, current
+    limit, etc.) together with that box's own proxy-side settings (rig name, switch names,
+    weather source priority).
+*   **Saved Profiles:** Lists saved profiles for the currently connected box, with buttons to:
+    *   **Apply:** Pushes the profile's saved settings live - no reboot or reconnect, the same
+        as any normal settings change.
+    *   **Update:** Overwrites the profile with the current configuration (keeps its name).
+    *   **Delete:** Removes the profile permanently.
+*   **Profiles from other devices:** Profiles are tied to the box they were saved from and
+    hidden by default if a different box is connected - expand "Show profiles from other
+    devices" to see them. Applying one onto a different box warns first (same "Different Box
+    Detected" confirmation as [Backup & Restore](#system-tab)), for the case of deliberately
+    replacing one box with another.
 
 ### Proxy Tab
 Configure the proxy application itself:
