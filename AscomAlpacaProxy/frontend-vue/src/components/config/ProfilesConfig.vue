@@ -1,8 +1,10 @@
 <script setup>
 import { useModalStore } from '../../stores/modal'
+import { useDeviceStore } from '../../stores/device'
 import { ref, onMounted } from 'vue'
 
 const modal = useModalStore()
+const store = useDeviceStore()
 
 // --- Save ---
 const newProfileName = ref('')
@@ -101,7 +103,13 @@ async function performApply(profile, force = false) {
 
         if (!response.ok) throw new Error(response.statusText)
 
-        modal.success(`Profile "${profile.name}" applied. Switch/rig names may take a moment to refresh in the UI.`, 'Profile Applied')
+        // Refresh config immediately - same call saveConfig() already makes after any normal
+        // settings change (device.js). Without it, config.value.ps stays stale and anything
+        // reading it directly (e.g. SwitchConfig.vue's Disabled badge) would show the old state
+        // until the next full page load. activeSwitches/switchNames don't need an explicit
+        // refresh here - the store's 2s poll (checkConnection) keeps those current unconditionally.
+        await store.fetchConfig()
+        modal.success(`Profile "${profile.name}" applied.`, 'Profile Applied')
         fetchProfiles()
     } catch (e) {
         modal.error('Failed to apply profile: ' + e.message)
