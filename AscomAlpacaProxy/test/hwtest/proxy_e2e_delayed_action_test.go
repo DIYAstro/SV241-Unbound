@@ -52,6 +52,22 @@ func setSwitchNames(t *testing.T, proxy *proxyProcess, names map[string]string) 
 	return proxy.post(t, "/api/v1/settings", string(payload))
 }
 
+// setProxySetting sets a single top-level field in the proxy's settings via the same
+// read-modify-write pattern, for tests that only need to flip one flag (e.g.
+// enableAlpacaVoltageControl) without touching anything else currently configured.
+func setProxySetting(t *testing.T, proxy *proxyProcess, key string, value interface{}) (*http.Response, []byte) {
+	t.Helper()
+	_, body := proxy.get(t, "/api/v1/settings")
+	var settings struct {
+		ProxyConfig map[string]interface{} `json:"proxy_config"`
+	}
+	require.NoError(t, json.Unmarshal(body, &settings))
+	settings.ProxyConfig[key] = value
+	payload, err := json.Marshal(settings.ProxyConfig)
+	require.NoError(t, err)
+	return proxy.post(t, "/api/v1/settings", string(payload))
+}
+
 // TestProxyE2E_DelayedAction covers the proxy-layer half of the delayed on/off feature: the
 // "DelayedOn"/"DelayedOff" custom ASCOM Actions (handleDelayedAction, internal/alpaca/handlers.go)
 // - resolving a switch by the display name an ASCOM client actually shows the user (not its
@@ -143,7 +159,10 @@ func TestProxyE2E_DelayedAction(t *testing.T) {
 func TestProxyE2E_DelayedAction_HostIndependence(t *testing.T) {
 	port := hwtestPort()
 	proxy := startProxy(t, port)
-	const d4SwitchID = 6 // config.SwitchIDMap: sensors 0-2, dc1-dc5 = 3-7 - see that map's doc comment
+	// The switch ID layout is dynamic (see findSwitchIDByName's doc comment) - resolve d4's actual
+	// Id rather than assuming a fixed one.
+	proxy.post(t, "/api/v1/config/set", `{"ps":{"d4":0}}`)
+	d4SwitchID := findSwitchIDByName(t, proxy, "dc4")
 
 	// Baseline: d4 on, immediately (no leftover configured delay at this point).
 	proxy.post(t, "/api/v1/config/set", `{"dl":{"d4":{"on":0,"off":0}}}`)
@@ -190,4 +209,190 @@ func TestProxyE2E_DelayedAction_HostIndependence(t *testing.T) {
 	status := getStatus(t, conn)
 	assert.Equal(t, 0, switchStatusInt(t, status, "d4"),
 		"d4 should have turned off on its own (~1 minute after DelayedOff was scheduled) even though the proxy process was killed and never ran during the wait")
+}
+
+// waitAdjStatus polls /api/v1/power/status until status["adj"] satisfies match, or fails the
+// test. handleGetPowerStatus serves a periodically-refreshed cache (~5s tick, same as
+// assertPowerStatusEventually above covers for other keys) rather than a live re-query - a single
+// immediate GET right after a "set" call can read a stale pre-command snapshot, so only polling
+// is a reliable way to observe a change here (found the hard way: an early version of this test
+// read adj as still-6.5V-from-a-previous-subtest's-cache immediately after what should have been
+// a fresh, verified-off baseline).
+func waitAdjStatus(t *testing.T, proxy *proxyProcess, match func(v interface{}) bool, context string) interface{} {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	var last interface{}
+	for time.Now().Before(deadline) {
+		_, body := proxy.get(t, "/api/v1/power/status")
+		var status map[string]interface{}
+		if json.Unmarshal(body, &status) == nil {
+			last = status["adj"]
+			if match(last) {
+				return last
+			}
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	t.Fatalf("power status cache never reflected %s (key \"adj\", last seen %v)", context, last)
+	return nil
+}
+
+func adjIsOff(v interface{}) bool {
+	if b, ok := v.(bool); ok {
+		return !b
+	}
+	if f, ok := v.(float64); ok {
+		return f == 0
+	}
+	return false
+}
+
+func adjIsNear(want float64) func(interface{}) bool {
+	return func(v interface{}) bool {
+		f, ok := v.(float64)
+		return ok && f >= want-0.5 && f <= want+0.5
+	}
+}
+
+func adjIsOnAtAll(v interface{}) bool {
+	_, ok := v.(float64)
+	return ok
+}
+
+// findSwitchIDByName returns the Alpaca switch Id whose getswitchname matches wantName, polling
+// for up to 5s. The switch ID layout is dynamic - serial.SyncFirmwareConfig rebuilds it
+// contiguously based on which switches/sensors are currently active (a Disabled standard switch,
+// or a heater in a mode that hides its lens-temp slot, shifts every later Id down), and that
+// rebuild runs in its own background goroutine after every /api/v1/config/set call rather than
+// synchronously - so a freshly-changed configuration isn't reflected in maxswitch/getswitchname
+// immediately. Hardcoding an Id (as an earlier version of this test did, assuming the package's
+// default/pre-sync SwitchIDMap literal) is not reliable once a real sync has run at least once.
+// scanForSwitchID does one pass over 0..maxswitch-1 via getswitchname, returning the first Id
+// matching wantName (-1 if none).
+func scanForSwitchID(t *testing.T, proxy *proxyProcess, wantName string) int {
+	t.Helper()
+	_, body := proxy.get(t, "/api/v1/switch/0/maxswitch?ClientID=1&ClientTransactionID=1")
+	var mr struct {
+		Value int `json:"Value"`
+	}
+	if json.Unmarshal(body, &mr) != nil {
+		return -1
+	}
+	for id := 0; id < mr.Value; id++ {
+		_, nb := proxy.get(t, fmt.Sprintf("/api/v1/switch/0/getswitchname?Id=%d&ClientID=1&ClientTransactionID=1", id))
+		var nr struct {
+			Value string `json:"Value"`
+		}
+		if json.Unmarshal(nb, &nr) == nil && nr.Value == wantName {
+			return id
+		}
+	}
+	return -1
+}
+
+// findSwitchIDByName returns the Alpaca switch Id whose getswitchname matches wantName, polling
+// for up to 8s. The switch ID layout is dynamic - serial.SyncFirmwareConfig rebuilds it
+// contiguously based on which switches/sensors are currently active (a Disabled standard switch,
+// or a heater in a mode that hides its lens-temp slot, shifts every later Id down) - and, found
+// the hard way, more than one SyncFirmwareConfig call can end up in flight at once (each
+// /api/v1/config/set - and evidently /api/v1/settings too - triggers its own resync goroutine),
+// briefly producing a transient/intermediate mapping before the final one settles. A single
+// getswitchname match isn't proof of THAT: it only proves the name matched at that one instant, so
+// this requires the SAME Id twice in a row (500ms apart) before trusting it - filters out exactly
+// that churn. Hardcoding an Id (as an earlier version of this test did, assuming the package's
+// default/pre-sync SwitchIDMap literal) is not reliable once a real sync has run at least once.
+func findSwitchIDByName(t *testing.T, proxy *proxyProcess, wantName string) int {
+	t.Helper()
+	deadline := time.Now().Add(8 * time.Second)
+	lastID := -1
+	for time.Now().Before(deadline) {
+		id := scanForSwitchID(t, proxy, wantName)
+		if id >= 0 && id == lastID {
+			return id
+		}
+		lastID = id
+		time.Sleep(500 * time.Millisecond)
+	}
+	t.Fatalf("could not find a STABLE switch Id named %q within the timeout (switch ID layout is dynamic - see serial.SyncFirmwareConfig; last seen Id was %d)", wantName, lastID)
+	return -1
+}
+
+// TestProxyE2E_DelayedAction_AdjConvVoltageControl covers the interaction between the proxy's
+// "Enable Variable Voltage Control (Alpaca & WebUI)" setting (EnableAlpacaVoltageControl) and
+// adj_conv's now-delay-aware handling: the Alpaca Switch endpoint reaches adj_conv through two
+// different commands depending on that setting (a specific "Value" voltage when enabled, vs a
+// plain boolean on/off using the configured preset voltage when disabled - see
+// HandleSwitchSetSwitchValue), and both must still honor a configured delay identically to a
+// direct firmware "set" command (already covered by
+// firmware_delayed_action_test.go/TestDelayedAction_ConfiguredDelay_AdjConv - that test, talking
+// directly to the firmware over serial, is what actually verifies the delay is honored moment-to-
+// moment; the /api/v1/power/status cache's own refresh lag here makes this proxy-level test unfit
+// for that same immediate-timing check, so it instead confirms both proxy code paths correctly
+// reach the firmware and the change is eventually and correctly reflected through Alpaca).
+func TestProxyE2E_DelayedAction_AdjConvVoltageControl(t *testing.T) {
+	proxy := startProxy(t, hwtestPort())
+	const delayS = 3
+
+	// adjID resolves adj_conv's current Alpaca switch Id fresh, on demand - found the hard way
+	// (see findSwitchIDByName's doc comment): every /api/v1/config/set call in this test (dl
+	// resets, delay config) triggers its own serial.SyncFirmwareConfig() resync in the
+	// background, and consecutive resyncs do not reliably agree on the same mapping while a real
+	// device is involved - resolving once and reusing a cached Id across several such calls (as an
+	// earlier version of this test did) can silently end up targeting a completely different
+	// switch by the time it's actually used. Calling this immediately before each id-dependent
+	// request instead is the robust pattern: findSwitchIDByName's own stability wait means it's
+	// always correct for that request's own moment, however the mapping got there.
+	adjID := func() int { return findSwitchIDByName(t, proxy, "adj_conv") }
+
+	// Force adj_conv (and every other standard switch, for a clean/known baseline) enabled - a
+	// Disabled standard switch is skipped entirely from the dynamic switch ID map, which would
+	// otherwise make adj_conv unreachable by any Alpaca Id at all.
+	proxy.post(t, "/api/v1/config/set", `{"ps":{"d1":0,"d2":0,"d3":0,"d4":0,"d5":0,"u12":0,"u34":0,"adj":0}}`)
+
+	t.Cleanup(func() {
+		proxy.post(t, "/api/v1/config/set", `{"dl":{"adj":{"on":0,"off":0}}}`)
+	})
+
+	t.Run("VoltageControlEnabled_SpecificValueRespectsDelay", func(t *testing.T) {
+		resp, body := setProxySetting(t, proxy, "enableAlpacaVoltageControl", true)
+		require.Equal(t, http.StatusOK, resp.StatusCode, "raw body: %s", body)
+
+		// Establish (and confirm) a clean off baseline first - immediate, no delay configured yet.
+		proxy.post(t, "/api/v1/config/set", `{"dl":{"adj":{"on":0,"off":0}}}`)
+		proxy.post(t, fmt.Sprintf("/api/v1/switch/0/setswitchvalue?Id=%d&State=false&ClientID=1&ClientTransactionID=1", adjID()), "")
+		waitAdjStatus(t, proxy, adjIsOff, "a verified-off baseline before scheduling a delayed voltage set")
+
+		proxy.post(t, "/api/v1/config/set", fmt.Sprintf(`{"dl":{"adj":{"on":%d,"off":0}}}`, delayS))
+		resp2, respBody := proxy.post(t, fmt.Sprintf("/api/v1/switch/0/setswitchvalue?Id=%d&Value=6.5&ClientID=1&ClientTransactionID=1", adjID()), "")
+		require.Equal(t, http.StatusOK, resp2.StatusCode, "raw body: %s", respBody)
+
+		waitAdjStatus(t, proxy, adjIsNear(6.5), "the requested 6.5V once the delayed enable applied")
+
+		_, gswBody := proxy.get(t, fmt.Sprintf("/api/v1/switch/0/getswitchvalue?Id=%d&ClientID=1&ClientTransactionID=1", adjID()))
+		var gsw struct {
+			Value float64 `json:"Value"`
+		}
+		require.NoError(t, json.Unmarshal(gswBody, &gsw))
+		assert.InDelta(t, 6.5, gsw.Value, 0.5, "Alpaca getswitchvalue should reflect the applied voltage target")
+
+		proxy.post(t, fmt.Sprintf("/api/v1/switch/0/setswitchvalue?Id=%d&State=false&ClientID=1&ClientTransactionID=1", adjID()), "")
+		waitAdjStatus(t, proxy, adjIsOff, "off again after this subtest's own cleanup")
+	})
+
+	t.Run("VoltageControlDisabled_BooleanPathRespectsDelay", func(t *testing.T) {
+		resp, body := setProxySetting(t, proxy, "enableAlpacaVoltageControl", false)
+		require.Equal(t, http.StatusOK, resp.StatusCode, "raw body: %s", body)
+
+		proxy.post(t, "/api/v1/config/set", `{"dl":{"adj":{"on":0,"off":0}}}`)
+		proxy.post(t, fmt.Sprintf("/api/v1/switch/0/setswitchvalue?Id=%d&State=false&ClientID=1&ClientTransactionID=1", adjID()), "")
+		waitAdjStatus(t, proxy, adjIsOff, "a verified-off baseline before scheduling a delayed boolean set")
+
+		proxy.post(t, "/api/v1/config/set", fmt.Sprintf(`{"dl":{"adj":{"on":%d,"off":0}}}`, delayS))
+		resp2, respBody := proxy.post(t, fmt.Sprintf("/api/v1/switch/0/setswitchvalue?Id=%d&State=true&ClientID=1&ClientTransactionID=1", adjID()), "")
+		require.Equal(t, http.StatusOK, resp2.StatusCode, "raw body: %s", respBody)
+
+		waitAdjStatus(t, proxy, adjIsOnAtAll, "adj turning on (at its configured preset voltage) once the delay elapsed")
+
+		proxy.post(t, fmt.Sprintf("/api/v1/switch/0/setswitchvalue?Id=%d&State=false&ClientID=1&ClientTransactionID=1", adjID()), "")
+	})
 }

@@ -4,6 +4,7 @@ package hwtest
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,12 +26,62 @@ func setDelay(t *testing.T, conn *SerialConn, key string, onS, offS int) {
 	setConfig(t, conn, fmt.Sprintf(`{"dl":{%q:{"on":%d,"off":%d}}}`, key, onS, offS))
 }
 
+// baselineNoDelay clears dl (configured delay) for every switch this test file exercises - the
+// standard DC/USB switches plus adj - back to {on:0, off:0}. baselineEnabledOff
+// (firmware_switches_test.go) deliberately never touches dl, so any test that assumes delay is
+// off everywhere except the one key it explicitly configures must clear the rest itself here.
+// Not just theoretical: this box carried real leftover "dl" values from manual hands-on testing
+// performed earlier in this same session, predating this formal suite and its
+// TestMain-snapshot-restore safety net - TestDelayedAction_MasterPowerOnStacksStaggerAndConfiguredDelay
+// failed against exactly that leftover state (a stale 10s delay on d1) the first time this suite
+// ran for real, on real hardware.
+func baselineNoDelay(t *testing.T, conn *SerialConn) {
+	t.Helper()
+	parts := make([]string, 0, len(standardSwitchKeys)+1)
+	for _, k := range standardSwitchKeys {
+		parts = append(parts, fmt.Sprintf(`%q:{"on":0,"off":0}`, k))
+	}
+	parts = append(parts, `"adj":{"on":0,"off":0}`)
+	setConfig(t, conn, fmt.Sprintf(`{"dl":{%s}}`, strings.Join(parts, ",")))
+}
+
+// TestDelayedAction_DisabledOutputRejectsEvenWithConfiguredDelay is the regression test for a real
+// bug found via AscomAlpacaProxy/test/hwtest's broader regression run (TestSwitches_
+// StartupStatesAppliedOnBoot failed against a leftover configured delay on d1, exposing this): a
+// Disabled output must reject a live enable attempt immediately, exactly like it already does
+// with no delay configured - but a configured delay_on_s used to bypass the check entirely,
+// because the delayed path schedules the action via schedule_delayed_action() instead of calling
+// set_power_output() (where the check used to live) until the delay elapses. See
+// is_output_disabled()'s doc comment in power_control.cpp.
+func TestDelayedAction_DisabledOutputRejectsEvenWithConfiguredDelay(t *testing.T) {
+	conn := openConnForTest(t)
+	baselineEnabledOff(t, conn)
+	baselineNoDelay(t, conn)
+	t.Cleanup(func() {
+		setDelay(t, conn, "d1", 0, 0)
+		setPowerStartupStates(t, conn, map[string]int{"d1": 0})
+	})
+
+	setPowerStartupStates(t, conn, map[string]int{"d1": 2}) // Disabled
+	setDelay(t, conn, "d1", 5, 5)                            // configured delay must not matter
+
+	resp := setSwitch(t, conn, "d1", true)
+	_, hasError := resp["error"]
+	assert.True(t, hasError, "a Disabled output with a configured delay must still reject an enable attempt immediately, got: %v", resp)
+
+	// Also confirm nothing was silently scheduled to fire later despite the rejection.
+	time.Sleep(6 * time.Second)
+	status := getStatus(t, conn)
+	assert.Equal(t, 0, switchStatusInt(t, status, "d1"), "d1 must still be off after the delay window - the rejected enable must not have been scheduled anyway")
+}
+
 // TestDelayedAction_ConfiguredDelay_StandardSwitch covers the basic case: a configured delay_on_s/
 // delay_off_s on a plain DC/USB switch defers a normal {"set":{key:state}} command, in both
 // directions, without changing the switch's reported state until the delay actually elapses.
 func TestDelayedAction_ConfiguredDelay_StandardSwitch(t *testing.T) {
 	conn := openConnForTest(t)
 	baselineEnabledOff(t, conn)
+	baselineNoDelay(t, conn)
 	t.Cleanup(func() { setDelay(t, conn, "d4", 0, 0) })
 
 	const delayS = 3
@@ -64,6 +115,7 @@ func TestDelayedAction_ConfiguredDelay_StandardSwitch(t *testing.T) {
 func TestDelayedAction_ConfiguredDelay_AdjConv(t *testing.T) {
 	conn := openConnForTest(t)
 	baselineEnabledOff(t, conn)
+	baselineNoDelay(t, conn)
 	t.Cleanup(func() { setDelay(t, conn, "adj", 0, 0) })
 
 	const delayS = 3
@@ -109,6 +161,7 @@ func TestDelayedAction_ConfiguredDelay_AdjConv(t *testing.T) {
 func TestDelayedAction_NewestWins(t *testing.T) {
 	conn := openConnForTest(t)
 	baselineEnabledOff(t, conn)
+	baselineNoDelay(t, conn)
 	t.Cleanup(func() { setDelay(t, conn, "d4", 0, 0) })
 
 	setDelay(t, conn, "d4", 5, 5)
@@ -144,6 +197,7 @@ func TestDelayedAction_NewestWins(t *testing.T) {
 func TestDelayedAction_ImmediateCancelsStaleDelayed(t *testing.T) {
 	conn := openConnForTest(t)
 	baselineEnabledOff(t, conn)
+	baselineNoDelay(t, conn)
 	t.Cleanup(func() { setDelay(t, conn, "d4", 0, 0) })
 
 	setDelay(t, conn, "d4", 0, 5) // only the off direction is delayed
@@ -173,6 +227,7 @@ func TestDelayedAction_ImmediateCancelsStaleDelayed(t *testing.T) {
 func TestDelayedAction_MasterPowerClearsPendingQueue(t *testing.T) {
 	conn := openConnForTest(t)
 	baselineEnabledOff(t, conn)
+	baselineNoDelay(t, conn)
 	setConfig(t, conn, `{"psd":0}`)
 	t.Cleanup(func() { setDelay(t, conn, "d4", 0, 0) })
 
@@ -188,19 +243,24 @@ func TestDelayedAction_MasterPowerClearsPendingQueue(t *testing.T) {
 	assert.Equal(t, 0, switchStatusInt(t, status, "d4"), "d4 must stay OFF - the stale delayed-ON must not have survived Master Power Off")
 }
 
-// TestDelayedAction_MasterPowerAlwaysImmediate locks in the explicit safety rule that Master Power
-// itself always stays instantaneous, regardless of any configured per-switch delay - a user must
-// always be able to cut all power immediately, even if individual switches are configured with a
-// deliberate on/off delay for other purposes.
-func TestDelayedAction_MasterPowerAlwaysImmediate(t *testing.T) {
+// TestDelayedAction_MasterPowerOffAlwaysImmediate locks in the explicit safety rule that Master
+// Power OFF always stays instantaneous, regardless of any configured per-switch off-delay - a
+// user must always be able to cut all power immediately, even if an individual switch is
+// configured with a deliberate off-delay for other purposes (e.g. letting a computer's own OS
+// shutdown finish first). Note this is deliberately asymmetric: Master Power ON is explicitly
+// allowed (by design, per the user's own request) to stack a switch's configured on-delay on top
+// of its stagger-queue slot - see TestDelayedAction_MasterPowerOnStacksStaggerAndConfiguredDelay.
+// Only the OFF direction gets this always-immediate guarantee, since only OFF is the safety-
+// critical "cut power now" direction.
+func TestDelayedAction_MasterPowerOffAlwaysImmediate(t *testing.T) {
 	conn := openConnForTest(t)
 	baselineEnabledOff(t, conn)
+	baselineNoDelay(t, conn)
 	setConfig(t, conn, `{"psd":0}`)
 	t.Cleanup(func() { setDelay(t, conn, "d4", 0, 0) })
 
-	setDelay(t, conn, "d4", 10, 10) // deliberately long - if Master Power respected this, the assertions below would fail
-	setSwitch(t, conn, "d4", true)
-	time.Sleep(11 * time.Second) // let the delayed-on actually take effect first, so d4 is really on
+	setDelay(t, conn, "d4", 0, 10) // deliberately long off-delay - if Master Power respected this, the assertion below would fail
+	setSwitch(t, conn, "d4", true) // on-delay is 0 here, so this applies immediately
 	status := getStatus(t, conn)
 	require.Equal(t, 1, switchStatusInt(t, status, "d4"), "precondition: d4 should be on before testing Master Power Off")
 
@@ -208,12 +268,7 @@ func TestDelayedAction_MasterPowerAlwaysImmediate(t *testing.T) {
 	status = getStatus(t, conn) // handle_set_power_command() only returns after acting, no wait needed
 	assert.Equal(t, 0, switchStatusInt(t, status, "d4"), "Master Power Off must be immediate, ignoring d4's configured 10s off-delay")
 
-	setAllPower(t, conn, true)
-	time.Sleep(500 * time.Millisecond) // service_power_stagger_queue() drains ~100ms/tick
-	status = getStatus(t, conn)
-	assert.Equal(t, 1, switchStatusInt(t, status, "d4"), "Master Power On must be immediate for d4 itself, ignoring its configured 10s on-delay (stacking is opt-in per-switch behavior for staggered enable timing, not for Master Power's own decisiveness)")
-
-	setAllPower(t, conn, false)
+	setAllPower(t, conn, false) // idempotent cleanup
 }
 
 // TestDelayedAction_BootStacksOnStartupDelay is the regression test for the boot-time stacking
@@ -224,6 +279,7 @@ func TestDelayedAction_BootStacksOnStartupDelay(t *testing.T) {
 	port := hwtestPort()
 	conn := openConnForTest(t)
 	baselineEnabledOff(t, conn)
+	baselineNoDelay(t, conn)
 
 	const delayS = 8
 	setDelay(t, conn, "d4", delayS, 0)
@@ -270,6 +326,7 @@ func TestDelayedAction_BootStacksOnStartupDelay(t *testing.T) {
 func TestDelayedAction_MasterPowerOnStacksStaggerAndConfiguredDelay(t *testing.T) {
 	conn := openConnForTest(t)
 	baselineEnabledOff(t, conn)
+	baselineNoDelay(t, conn)
 	const staggerMs = 300
 	setConfig(t, conn, fmt.Sprintf(`{"psd":%d}`, staggerMs))
 	t.Cleanup(func() { setDelay(t, conn, "d4", 0, 0) })
@@ -317,6 +374,7 @@ func TestDelayedAction_MasterPowerOnStacksStaggerAndConfiguredDelay(t *testing.T
 func TestDelayedAction_ExplicitDelaySet(t *testing.T) {
 	conn := openConnForTest(t)
 	baselineEnabledOff(t, conn)
+	baselineNoDelay(t, conn)
 
 	t.Run("unknown_port_rejected", func(t *testing.T) {
 		resp := mustSendCommand(t, conn, `{"delay_set":{"port":"not_a_real_port","state":true,"minutes":1}}`, 3*time.Second)

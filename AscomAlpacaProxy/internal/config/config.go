@@ -538,9 +538,35 @@ func GetConfigDir() string {
 	return filepath.Dir(proxyConfigFile)
 }
 
-// Load reads the configuration from the JSON file into the singleton instance.
-// If the file doesn't exist, it initializes a default configuration and saves it.
+var (
+	loadOnce sync.Once
+	loadErr  error
+)
+
+// Load reads the configuration from the JSON file into the singleton instance, exactly once no
+// matter how many goroutines call it concurrently - see doLoad() for what it actually does.
+//
+// This guard exists because of a real crash found via AscomAlpacaProxy/test/hwtest's proxy_e2e
+// tests (a real, unsynchronized double-Load race, not a test artifact): on Windows,
+// systray.OnReady() launches two goroutines back to back - one that calls ShowNotification()
+// (which calls config.Get(), whose nil-proxyConfig safeguard below calls Load()) and one that
+// calls startApp() (which calls Load() directly, step 3 in main_common.go). Both could reach
+// doLoad() at once, each independently reassigning the global proxyConfig pointer and populating
+// its SwitchNames map with no locking at all - occasionally corrupting Go's map internals badly
+// enough to trigger "fatal error: concurrent map writes" (a hard, unrecoverable runtime panic
+// that crashes the whole process, not just a race-detector warning). sync.Once makes every caller
+// (regardless of how many call concurrently) block on the same single execution and get the same
+// result, rather than each running their own independent copy of doLoad()'s body.
 func Load() error {
+	loadOnce.Do(func() {
+		loadErr = doLoad()
+	})
+	return loadErr
+}
+
+// doLoad reads the configuration from the JSON file into the singleton instance.
+// If the file doesn't exist, it initializes a default configuration and saves it.
+func doLoad() error {
 	file, err := os.ReadFile(proxyConfigFile)
 	if err != nil {
 		if os.IsNotExist(err) {

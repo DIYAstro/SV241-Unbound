@@ -130,34 +130,53 @@ void setup_power_outputs() {
   }
 }
 
+// Returns true if `output` is currently configured Disabled (state 2 for the standard
+// switches/adj_conv, DEW_MODE_DISABLED for the PWM heaters) - only meaningful for a "turn on"
+// request, since a Disabled output can always be turned off. Shared by set_power_output() (the
+// immediate-enable path, which used to be the only caller and place this check ever ran) and
+// handle_set_power_command() (which must reject a delayed-enable request for a Disabled output up
+// front too, before even scheduling it - otherwise a configured delay_on_s silently bypasses this
+// check entirely, since the delayed path never calls set_power_output() until the delay elapses.
+// Found via TestSwitches_StartupStatesAppliedOnBoot after a leftover configured delay on d1
+// masked the missing check: a live enable attempt on a Disabled d1 was incorrectly *scheduled*
+// instead of rejected).
+static bool is_output_disabled(PowerOutput output) {
+  bool is_disabled = false;
+  xSemaphoreTake(config_mutex, portMAX_DELAY);
+  switch (output) {
+    case POWER_DC1:     is_disabled = (config.power_startup_states.dc1 == 2); break;
+    case POWER_DC2:     is_disabled = (config.power_startup_states.dc2 == 2); break;
+    case POWER_DC3:     is_disabled = (config.power_startup_states.dc3 == 2); break;
+    case POWER_DC4:     is_disabled = (config.power_startup_states.dc4 == 2); break;
+    case POWER_DC5:     is_disabled = (config.power_startup_states.dc5 == 2); break;
+    case POWER_USBC12:  is_disabled = (config.power_startup_states.usbc12 == 2); break;
+    case POWER_USB345:  is_disabled = (config.power_startup_states.usb345 == 2); break;
+    case POWER_ADJ_CONV: is_disabled = (config.power_startup_states.adj_conv == 2); break;
+    case POWER_PWM1:    is_disabled = (config.dew_heaters[0].mode == DEW_MODE_DISABLED); break;
+    case POWER_PWM2:    is_disabled = (config.dew_heaters[1].mode == DEW_MODE_DISABLED); break;
+    default: break;
+  }
+  xSemaphoreGive(config_mutex);
+  return is_disabled;
+}
+
+// Sends the standard "{\"error\":\"Cannot enable disabled output: ...\"}\n" rejection line for
+// `output`. Shared by set_power_output() and handle_set_power_command() so both reject a Disabled
+// output's enable attempt identically (see is_output_disabled()'s doc comment for why both need
+// their own check).
+static void send_disabled_output_error(PowerOutput output) {
+  xSemaphoreTake(serial_mutex, portMAX_DELAY);
+  Serial.printf("{\"error\":\"Cannot enable disabled output: %s\"}\n", get_power_output_name(output));
+  xSemaphoreGive(serial_mutex);
+}
+
 bool set_power_output(PowerOutput output, bool on) {
   if (output < 0 || output >= POWER_OUTPUT_COUNT) return true;
 
   // If trying to turn ON, check if this output is disabled in config
-  if (on) {
-    bool is_disabled = false;
-    xSemaphoreTake(config_mutex, portMAX_DELAY);
-    switch (output) {
-      case POWER_DC1:     is_disabled = (config.power_startup_states.dc1 == 2); break;
-      case POWER_DC2:     is_disabled = (config.power_startup_states.dc2 == 2); break;
-      case POWER_DC3:     is_disabled = (config.power_startup_states.dc3 == 2); break;
-      case POWER_DC4:     is_disabled = (config.power_startup_states.dc4 == 2); break;
-      case POWER_DC5:     is_disabled = (config.power_startup_states.dc5 == 2); break;
-      case POWER_USBC12:  is_disabled = (config.power_startup_states.usbc12 == 2); break;
-      case POWER_USB345:  is_disabled = (config.power_startup_states.usb345 == 2); break;
-      case POWER_ADJ_CONV: is_disabled = (config.power_startup_states.adj_conv == 2); break;
-      case POWER_PWM1:    is_disabled = (config.dew_heaters[0].mode == DEW_MODE_DISABLED); break;
-      case POWER_PWM2:    is_disabled = (config.dew_heaters[1].mode == DEW_MODE_DISABLED); break;
-      default: break;
-    }
-    xSemaphoreGive(config_mutex);
-
-    if (is_disabled) {
-      xSemaphoreTake(serial_mutex, portMAX_DELAY);
-      Serial.printf("{\"error\":\"Cannot enable disabled output: %s\"}\n", get_power_output_name(output));
-      xSemaphoreGive(serial_mutex);
-      return false; // Block the command - caller must not send a second response line
-    }
+  if (on && is_output_disabled(output)) {
+    send_disabled_output_error(output);
+    return false; // Block the command - caller must not send a second response line
   }
 
   // Special handling for outputs managed by other modules
@@ -322,6 +341,17 @@ bool handle_set_power_command(JsonVariant set_command) {
          }
 
          if (have_state) {
+             // A Disabled output must reject an enable attempt outright, whether or not a delay
+             // is configured - set_power_output() already does this for the immediate path, but
+             // the delayed path below calls schedule_delayed_action() instead, which never goes
+             // through set_power_output() (and thus never checks this) until the delay elapses.
+             // See is_output_disabled()'s doc comment - found via TestSwitches_StartupStatesAppliedOnBoot.
+             if (state && is_output_disabled((PowerOutput)i)) {
+                 send_disabled_output_error((PowerOutput)i);
+                 all_succeeded = false;
+                 continue;
+             }
+
              // Configured per-switch delay (see SwitchTimingConfig) - same mechanism as the
              // "standard handling" branch further below, just applied here too now (this branch
              // continue()s past that one, so it never runs it itself). Requested by the user
@@ -369,6 +399,17 @@ bool handle_set_power_command(JsonVariant set_command) {
       // Standard handling for all (including PWM if not special)
       if (set_obj[name].is<bool>() || set_obj[name].is<int>()) {
         bool state = set_obj[name].as<bool>();
+
+        // A Disabled output must reject an enable attempt outright, whether or not a delay is
+        // configured - set_power_output() already does this for the immediate path, but the
+        // delayed path below calls schedule_delayed_action() instead, which never goes through
+        // set_power_output() (and thus never checks this) until the delay elapses. See
+        // is_output_disabled()'s doc comment - found via TestSwitches_StartupStatesAppliedOnBoot.
+        if (state && is_output_disabled((PowerOutput)i)) {
+          send_disabled_output_error((PowerOutput)i);
+          all_succeeded = false;
+          continue;
+        }
 
         // Configured per-switch delay (see SwitchTimingConfig) - only ever reached for the plain
         // DC/USB switches (ADJ_CONV/PWM1/PWM2 are already handled and `continue`d above), which
