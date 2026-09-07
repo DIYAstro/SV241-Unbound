@@ -123,20 +123,13 @@ static MedianFilterBuf sht40_temp_filter;
 static MedianFilterBuf sht40_humidity_filter;
 static MedianFilterBuf ds18b20_temp_filter;
 
-void setup_sensors() {
-  // Initialize all sensor values to NAN to indicate they are not yet valid
-  sensor_cache.ina_voltage = NAN;
-  sensor_cache.ina_current = NAN;
-  sensor_cache.ina_power = NAN;
-  sensor_cache.sht_temperature = NAN;
-  sensor_cache.sht_humidity = NAN;
-  sensor_cache.sht_dew_point = NAN;
-  sensor_cache.ds18b20_temperature = NAN;
-
-  Wire.begin(I2C_SDA, I2C_SCL);
-
-  is_ina219_available = ina219.begin();
-  if (is_ina219_available) {
+// Initializes the INA219 (calibration for the 0.005 Ohm shunt + 128-sample averaging - see the
+// detailed rationale below) and returns whether it responded. Extracted out of setup_sensors()
+// so attempt_i2c_bus_recovery() can re-run the exact same sequence after a bus reset, without
+// duplicating it.
+static bool init_ina219() {
+  bool ok = ina219.begin();
+  if (ok) {
     // The Adafruit library's begin() function calls setCalibration_32V_2A(), which assumes a 0.1 Ohm shunt.
     // We must overwrite this with our custom calibration for the 0.005 Ohm shunt.
     // Explicit cast on the first operand: these constants come from separate unscoped enums
@@ -179,14 +172,95 @@ void setup_sensors() {
   } else {
     Serial.println("{\"error\":\"INA219 sensor not found\"}");
   }
+  return ok;
+}
 
-  is_sht40_available = sht40.begin();
-  if (is_sht40_available) {
+// Initializes the SHT40 and returns whether it responded. Extracted for the same reason as
+// init_ina219() above.
+static bool init_sht40() {
+  bool ok = sht40.begin();
+  if (ok) {
     sht40.setPrecision(SHT4X_HIGH_PRECISION);
     sht40.setHeater(SHT4X_NO_HEATER);
   } else {
     Serial.println("{\"error\":\"SHT40 sensor not found\"}");
   }
+  return ok;
+}
+
+// --- I2C bus recovery (INA219 and SHT40 only - both share the same physical I2C bus; DS18B20 is
+// a separate OneWire bus and is unaffected by any of this) ---
+//
+// A hung I2C bus is a known failure mode: a slave can be left holding SDA low mid-transaction
+// (e.g. a brief brownout/reset exactly while a transaction was in flight), waiting for clock
+// pulses a normal transaction will never send it again. i2c_consecutive_failures is shared
+// between both I2C devices - a bus-level hang affects both at once, so a failure on either one
+// counts toward the same threshold, and one recovery attempt re-initializes both.
+static int i2c_consecutive_failures = 0;
+const int I2C_FAILURE_THRESHOLD = 3;
+const unsigned long I2C_RECOVERY_COOLDOWN_MS = 5000; // avoid hammering recovery if the bus (or a
+                                                       // device) is genuinely, persistently dead
+static unsigned long last_i2c_recovery_attempt_ms = 0;
+
+// Cheap address-only I2C probe, separate from the Adafruit_INA219 library's own register reads
+// (which don't expose success/failure to the caller at all). Wire.endTransmission() == 0 is a
+// direct, unambiguous success signal - unlike guessing from a suspiciously-low voltage reading.
+static bool probe_ina219() {
+  Wire.beginTransmission(INA219_ADDR);
+  return Wire.endTransmission() == 0;
+}
+
+// Standard I2C bus recovery sequence: manually clock SCL (up to 9 cycles - the worst case for a
+// slave stuck mid-byte-plus-ack) until the slave releases SDA, generate a manual STOP, then
+// reinitialize the bus and both I2C devices. Rate-limited by I2C_RECOVERY_COOLDOWN_MS so a truly
+// dead device/bus doesn't cause this to run on every single failed read.
+static void attempt_i2c_bus_recovery() {
+  unsigned long now = millis();
+  if (now - last_i2c_recovery_attempt_ms < I2C_RECOVERY_COOLDOWN_MS) return;
+  last_i2c_recovery_attempt_ms = now;
+
+  Serial.println("{\"warn\":\"Attempting I2C bus recovery after repeated sensor read failures\"}");
+
+  Wire.end();
+  pinMode(I2C_SDA, INPUT_PULLUP);
+  pinMode(I2C_SCL, OUTPUT);
+  for (int i = 0; i < 9; i++) {
+    digitalWrite(I2C_SCL, LOW);
+    delayMicroseconds(5);
+    digitalWrite(I2C_SCL, HIGH);
+    delayMicroseconds(5);
+    if (digitalRead(I2C_SDA) == HIGH) break; // slave released the bus
+  }
+  pinMode(I2C_SDA, OUTPUT);
+  digitalWrite(I2C_SDA, LOW);
+  delayMicroseconds(5);
+  digitalWrite(I2C_SDA, HIGH); // manual STOP: release SDA while SCL is high
+  delay(10);
+
+  Wire.begin(I2C_SDA, I2C_SCL);
+
+  // Re-run the same init sequence setup_sensors() uses - a device that was merely desynced (not
+  // physically disconnected) should re-attach cleanly here.
+  is_ina219_available = init_ina219();
+  is_sht40_available = init_sht40();
+
+  i2c_consecutive_failures = 0;
+}
+
+void setup_sensors() {
+  // Initialize all sensor values to NAN to indicate they are not yet valid
+  sensor_cache.ina_voltage = NAN;
+  sensor_cache.ina_current = NAN;
+  sensor_cache.ina_power = NAN;
+  sensor_cache.sht_temperature = NAN;
+  sensor_cache.sht_humidity = NAN;
+  sensor_cache.sht_dew_point = NAN;
+  sensor_cache.ds18b20_temperature = NAN;
+
+  Wire.begin(I2C_SDA, I2C_SCL);
+
+  is_ina219_available = init_ina219();
+  is_sht40_available = init_sht40();
 
   dallas_sensors.begin();
   is_ds18b20_available = (dallas_sensors.getDeviceCount() > 0);
@@ -209,21 +283,37 @@ void update_sensor_cache() {
   // --- INA219 Update ---
   if (is_ina219_available && (current_millis - last_ina219_update >= INA219_INTERVAL_MS)) {
     last_ina219_update = current_millis;
-    float raw_bus_voltage = ina219.getBusVoltage_V();
 
-    // Since we overwrote the calibration, ina219.getCurrent_mA() is incorrect.
-    // We calculate the current manually using Ohm's law: I = V_shunt / R_shunt.
-    float shunt_voltage_mV = ina219.getShuntVoltage_mV();
-    float raw_current_mA = shunt_voltage_mV / SHUNT_RESISTANCE_OHMS;
+    if (!probe_ina219()) {
+      i2c_consecutive_failures++;
+      Serial.println("{\"warn\":\"INA219 read failed\"}");
+      if (i2c_consecutive_failures >= I2C_FAILURE_THRESHOLD) {
+        attempt_i2c_bus_recovery();
+      }
+      if(xSemaphoreTake(sensor_cache_mutex, (TickType_t)10) == pdTRUE) {
+        sensor_cache.ina_voltage = NAN;
+        sensor_cache.ina_current = NAN;
+        sensor_cache.ina_power = NAN;
+        xSemaphoreGive(sensor_cache_mutex);
+      }
+    } else {
+      i2c_consecutive_failures = 0; // any successful I2C read, on either device, resets this
+      float raw_bus_voltage = ina219.getBusVoltage_V();
 
-    float final_bus_voltage = ina219_voltage_filter.add_reading(raw_bus_voltage, SENSOR_MEDIAN_WINDOW);
-    float final_current_mA = ina219_current_filter.add_reading(raw_current_mA, SENSOR_MEDIAN_WINDOW);
+      // Since we overwrote the calibration, ina219.getCurrent_mA() is incorrect.
+      // We calculate the current manually using Ohm's law: I = V_shunt / R_shunt.
+      float shunt_voltage_mV = ina219.getShuntVoltage_mV();
+      float raw_current_mA = shunt_voltage_mV / SHUNT_RESISTANCE_OHMS;
 
-    if(xSemaphoreTake(sensor_cache_mutex, (TickType_t)10) == pdTRUE) {
-      sensor_cache.ina_voltage = final_bus_voltage + offsets.ina219_voltage;
-      sensor_cache.ina_current = final_current_mA + offsets.ina219_current;
-      sensor_cache.ina_power = sensor_cache.ina_voltage * sensor_cache.ina_current / 1000.0;
-      xSemaphoreGive(sensor_cache_mutex);
+      float final_bus_voltage = ina219_voltage_filter.add_reading(raw_bus_voltage, SENSOR_MEDIAN_WINDOW);
+      float final_current_mA = ina219_current_filter.add_reading(raw_current_mA, SENSOR_MEDIAN_WINDOW);
+
+      if(xSemaphoreTake(sensor_cache_mutex, (TickType_t)10) == pdTRUE) {
+        sensor_cache.ina_voltage = final_bus_voltage + offsets.ina219_voltage;
+        sensor_cache.ina_current = final_current_mA + offsets.ina219_current;
+        sensor_cache.ina_power = sensor_cache.ina_voltage * sensor_cache.ina_current / 1000.0;
+        xSemaphoreGive(sensor_cache_mutex);
+      }
     }
   }
 
@@ -242,6 +332,7 @@ void update_sensor_cache() {
     last_sht40_update = current_millis;
     sensors_event_t humidity, temp;
     if (sht40.getEvent(&humidity, &temp)) {
+      i2c_consecutive_failures = 0; // any successful I2C read, on either device, resets this
       float final_sht40_temp = sht40_temp_filter.add_reading(temp.temperature, SENSOR_MEDIAN_WINDOW);
       float final_sht40_humidity = sht40_humidity_filter.add_reading(humidity.relative_humidity, SENSOR_MEDIAN_WINDOW);
 
@@ -278,9 +369,15 @@ void update_sensor_cache() {
         xSemaphoreGive(sensor_cache_mutex);
       }
     } else {
-      // Sensor read failed, assume it's disconnected
-      is_sht40_available = false;
-      Serial.println("{\"error\":\"SHT40 sensor disconnected\"}");
+      // Read failed - retry on the next interval instead of giving up forever (that used to
+      // permanently latch is_sht40_available false after a single transient failure, with no way
+      // to recover short of a reboot). Same shared failure counter/recovery as INA219 above,
+      // since both are on the same physical I2C bus.
+      i2c_consecutive_failures++;
+      Serial.println("{\"warn\":\"SHT40 read failed\"}");
+      if (i2c_consecutive_failures >= I2C_FAILURE_THRESHOLD) {
+        attempt_i2c_bus_recovery();
+      }
       if(xSemaphoreTake(sensor_cache_mutex, (TickType_t)10) == pdTRUE) {
         sensor_cache.sht_temperature = NAN;
         sensor_cache.sht_humidity = NAN;
