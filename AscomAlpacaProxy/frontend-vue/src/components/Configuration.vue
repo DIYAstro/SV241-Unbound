@@ -6,6 +6,7 @@ import SensorConfig from './config/SensorConfig.vue'
 import SystemSettings from './config/SystemSettings.vue'
 import ProxySettings from './config/ProxySettings.vue'
 import WeatherConfig from './config/WeatherConfig.vue'
+import ProfilesConfig from './config/ProfilesConfig.vue'
 
 const activeTab = ref('tab-switches')
 
@@ -16,6 +17,7 @@ const tabs = [
     { id: 'tab-weather', label: 'Weather Service', component: WeatherConfig },
     { id: 'tab-proxy', label: 'Proxy', component: ProxySettings },
     { id: 'tab-system', label: 'System', component: SystemSettings },
+    { id: 'tab-profiles', label: 'Profiles', component: ProfilesConfig },
 ]
 
 const isCollapsed = ref(true) // Default to collapsed

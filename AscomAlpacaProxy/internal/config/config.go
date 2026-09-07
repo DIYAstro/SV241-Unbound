@@ -249,6 +249,19 @@ func GetRigNameForSerial(serial string) string {
 	return Get().DeviceProfiles[serial].RigName
 }
 
+// GetDeviceProfile returns a copy of the stored DeviceProfile for serial, or a zero-value
+// DeviceProfile if none exists yet. Thread-safe. Use this instead of reading conf.DeviceProfiles
+// directly (see that field's doc comment) - e.g. internal/profiles uses it to capture only the
+// one device's settings a Profile should contain, deliberately never the whole map.
+func GetDeviceProfile(serial string) DeviceProfile {
+	ProxyConfigMutex.RLock()
+	defer ProxyConfigMutex.RUnlock()
+	if serial == "" {
+		return DeviceProfile{}
+	}
+	return Get().DeviceProfiles[serial]
+}
+
 // SetActiveRigName sets the user-facing label for the currently active device's profile. No-op if
 // no device is active yet. Thread-safe.
 func SetActiveRigName(name string) {

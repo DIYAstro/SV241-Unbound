@@ -19,6 +19,7 @@ import (
 	"sv241pro-alpaca-proxy/internal/handlers"
 	"sv241pro-alpaca-proxy/internal/logger"
 	"sv241pro-alpaca-proxy/internal/logstream"
+	"sv241pro-alpaca-proxy/internal/profiles"
 	"sv241pro-alpaca-proxy/internal/serial"
 	"sv241pro-alpaca-proxy/internal/telemetry"
 )
@@ -102,6 +103,11 @@ func setupRoutes(frontendFS fs.FS, appVersion string) {
 	http.HandleFunc("/api/v1/backup/restore", handleRestoreBackup)
 	http.HandleFunc("/api/v1/backup/list", handleListAutoBackups)
 	http.HandleFunc("/api/v1/backup/restore-auto", handleRestoreAutoBackup)
+	http.HandleFunc("/api/v1/profiles/list", handleListProfiles)
+	http.HandleFunc("/api/v1/profiles/save", handleSaveProfile)
+	http.HandleFunc("/api/v1/profiles/apply", handleApplyProfile)
+	http.HandleFunc("/api/v1/profiles/update", handleUpdateProfile)
+	http.HandleFunc("/api/v1/profiles/delete", handleDeleteProfile)
 	http.HandleFunc("/api/v1/telemetry/dates", telemetry.HandleGetLogDates)
 	http.HandleFunc("/api/v1/telemetry/history", telemetry.HandleGetHistory)
 	http.HandleFunc("/api/v1/telemetry/download", telemetry.HandleDownloadCSV)
@@ -583,6 +589,198 @@ func handleRestoreAutoBackup(w http.ResponseWriter, r *http.Request) {
 	logger.Info("Restoring combined configuration from automatic backup %q...", filename)
 	force := r.URL.Query().Get("force") == "true"
 	applyBackupRestore(w, backupData, force)
+}
+
+// --- Configuration Profiles ---
+// Named, manually-saved snapshots of one box's configuration (firmware config + that one box's
+// own DeviceProfile - rig name, switch names, ...), stored in their own <config dir>/profiles/
+// directory (see internal/profiles) - the proxy-side equivalent of the handful of on-device
+// profiles some other SV241 firmwares support, without a fixed slot limit.
+//
+// Deliberately does NOT reuse applyBackupRestore() below - that function's
+// config.SetDeviceProfiles() call replaces the *entire* DeviceProfiles map wholesale (by design,
+// for restoring a full backup taken on another computer), which would silently wipe out every
+// other known box's names if a Profile ever went through it. handleApplyProfile instead uses the
+// device-scoped-safe setters (SetProxyMaps/SetActiveRigName/SetLensTempName) that only ever touch
+// the currently active device's own map entry.
+
+// profileInfo is one entry in the GET /api/v1/profiles/list response, and also the shape the
+// save/update endpoints return for the entry they just wrote.
+type profileInfo struct {
+	Filename             string `json:"filename"`
+	Name                 string `json:"name"`
+	SavedAt              string `json:"savedAt"`
+	DeviceSerial         string `json:"deviceSerial"`
+	RigName              string `json:"rigName"`
+	MatchesCurrentDevice bool   `json:"matchesCurrentDevice"`
+}
+
+// profileInfoFromEntry computes MatchesCurrentDevice against whichever device is connected right
+// now - deliberately not cached on the entry itself, since "current device" can change between
+// requests (e.g. a box swap) without any profile file changing.
+func profileInfoFromEntry(e profiles.Entry) profileInfo {
+	currentSerial := config.GetActiveDeviceSerial()
+	return profileInfo{
+		Filename:             e.Filename,
+		Name:                 e.Name,
+		SavedAt:              e.SavedAt,
+		DeviceSerial:         e.DeviceSerial,
+		RigName:              e.RigName,
+		MatchesCurrentDevice: e.DeviceSerial != "" && e.DeviceSerial == currentSerial,
+	}
+}
+
+func handleListProfiles(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	entries, err := profiles.ListProfiles()
+	if err != nil {
+		http.Error(w, "Could not list profiles", http.StatusInternalServerError)
+		return
+	}
+	list := make([]profileInfo, 0, len(entries))
+	for _, e := range entries {
+		list = append(list, profileInfoFromEntry(e))
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(list)
+}
+
+func handleSaveProfile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	defer r.Body.Close()
+	var payload struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil || strings.TrimSpace(payload.Name) == "" {
+		http.Error(w, "Missing or invalid 'name'", http.StatusBadRequest)
+		return
+	}
+	entry, err := profiles.SaveProfile(payload.Name)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to save profile: %v", err), http.StatusInternalServerError)
+		return
+	}
+	logger.Info("Saved configuration profile %q (%s)", entry.Name, entry.Filename)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(profileInfoFromEntry(*entry))
+}
+
+func handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	filename := r.URL.Query().Get("file")
+	if filename == "" {
+		http.Error(w, "Missing 'file' parameter", http.StatusBadRequest)
+		return
+	}
+	entry, err := profiles.UpdateProfile(filename)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to update profile: %v", err), http.StatusInternalServerError)
+		return
+	}
+	logger.Info("Updated configuration profile %q (%s)", entry.Name, entry.Filename)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(profileInfoFromEntry(*entry))
+}
+
+func handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	filename := r.URL.Query().Get("file")
+	if filename == "" {
+		http.Error(w, "Missing 'file' parameter", http.StatusBadRequest)
+		return
+	}
+	if err := profiles.DeleteProfile(filename); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to delete profile: %v", err), http.StatusInternalServerError)
+		return
+	}
+	logger.Info("Deleted configuration profile %s", filename)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+// handleApplyProfile applies a saved configuration profile by reusing applyBackupRestore - a
+// Profile's Config field is exactly the config.CombinedConfig shape a backup restore expects, so
+// the device-mismatch check, firmware config push, proxy settings restore, and reconnect cycle
+// all come for free, identical to restoring a backup.
+func handleApplyProfile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	filename := r.URL.Query().Get("file")
+	if filename == "" {
+		http.Error(w, "Missing 'file' parameter", http.StatusBadRequest)
+		return
+	}
+	profile, err := profiles.LoadProfile(filename)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load profile: %v", err), http.StatusNotFound)
+		return
+	}
+
+	// Same device-mismatch guard as applyBackupRestore, same 409 response shape (the frontend's
+	// mismatch dialog already consumes these exact keys for backup restore) - reimplemented here
+	// rather than delegated, since the rest of this handler intentionally does NOT call
+	// applyBackupRestore (see the package-level comment above).
+	force := r.URL.Query().Get("force") == "true"
+	currentSerial := config.GetActiveDeviceSerial()
+	if !force && (profile.DeviceSerial == "" || profile.DeviceSerial != currentSerial) {
+		logger.Warn("Profile apply blocked: profile's device (serial=%q) doesn't match the currently connected device (serial=%q). Retry with ?force=true to override.", profile.DeviceSerial, currentSerial)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":               "device_mismatch",
+			"backupDeviceSerial":  profile.DeviceSerial,
+			"backupRigName":       profile.DeviceProfile.RigName,
+			"currentDeviceSerial": currentSerial,
+			"currentRigName":      config.GetActiveRigName(),
+		})
+		return
+	}
+	if force && (profile.DeviceSerial == "" || profile.DeviceSerial != currentSerial) {
+		logger.Warn("Applying a profile from a different/unknown device (serial=%q) onto the currently connected device (serial=%q) - overridden by user.", profile.DeviceSerial, currentSerial)
+	}
+
+	logger.Info("Applying configuration profile %q (%s)...", profile.Name, filename)
+
+	// Firmware config: identical call to handleSetFirmwareConfig - a live merge, no reboot.
+	compactFirmwareConfig, _ := json.Marshal(profile.FirmwareConfig)
+	firmwareCommand := fmt.Sprintf(`{"sc":%s}`, string(compactFirmwareConfig))
+	if _, err := serial.SendCommand(firmwareCommand, true, 10*time.Second); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to send firmware config to device: %v", err), http.StatusServiceUnavailable)
+		return
+	}
+
+	// Proxy-side settings: device-scoped-safe setters only - each of these touches only
+	// conf.DeviceProfiles[currentSerial], never the whole map (see package-level comment above).
+	config.SetProxyMaps(profile.DeviceProfile.SwitchNames, profile.DeviceProfile.HeaterAutoEnableLeader, profile.DeviceProfile.WeatherSourcePriority)
+	config.SetActiveRigName(profile.DeviceProfile.RigName)
+	config.SetLensTempName(profile.DeviceProfile.LensTempName)
+	if err := config.Save(); err != nil {
+		http.Error(w, "Failed to save proxy configuration", http.StatusInternalServerError)
+		return
+	}
+
+	// Trigger a switch map sync in case standard switches were enabled/disabled - same tail as
+	// handleSetFirmwareConfig. No disconnect/reconnect cycle: unlike applyBackupRestore, nothing
+	// here touches SerialPortName or any other connection-affecting setting.
+	go serial.SyncFirmwareConfig()
+
+	logger.Info("Configuration profile %q applied successfully.", profile.Name)
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprint(w, "Profile applied successfully.")
 }
 
 // applyBackupRestore contains the actual restore logic (device-mismatch check, sending the
