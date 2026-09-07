@@ -16,9 +16,11 @@ watch(() => config.value, (newConfig) => {
     if (newConfig && !hasChanges.value) {
         // Sensor Offsets (so)
         // struct: st (SHT Temp), sh (SHT Hum), dt (DS Temp), iv (INA Volt), ic (INA Curr)
+        // Averaging counts ("ac") and update intervals ("ui") used to live here too, but were
+        // removed - no legitimate reason to run them off their fixed firmware defaults, and
+        // getting either wrong silently delays every reading (dew heater PID/current-limit
+        // included). See sensors.cpp's SENSOR_MEDIAN_WINDOW/_INTERVAL_MS constants.
         const so = newConfig.so || {};
-        const ac = newConfig.ac || {};
-        const ui = newConfig.ui || {};
 
         sensorConfig.value = {
             // Offsets
@@ -27,18 +29,6 @@ watch(() => config.value, (newConfig) => {
             so_dt: so.dt ?? 0,
             so_iv: so.iv ?? 0,
             so_ic: so.ic ?? 0,
-
-            // Averaging Counts
-            ac_st: ac.st ?? 10,
-            ac_sh: ac.sh ?? 10,
-            ac_dt: ac.dt ?? 10,
-            ac_iv: ac.iv ?? 10,
-            ac_ic: ac.ic ?? 10,
-
-            // Update Intervals
-            ui_s: ui.s ?? 1000, // SHT40
-            ui_d: ui.d ?? 1000, // DS18B20
-            ui_i: ui.i ?? 1000, // INA219
         };
 
         // Auto dry: Config.ad
@@ -65,18 +55,6 @@ async function saveSensors() {
             dt: parseFloat(sensorConfig.value.so_dt),
             iv: parseFloat(sensorConfig.value.so_iv),
             ic: parseFloat(sensorConfig.value.so_ic)
-        },
-        ac: {
-            st: parseInt(sensorConfig.value.ac_st),
-            sh: parseInt(sensorConfig.value.ac_sh),
-            dt: parseInt(sensorConfig.value.ac_dt),
-            iv: parseInt(sensorConfig.value.ac_iv),
-            ic: parseInt(sensorConfig.value.ac_ic)
-        },
-        ui: {
-            s: parseInt(sensorConfig.value.ui_s),
-            d: parseInt(sensorConfig.value.ui_d),
-            i: parseInt(sensorConfig.value.ui_i)
         }
     };
 
@@ -143,14 +121,6 @@ async function triggerDry() {
                   <label>Humidity Offset (%)</label>
                   <input type="number" v-model.number="sensorConfig.so_sh" step="0.1" @input="onChange">
               </div>
-              <div class="form-group">
-                  <label>Averaging</label>
-                  <input type="number" v-model.number="sensorConfig.ac_st" min="1" max="50" @input="onChange">
-              </div>
-              <div class="form-group">
-                  <label>Interval (ms)</label>
-                  <input type="number" v-model.number="sensorConfig.ui_s" min="100" step="100" @input="onChange">
-              </div>
           </div>
       </div>
 
@@ -161,14 +131,6 @@ async function triggerDry() {
               <div class="form-group">
                   <label>Temp Offset (°C)</label>
                   <input type="number" v-model.number="sensorConfig.so_dt" step="0.1" @input="onChange">
-              </div>
-              <div class="form-group">
-                  <label>Averaging</label>
-                  <input type="number" v-model.number="sensorConfig.ac_dt" min="1" max="50" @input="onChange">
-              </div>
-              <div class="form-group">
-                  <label>Interval (ms)</label>
-                  <input type="number" v-model.number="sensorConfig.ui_d" min="100" step="100" @input="onChange">
               </div>
           </div>
       </div>
@@ -184,18 +146,6 @@ async function triggerDry() {
               <div class="form-group">
                   <label>Current Offset (mA)</label>
                   <input type="number" v-model.number="sensorConfig.so_ic" step="0.01" @input="onChange">
-              </div>
-              <div class="form-group">
-                  <label>Averaging (V)</label>
-                  <input type="number" v-model.number="sensorConfig.ac_iv" min="1" max="50" @input="onChange">
-              </div>
-              <div class="form-group">
-                  <label>Averaging (I)</label>
-                  <input type="number" v-model.number="sensorConfig.ac_ic" min="1" max="50" @input="onChange">
-              </div>
-              <div class="form-group full-width">
-                  <label>Interval (ms)</label>
-                  <input type="number" v-model.number="sensorConfig.ui_i" min="100" step="100" @input="onChange">
               </div>
           </div>
       </div>

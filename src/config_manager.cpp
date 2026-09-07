@@ -26,9 +26,7 @@ const char* configFile = "/config.json";
 // Populates the config struct with default values, but does not save.
 void populateDefaultConfig() {
     config.sensor_offsets = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-    config.update_intervals_ms = {1000, 1000, 1000};
     config.power_startup_states = {false, false, false, false, false, false, false, false};
-    config.averaging_counts = {5, 5, 5, 5, 5};
     config.adj_conv_preset_v = 1.0f;
     config.poweron_stagger_delay_ms = 500;
     config.current_limit_enabled = false;
@@ -173,11 +171,6 @@ void serializeConfig(JsonDocument& doc) {
     sensor_offsets["iv"] = config.sensor_offsets.ina219_voltage;
     sensor_offsets["ic"] = config.sensor_offsets.ina219_current;
 
-    JsonObject update_intervals_ms = doc["ui"].to<JsonObject>();
-    update_intervals_ms["i"] = config.update_intervals_ms.ina219;
-    update_intervals_ms["s"] = config.update_intervals_ms.sht40;
-    update_intervals_ms["d"] = config.update_intervals_ms.ds18b20;
-
     JsonObject power_startup_states = doc["ps"].to<JsonObject>();
     power_startup_states["d1"] = (int)config.power_startup_states.dc1;
     power_startup_states["d2"] = (int)config.power_startup_states.dc2;
@@ -187,13 +180,6 @@ void serializeConfig(JsonDocument& doc) {
     power_startup_states["u12"] = (int)config.power_startup_states.usbc12;
     power_startup_states["u34"] = (int)config.power_startup_states.usb345;
     power_startup_states["adj"] = (int)config.power_startup_states.adj_conv;
-
-    JsonObject averaging_counts = doc["ac"].to<JsonObject>();
-    averaging_counts["st"] = config.averaging_counts.sht40_temp;
-    averaging_counts["sh"] = config.averaging_counts.sht40_humidity;
-    averaging_counts["dt"] = config.averaging_counts.ds18b20_temp;
-    averaging_counts["iv"] = config.averaging_counts.ina219_voltage;
-    averaging_counts["ic"] = config.averaging_counts.ina219_current;
 
     doc["av"] = config.adj_conv_preset_v;
     doc["psd"] = config.poweron_stagger_delay_ms;
@@ -236,13 +222,6 @@ void updateConfig(const JsonObject& doc) {
         config.sensor_offsets.ina219_current = sensor_offsets["ic"] | config.sensor_offsets.ina219_current;
     }
 
-    if (!doc["ui"].isNull()) {
-        JsonObjectConst update_intervals_ms = doc["ui"];
-        config.update_intervals_ms.ina219 = update_intervals_ms["i"] | config.update_intervals_ms.ina219;
-        config.update_intervals_ms.sht40 = update_intervals_ms["s"] | config.update_intervals_ms.sht40;
-        config.update_intervals_ms.ds18b20 = update_intervals_ms["d"] | config.update_intervals_ms.ds18b20;
-    }
-
     if (!doc["ps"].isNull()) {
         JsonObjectConst power_startup_states = doc["ps"];
         if (!power_startup_states["d1"].isNull()) config.power_startup_states.dc1 = power_startup_states["d1"];
@@ -253,18 +232,6 @@ void updateConfig(const JsonObject& doc) {
         if (!power_startup_states["u12"].isNull()) config.power_startup_states.usbc12 = power_startup_states["u12"];
         if (!power_startup_states["u34"].isNull()) config.power_startup_states.usb345 = power_startup_states["u34"];
         if (!power_startup_states["adj"].isNull()) config.power_startup_states.adj_conv = power_startup_states["adj"];
-    }
-
-    if (!doc["ac"].isNull()) {
-        JsonObjectConst averaging_counts = doc["ac"];
-        config.averaging_counts.sht40_temp = averaging_counts["st"] | config.averaging_counts.sht40_temp;
-        config.averaging_counts.sht40_humidity = averaging_counts["sh"] | config.averaging_counts.sht40_humidity;
-        config.averaging_counts.ds18b20_temp = averaging_counts["dt"] | config.averaging_counts.ds18b20_temp;
-        config.averaging_counts.ina219_voltage = averaging_counts["iv"] | config.averaging_counts.ina219_voltage;
-        config.averaging_counts.ina219_current = averaging_counts["ic"] | config.averaging_counts.ina219_current;
-        // If any count was lowered, shrink the matching ring buffer's reading count too - see
-        // sensors.h's doc comment for why this can't be skipped.
-        clamp_averaging_readings_counts();
     }
 
     if (!doc["av"].isNull()) {

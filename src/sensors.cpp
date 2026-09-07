@@ -17,8 +17,24 @@ const float SHUNT_RESISTANCE_OHMS = 0.005; // The value of the shunt resistor (R
 const uint16_t INA219_CALIB_VALUE = 20480;  // Pre-calculated calibration value for 32V, 10A, 0.005 Ohm shunt
 
 // --- Constants ---
-// Define a maximum size for all averaging buffers. This must be larger than any value in config.averaging_counts.
+// Define a maximum size for all averaging buffers.
 const int MAX_SENSOR_AVG_COUNT = 20;
+
+// Sensor poll intervals and median-filter window, formerly user-configurable (the "ui"/"ac"
+// blocks) - removed because there's no legitimate reason to run them off these defaults, and
+// getting either wrong causes real harm: too short and the median filter fills with duplicate
+// readings of the same not-yet-finished conversion instead of independent samples (INA219 needs
+// ~136ms for a fresh bus+shunt pair after the averaging fix below, and DS18B20's own
+// requestTemperatures() blocks up to 750ms - an interval below that would leave the sensor task
+// essentially permanently blocked); too long (or too wide a median window) directly delays every
+// consumer of these readings - most safety-relevant now that the current-limit heater throttling
+// (dew_control.cpp) reads this same cache, but the dew heater PID loops (target = dew point +
+// offset) are just as exposed to a sluggish sensor feed.
+const unsigned long SHT40_INTERVAL_MS = 1000;
+const unsigned long DS18B20_INTERVAL_MS = 1000;
+const unsigned long INA219_INTERVAL_MS = 1000;
+const int SENSOR_MEDIAN_WINDOW = 5;
+static_assert(SENSOR_MEDIAN_WINDOW <= MAX_SENSOR_AVG_COUNT, "SENSOR_MEDIAN_WINDOW must fit MedianFilterBuf's fixed-size buffer");
 
 // --- The global sensor value cache ---
 SensorValues sensor_cache;
@@ -88,20 +104,14 @@ struct MedianFilterBuf {
   int index = 0;
   int count = 0;
 
-  // Feeds one new raw reading in and returns the resulting median. avg_count is the currently
-  // configured averaging window (1..MAX_SENSOR_AVG_COUNT) - callers are only expected to call this
-  // when avg_count > 1 (averaging enabled), matching the guard every call site already had.
+  // Feeds one new raw reading in and returns the resulting median. avg_count is the (now fixed)
+  // averaging window, SENSOR_MEDIAN_WINDOW - never changes live, so unlike before there's no
+  // longer a need to handle it shrinking mid-flight.
   float add_reading(float value, int avg_count) {
     readings[index] = value;
     index = (index + 1) % avg_count;
     if (count < avg_count) count++;
     return calculate_median(readings, count);
-  }
-
-  // Shrinks count to at most avg_count - see clamp_averaging_readings_counts()/sensors.h for why
-  // this is needed when a channel's averaging window is lowered live without a reboot.
-  void clamp(int avg_count) {
-    if (count > avg_count) count = avg_count;
   }
 };
 
@@ -112,22 +122,6 @@ static MedianFilterBuf ina219_current_filter;
 static MedianFilterBuf sht40_temp_filter;
 static MedianFilterBuf sht40_humidity_filter;
 static MedianFilterBuf ds18b20_temp_filter;
-
-// See sensors.h for why this exists. Only ever needs to shrink each buffer's count (raising a
-// count is already handled naturally - MedianFilterBuf::add_reading()'s own `if (count <
-// avg_count)` guard lets it grow back up one real reading at a time).
-//
-// Does NOT take config_mutex itself - the caller must already hold it (its only caller,
-// updateConfig()'s "ac" block, now requires that of all its own callers too - see updateConfig's
-// doc comment). Taking it here as well would deadlock: FreeRTOS's plain xSemaphoreCreateMutex()
-// mutexes aren't recursive, and updateConfig() is always reached with config_mutex already held.
-void clamp_averaging_readings_counts() {
-  ina219_voltage_filter.clamp(config.averaging_counts.ina219_voltage);
-  ina219_current_filter.clamp(config.averaging_counts.ina219_current);
-  sht40_temp_filter.clamp(config.averaging_counts.sht40_temp);
-  sht40_humidity_filter.clamp(config.averaging_counts.sht40_humidity);
-  ds18b20_temp_filter.clamp(config.averaging_counts.ds18b20_temp);
-}
 
 void setup_sensors() {
   // Initialize all sensor values to NAN to indicate they are not yet valid
@@ -163,7 +157,7 @@ void setup_sensors() {
     // voltage limits reads that value.
     //
     // Costs nothing here: the chip free-runs in continuous mode, so a read just returns the last
-    // completed conversion, and this code only reads once per second (update_intervals_ms.ina219).
+    // completed conversion, and this code only reads once per second (INA219_INTERVAL_MS below).
     uint16_t config_value = (uint16_t)INA219_CONFIG_BVOLTAGERANGE_32V |
                       INA219_CONFIG_GAIN_8_320MV | INA219_CONFIG_BADCRES_12BIT_128S_69MS |
                       INA219_CONFIG_SADCRES_12BIT_128S_69MS |
@@ -205,42 +199,25 @@ void update_sensor_cache() {
   unsigned long current_millis = millis();
 
   // Create a thread-safe local copy of config values used in this function
-  unsigned long ina219_interval, sht40_interval, ds18b20_interval;
-  AveragingCounts avg_counts;
   SensorOffsets offsets;
   Sht40AutoDryConfig auto_dry_config;
   xSemaphoreTake(config_mutex, portMAX_DELAY);
-  ina219_interval = config.update_intervals_ms.ina219;
-  sht40_interval = config.update_intervals_ms.sht40;
-  ds18b20_interval = config.update_intervals_ms.ds18b20;
-  avg_counts = config.averaging_counts;
   offsets = config.sensor_offsets;
   auto_dry_config = config.sht40_auto_dry;
   xSemaphoreGive(config_mutex);
 
   // --- INA219 Update ---
-  if (is_ina219_available && (current_millis - last_ina219_update >= ina219_interval)) {
+  if (is_ina219_available && (current_millis - last_ina219_update >= INA219_INTERVAL_MS)) {
     last_ina219_update = current_millis;
     float raw_bus_voltage = ina219.getBusVoltage_V();
-    
+
     // Since we overwrote the calibration, ina219.getCurrent_mA() is incorrect.
     // We calculate the current manually using Ohm's law: I = V_shunt / R_shunt.
     float shunt_voltage_mV = ina219.getShuntVoltage_mV();
     float raw_current_mA = shunt_voltage_mV / SHUNT_RESISTANCE_OHMS;
-    float final_bus_voltage = raw_bus_voltage;
-    float final_current_mA = raw_current_mA;
 
-    // Averaging for Voltage
-    int avg_count_v = avg_counts.ina219_voltage;
-    if (avg_count_v > 1 && avg_count_v <= MAX_SENSOR_AVG_COUNT) {
-        final_bus_voltage = ina219_voltage_filter.add_reading(raw_bus_voltage, avg_count_v);
-    }
-
-    // Averaging for Current
-    int avg_count_c = avg_counts.ina219_current;
-    if (avg_count_c > 1 && avg_count_c <= MAX_SENSOR_AVG_COUNT) {
-        final_current_mA = ina219_current_filter.add_reading(raw_current_mA, avg_count_c);
-    }
+    float final_bus_voltage = ina219_voltage_filter.add_reading(raw_bus_voltage, SENSOR_MEDIAN_WINDOW);
+    float final_current_mA = ina219_current_filter.add_reading(raw_current_mA, SENSOR_MEDIAN_WINDOW);
 
     if(xSemaphoreTake(sensor_cache_mutex, (TickType_t)10) == pdTRUE) {
       sensor_cache.ina_voltage = final_bus_voltage + offsets.ina219_voltage;
@@ -261,24 +238,12 @@ void update_sensor_cache() {
       }
   }
 
-  if (is_sht40_available && !is_sht40_drying && (current_millis - last_sht40_update >= sht40_interval)) {
+  if (is_sht40_available && !is_sht40_drying && (current_millis - last_sht40_update >= SHT40_INTERVAL_MS)) {
     last_sht40_update = current_millis;
     sensors_event_t humidity, temp;
     if (sht40.getEvent(&humidity, &temp)) {
-      float final_sht40_temp = temp.temperature;
-      float final_sht40_humidity = humidity.relative_humidity;
-
-      // Averaging for Temperature
-      int avg_count_t = avg_counts.sht40_temp;
-      if (avg_count_t > 1 && avg_count_t <= MAX_SENSOR_AVG_COUNT) {
-          final_sht40_temp = sht40_temp_filter.add_reading(temp.temperature, avg_count_t);
-      }
-
-      // Averaging for Humidity
-      int avg_count_h = avg_counts.sht40_humidity;
-      if (avg_count_h > 1 && avg_count_h <= MAX_SENSOR_AVG_COUNT) {
-          final_sht40_humidity = sht40_humidity_filter.add_reading(humidity.relative_humidity, avg_count_h);
-      }
+      float final_sht40_temp = sht40_temp_filter.add_reading(temp.temperature, SENSOR_MEDIAN_WINDOW);
+      float final_sht40_humidity = sht40_humidity_filter.add_reading(humidity.relative_humidity, SENSOR_MEDIAN_WINDOW);
 
       // --- Auto-Dry Logic ---
       if (auto_dry_config.enabled) {
@@ -326,18 +291,12 @@ void update_sensor_cache() {
   }
 
   // --- DS18B20 Update ---
-  if (is_ds18b20_available && (current_millis - last_ds18b20_update >= ds18b20_interval)) {
+  if (is_ds18b20_available && (current_millis - last_ds18b20_update >= DS18B20_INTERVAL_MS)) {
     last_ds18b20_update = current_millis;
-    dallas_sensors.requestTemperatures(); 
+    dallas_sensors.requestTemperatures();
     float tempC = dallas_sensors.getTempCByIndex(0);
     if(tempC != DEVICE_DISCONNECTED_C) {
-      float final_ds18b20_temp = tempC;
-
-      // Averaging for Temperature
-      int avg_count_t = avg_counts.ds18b20_temp;
-      if (avg_count_t > 1 && avg_count_t <= MAX_SENSOR_AVG_COUNT) {
-          final_ds18b20_temp = ds18b20_temp_filter.add_reading(tempC, avg_count_t);
-      }
+      float final_ds18b20_temp = ds18b20_temp_filter.add_reading(tempC, SENSOR_MEDIAN_WINDOW);
 
       if(xSemaphoreTake(sensor_cache_mutex, (TickType_t)10) == pdTRUE) {
         sensor_cache.ds18b20_temperature = final_ds18b20_temp + offsets.ds18b20_temp;

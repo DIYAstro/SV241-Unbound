@@ -16,9 +16,7 @@ this functionality over friendlier interfaces (web UI, REST API).
 - [Get/Set Full Configuration](#getset-full-configuration)
   - [Configuration Object Structure](#configuration-object-structure)
   - [`so` (Sensor Offsets)](#so-sensor-offsets)
-  - [`ui` (Update Intervals)](#ui-update-intervals)
   - [`ps` (Power Startup States)](#ps-power-startup-states)
-  - [`ac` (Averaging Counts)](#ac-averaging-counts)
   - [`ad` (Auto Dry)](#ad-auto-dry)
   - [`dh` (Dew Heaters)](#dh-dew-heaters)
 - [Using PowerShell for Direct Serial Communication](#using-powershell-for-direct-serial-communication)
@@ -75,9 +73,7 @@ For numerical parameters without explicit ranges, typical values are expected. R
 | Key | Description | Value Type |
 |:----|:------------------------------------------------------------------|:-----------|
 | `so` | **S**ensor **O**ffsets: Sets calibration offsets for sensor readings. | `object` |
-| `ui` | **U**pdate **I**ntervals: Sets the update frequency for sensors. | `object` |
 | `ps` | **P**ower **S**tartup: Defines the on/off state of outputs at boot. | `object` |
-| `ac` | **A**veraging **C**ounts: Controls the samples for the median filter. | `object` |
 | `av` | **A**djustable **V**oltage: Sets the preset voltage for the converter. | `float` |
 | `ad` | **A**uto **D**ry: Configures the automatic sensor drying feature. | `object` |
 | `dh` | **D**ew **H**eaters: Configures the two dew heaters. | `array` |
@@ -93,12 +89,12 @@ For numerical parameters without explicit ranges, typical values are expected. R
 | `iv` | INA219 Voltage offset (V) | `float` |
 | `ic` | INA219 Current offset (mA) | `float` |
 
-### `ui` (Update Intervals)
-| Sub-Key | Description | Value Type |
-|:---|:--------------------------------|:---------------|
-| `i` | INA219 (Power) interval (ms) | `unsigned long`|
-| `s` | SHT40 (Ambient) interval (ms) | `unsigned long`|
-| `d` | DS18B20 (Lens) interval (ms) | `unsigned long`|
+Update intervals and the median-filter sample count for these sensors were previously also
+configurable here (`ui`/`ac`) but are now fixed in firmware (1000ms interval, 5-sample median
+for all three sensors) - there was no legitimate reason to run them off these defaults, and
+getting either wrong silently delays every reading, including the dew heater PID loops and the
+current-limit heater throttling. Both keys are silently ignored if still present in an older
+saved config or backup.
 
 ### `ps` (Power Startup States)
 | Sub-Key | Description | Value Type |
@@ -107,15 +103,6 @@ For numerical parameters without explicit ranges, typical values are expected. R
 | `u12` | Startup state for USB Group 1/2 | `boolean`|
 | `u34` | Startup state for USB Group 3/4/5 | `boolean`|
 | `adj` | Startup state for the Adjustable Voltage Converter | `boolean`|
-
-### `ac` (Averaging Counts)
-| Sub-Key | Description | Value Type |
-|:---|:-----------------------------------|:---------|
-| `st` | Sample count for SHT40 temperature | `int` |
-| `sh` | Sample count for SHT40 humidity | `int` |
-| `dt` | Sample count for DS18B20 temperature | `int` |
-| `iv` | Sample count for INA219 voltage | `int` |
-| `ic` | Sample count for INA219 current | `int` |
 
 ### `ad` (Auto Dry)
 | Sub-Key | Description | Value Type |

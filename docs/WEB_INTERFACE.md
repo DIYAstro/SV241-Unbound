@@ -107,9 +107,12 @@ PID mode automatically regulates the heater to keep your optics dry. If you noti
 ### Sensors Tab
 Fine-tune sensor readings:
 *   **Offsets:** Calibrate temperature, humidity, voltage, and current readings.
-*   **Averaging:** Set the number of samples to average (reduces noise).
-*   **Intervals:** Configure sensor polling frequency.
 *   **SHT40 Auto-Drying:** Enable automatic sensor heater activation at high humidity levels.
+
+Sample averaging and polling interval used to be configurable here too, but are now fixed in
+firmware - there was no legitimate reason to run them off their defaults, and getting either
+wrong silently delays every sensor reading (dew heater PID control and the Power Protection
+current limit included).
 
 ### Weather Service Tab
 Configure supplemental environmental data:

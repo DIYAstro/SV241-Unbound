@@ -21,12 +21,6 @@ struct SensorOffsets {
     float ina219_current;
 };
 
-struct UpdateIntervals {
-    unsigned long ina219;
-    unsigned long sht40;
-    unsigned long ds18b20;
-};
-
 struct PowerStartupStates {
     uint8_t dc1;
     uint8_t dc2;
@@ -37,14 +31,6 @@ struct PowerStartupStates {
     uint8_t usb345;
     uint8_t adj_conv;
     // Note: Dew heater startup state is now in DewHeaterConfig
-};
-
-struct AveragingCounts {
-    int sht40_temp;
-    int sht40_humidity;
-    int ds18b20_temp;
-    int ina219_voltage;
-    int ina219_current;
 };
 
 struct DewHeaterConfig {
@@ -86,9 +72,7 @@ struct Sht40AutoDryConfig {
 // Main configuration struct
 struct Config {
     SensorOffsets sensor_offsets;
-    UpdateIntervals update_intervals_ms;
     PowerStartupStates power_startup_states;
-    AveragingCounts averaging_counts;
     float adj_conv_preset_v;
     Sht40AutoDryConfig sht40_auto_dry;
     DewHeaterConfig dew_heaters[MAX_DEW_HEATERS];
