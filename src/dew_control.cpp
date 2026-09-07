@@ -160,7 +160,32 @@ static int compute_current_limit_cap(float measured_current_a) {
     float limit = config.current_limit_amps;
     xSemaphoreGive(config_mutex);
 
-    if (!enabled || limit <= 0) return 100;
+    if (!enabled || limit <= 0) {
+        // Keep the damped state in sync while disabled (or misconfigured), not just the return
+        // value - otherwise a value left low by an earlier session (possibly a much lower limit,
+        // long since changed or disabled) sits frozen and stale, and re-enabling later resumes
+        // the climb back to 100 from wherever it happened to be frozen instead of from a clean
+        // unthrottled baseline. Found via a real report: current comfortably below a freshly-set
+        // 2A limit, yet still shown/reported as throttled for many ticks after re-enabling.
+        smoothed_current_limit_cap = 100.0f;
+        return 100;
+    }
+
+    // sensor_cache.ina_current (and so measured_current_a, derived from it) starts as NaN at
+    // boot (see sensors.cpp's setup_sensors()) and only becomes a real reading once the INA219's
+    // first successful conversion completes. dew_control_task()'s very first tick runs almost
+    // immediately after boot, with no initial delay, and can easily win that race - especially
+    // now that a real conversion takes 68.1ms (128-sample averaging, see the INA219 aliasing
+    // fix) rather than 532us. Found via real hardware testing: (int) of a NaN float is undefined
+    // behavior in C++ - on this target it produced a wildly out-of-range value (hundreds of
+    // millions) for target_cap below, which the damping formula then applied "correctly" against,
+    // corrupting smoothed_current_limit_cap for many subsequent ticks even after real readings
+    // started arriving. Hold at whatever's already damped rather than react to an unknown
+    // reading - avoids the UB entirely, and is also just the more sensible behavior (don't
+    // relax OR panic-throttle based on data that isn't there yet).
+    if (isnan(measured_current_a)) {
+        return (int)smoothed_current_limit_cap;
+    }
 
     float ramp_start = limit - CURRENT_LIMIT_RAMP_WIDTH_A;
     int target_cap;
@@ -184,6 +209,25 @@ static int compute_current_limit_cap(float measured_current_a) {
     // a swing the connected heater causes, actually generalizes.
     const float SMOOTHING_ALPHA = 0.3f; // lower = smoother/slower, higher = snappier/twitchier
     smoothed_current_limit_cap += SMOOTHING_ALPHA * (target_cap - smoothed_current_limit_cap);
+
+    // Snap once close enough, rather than let this crawl asymptotically all the way - found via
+    // real testing: recovering from a genuinely-throttled state back up to 100 (current safely
+    // back below the ramp) could otherwise take many minutes to actually reach exactly 100.0f,
+    // since each step only closes 30% of a shrinking remaining gap - float32 precision eventually
+    // gets there, but only after dozens of ticks, during which is_current_limit_active() keeps
+    // reporting "still active" despite the real ceiling having no practical effect on any
+    // heater's actual output anymore. One percentage point is well below what's ever visible in
+    // a reported duty value, so snapping this early changes nothing observable except how long
+    // the "active" flag lingers.
+    if (fabs((float)target_cap - smoothed_current_limit_cap) < 1.0f) {
+        smoothed_current_limit_cap = (float)target_cap;
+    }
+
+    // Defense in depth: the NaN guard above should be the only way this ever leaves the valid
+    // range, but constraining the actual returned/stored value costs nothing and guarantees the
+    // rest of the system (is_current_limit_active(), the min() combination with max_duty_percent
+    // at every call site) never has to reason about an out-of-range cap regardless of cause.
+    smoothed_current_limit_cap = constrain(smoothed_current_limit_cap, 0.0f, 100.0f);
     return (int)smoothed_current_limit_cap;
 }
 
@@ -211,6 +255,18 @@ int get_dew_heater_mode(int heater_index) {
 }
 
 void setup_dew_heaters() {
+    // Explicit, defensive (re-)initialization - found via real hardware testing that
+    // smoothed_current_limit_cap's static initializer (`= 100.0f`) was not reliably taking
+    // effect: a fresh boot with the current limit already exceeded (a saved config + high
+    // startup demand) showed a wildly out-of-range starting value (hundreds of millions) via a
+    // temporary debug field, decaying correctly toward the real target from there but taking
+    // many minutes to re-enter the normal 0-100 range - explains the "stuck showing throttled
+    // despite safely low current" symptom this was chasing. Whatever the exact cause (this
+    // target's static-init behavior across reset types isn't something to rely on blindly),
+    // setting it explicitly here - a point definitely reached exactly once per boot, before
+    // dew_control_task's first tick - is bulletproof regardless.
+    smoothed_current_limit_cap = 100.0f;
+
     for (int i = 0; i < MAX_DEW_HEATERS; i++) {
         if (HEATER_PINS[i] == -1) continue; // Skip unused heaters
 
@@ -275,6 +331,15 @@ static inline void set_heater_power_output(int heater_index, int power_percentag
 
 void dew_control_task(void *pvParameters) {
     esp_task_wdt_add(NULL); // Register this task with the watchdog
+
+    // Re-affirm right here, as literally the last thing before this value is ever read - the
+    // setup_dew_heaters() init (still in place, harmless belt-and-suspenders) apparently isn't
+    // the last write to this memory before dew_control_task's own first tick reads it, since
+    // real hardware testing kept showing huge garbage values at first tick regardless. This is
+    // the tightest possible window: nothing else in this task's own code runs between this line
+    // and the first real use, a few lines down in the same iteration.
+    smoothed_current_limit_cap = 100.0f;
+
     for (;;) {
         SensorValues sensor_values;
         get_sensor_values(sensor_values); // Get thread-safe copy of all sensor data
