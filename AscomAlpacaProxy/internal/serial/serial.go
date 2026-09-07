@@ -8,6 +8,7 @@ import (
 	"sv241pro-alpaca-proxy/internal/config"
 	"sv241pro-alpaca-proxy/internal/events"
 	"sv241pro-alpaca-proxy/internal/logger"
+	"sv241pro-alpaca-proxy/internal/notify"
 	"sync"
 	"time"
 )
@@ -579,13 +580,11 @@ func reconnect(newPortName string, preOpenedPort Port) {
 
 			// Send a connected event if the status changed from disconnected.
 			if lastSentStatus == events.Disconnected {
-				// Use a non-blocking send. If the channel is full or no one is listening,
-				// this will not block the serial manager. This is important at startup.
-				select {
-				case events.ComPortStatusChan <- events.Connected:
-					lastSentStatus = events.Connected
-				default: // Do nothing if the channel is not ready.
-				}
+				lastSentStatus = events.Connected
+				notify.Dispatch(notify.Notification{
+					Title:   "SV241 Reconnected",
+					Message: "Connection to the COM port has been restored.",
+				})
 
 				// TRIGGER CONFIG SYNC
 				// Run sequentially in a single goroutine to avoid command storms
@@ -612,12 +611,11 @@ func handleDisconnect() {
 	if sv241Port != nil {
 		// Send a disconnected event if the status changed from connected.
 		if lastSentStatus == events.Connected {
-			// Use a non-blocking send.
-			select {
-			case events.ComPortStatusChan <- events.Disconnected:
-				lastSentStatus = events.Disconnected
-			default: // Do nothing if the channel is not ready.
-			}
+			lastSentStatus = events.Disconnected
+			notify.Dispatch(notify.Notification{
+				Title:   "SV241 Connection Lost",
+				Message: "Connection to the COM port was interrupted. Please check the device and cable.",
+			})
 		}
 		sv241Port.Close()
 		sv241Port = nil
@@ -760,24 +758,89 @@ func updateConditionsCacheFromJSON(conditionsJSON string) {
 		Conditions.Lock()
 		newActive, _ := conditionsData["cl"].(bool)
 		wasActive, _ := Conditions.Data["cl"].(bool) // nil map / missing key both read as false
+
+		// Voltage warning: computed proxy-side (not by the firmware) from the same reading, and
+		// injected into this same map - it flows straight through to /api/v1/status alongside
+		// "cl" with no new endpoint needed. See computeVoltageWarningLevel's doc comment for why
+		// this lives here rather than in the firmware.
+		newVoltageLevel := computeVoltageWarningLevel(conditionsData)
+		wasVoltageLevel, _ := Conditions.Data["vw"].(int)
+		conditionsData["vw"] = newVoltageLevel
+
 		Conditions.Data = conditionsData
 		Conditions.LastUpdate = time.Now()
 		Conditions.Unlock()
 
 		// Edge, not level: only notify on an actual transition, not on every 5s poll tick that
-		// happens to still be "active". Non-blocking send (buffered 1) - a systray-less build
-		// (or one where nobody's listening yet) must never block the cache updater.
+		// happens to still be "active".
 		if newActive != wasActive {
-			select {
-			case events.CurrentLimitStatusChan <- newActive:
-			default:
+			if newActive {
+				notify.Dispatch(notify.Notification{
+					Title:   "SV241 Heater Output Reduced",
+					Message: "Dew heater power was reduced because the total input current is approaching the configured limit.",
+				})
+			} else {
+				notify.Dispatch(notify.Notification{
+					Title:   "SV241 Heater Output Restored",
+					Message: "Total input current dropped back below the configured limit - dew heater power is no longer being reduced.",
+				})
 			}
+		}
+		if newVoltageLevel != wasVoltageLevel {
+			notifyVoltageLevelChange(newVoltageLevel)
 		}
 
 		logMemoryStatus(conditionsData)
 		logger.Debug("Successfully updated conditions cache.")
 	} else {
 		logger.Warn("Failed to unmarshal conditions JSON from device. Raw data: %s", conditionsJSON)
+	}
+}
+
+// computeVoltageWarningLevel returns 0 (ok), 1 (warning) or 2 (critical) based on the just-
+// received voltage reading ("v" in conditionsData, from the firmware's {"get":"sensors"}
+// response) and the configured thresholds. 0 if voltage is missing/unparseable, or if the
+// feature is disabled (VoltageWarningThreshold <= 0 - same "<=0 means off" convention as
+// current_limit_amps). Computed here rather than in firmware: the only consumers (desktop
+// notification, UI indicator, telemetry) are proxy/UI-side already, and the proxy already
+// receives "v" on every poll - no firmware change or reflash needed for a pure alerting
+// feature that doesn't need to survive the proxy itself being gone.
+func computeVoltageWarningLevel(conditionsData map[string]interface{}) int {
+	threshold := config.Get().VoltageWarningThreshold
+	critical := config.Get().VoltageCriticalThreshold
+	if threshold <= 0 {
+		return 0
+	}
+	v, ok := conditionsData["v"].(float64)
+	if !ok {
+		return 0
+	}
+	if v <= critical {
+		return 2
+	}
+	if v <= threshold {
+		return 1
+	}
+	return 0
+}
+
+func notifyVoltageLevelChange(level int) {
+	switch level {
+	case 2:
+		notify.Dispatch(notify.Notification{
+			Title:   "SV241 Critical Voltage",
+			Message: fmt.Sprintf("Input voltage dropped to or below the critical threshold (%.1fV).", config.Get().VoltageCriticalThreshold),
+		})
+	case 1:
+		notify.Dispatch(notify.Notification{
+			Title:   "SV241 Low Voltage",
+			Message: fmt.Sprintf("Input voltage dropped to or below the warning threshold (%.1fV).", config.Get().VoltageWarningThreshold),
+		})
+	case 0:
+		notify.Dispatch(notify.Notification{
+			Title:   "SV241 Voltage Restored",
+			Message: "Input voltage is back above the configured thresholds.",
+		})
 	}
 }
 

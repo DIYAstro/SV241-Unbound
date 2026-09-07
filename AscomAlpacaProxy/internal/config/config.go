@@ -75,6 +75,13 @@ type ProxyConfig struct {
 	WeatherModel          string            `json:"weatherModel"`          // best_match, icon_seamless, etc.
 	WeatherInterval       int               `json:"weatherInterval"`       // Minutes
 	WeatherSourcePriority map[string]string `json:"weatherSourcePriority"` // metric -> hardware|internet|hybrid
+
+	// Voltage warning thresholds (see internal/serial's computeVoltageWarningLevel) - proxy-side,
+	// not firmware: the only consumers (desktop notification, UI indicator, telemetry) are
+	// already proxy/UI-side, so there's no reason to involve the firmware or require a reflash.
+	// <=0 means disabled, same convention as the firmware's own current_limit_amps.
+	VoltageWarningThreshold  float64 `json:"voltageWarningThreshold"`  // Volts; e.g. 11.5
+	VoltageCriticalThreshold float64 `json:"voltageCriticalThreshold"` // Volts; e.g. 11.0
 }
 
 // CombinedConfig defines the structure for a full backup file.

@@ -28,6 +28,10 @@ const emit = defineEmits(['open-explorer'])
         <span class="label">Voltage</span>
         <span class="value" id="status-v">
             {{ isConnected ? (liveStatus.v || 0).toFixed(2) : '--' }} <small>V</small>
+            <span v-if="isConnected && liveStatus.vw === 1" class="voltage-warning-dot"
+                  title="Input voltage at or below the configured warning threshold (see Proxy tab)."></span>
+            <span v-if="isConnected && liveStatus.vw === 2" class="voltage-critical-dot"
+                  title="Input voltage at or below the configured critical threshold (see Proxy tab)."></span>
         </span>
         </div>
 
@@ -180,5 +184,35 @@ const emit = defineEmits(['open-explorer'])
   background: var(--danger-color, #e04040);
   vertical-align: middle;
   cursor: help;
+}
+
+/* Voltage warning/critical indicators (see Proxy tab for the configured thresholds). Critical
+   blinks - the more urgent of the two, kept visually distinct from the steady warning dot so
+   neither drowns out the other. */
+.voltage-warning-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: #e0a020;
+  vertical-align: middle;
+  cursor: help;
+}
+
+.voltage-critical-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: var(--danger-color, #e04040);
+  vertical-align: middle;
+  cursor: help;
+  animation: voltage-critical-blink 1s step-start infinite;
+}
+
+@keyframes voltage-critical-blink {
+  50% { opacity: 0; }
 }
 </style>

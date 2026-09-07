@@ -8,7 +8,6 @@ import (
 	"sv241pro-alpaca-proxy/internal/alpaca"
 	"sv241pro-alpaca-proxy/internal/backup"
 	"sv241pro-alpaca-proxy/internal/config"
-	"sv241pro-alpaca-proxy/internal/events"
 	"sv241pro-alpaca-proxy/internal/logger"
 	"sv241pro-alpaca-proxy/internal/logstream"
 	"sv241pro-alpaca-proxy/internal/serial"
@@ -57,9 +56,6 @@ func startApp() {
 	// 4. Start background tasks for serial communication and cache updates.
 	// This will perform the initial connection attempt.
 	serial.StartManager()
-
-	// Ensure the event listener is ready. This call is safe to make here.
-	events.StartListener(func() {}) // This just ensures the 'once.Do' is triggered if it hasn't been already.
 
 	// 5. Start the Alpaca discovery responder.
 	go alpaca.RespondToDiscovery()
