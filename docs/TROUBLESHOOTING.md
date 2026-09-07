@@ -120,13 +120,16 @@ If using the "Master Power" switch to turn on all devices, NINA may report a tim
 This is almost always an **I2C Bus Error**. Most internal sensors (SHT40 for ambient data, INA219 for power monitoring) share the same communication bus (I2C). If one sensor has a bad connection or is partially unplugged, it can "short" or block the entire bus, causing all other I2C sensors to fail as well.
 
 **Solution:**
-1.  **Disconnect the device from power.**
-2.  Check the **physical plug** of the external Temperature/Humidity sensor (SHT40). 
+1.  The firmware detects repeated I2C read failures on its own and attempts an automatic bus recovery after a few seconds - most transient cases (a brief glitch, a momentarily loose plug) resolve by themselves without you having to do anything. Give it a few seconds before assuming it's stuck.
+2.  If it's still showing `0`/`null` after that, check the **physical plug** of the external Temperature/Humidity sensor (SHT40).
 3.  Ensure the plug is **fully clicked/seated** into the socket of the SV241 box. Even a half-millimeter gap can cause the I2C bus to hang.
-4.  Reconnect power and check the values again.
+4.  As a last resort, a power cycle (disconnect and reconnect power) always clears it.
 
 > [!NOTE]
 > The Lens Temperature sensor (DS18B20) uses a different protocol (1-Wire), which is why it often continues to work even if the I2C bus is blocked.
+
+> [!WARNING]
+> **Don't unplug/replug any sensor connector while the box is powered on**, regardless of which one. Depending on the connector, a live disconnect or reconnect can momentarily bridge power against a data or ground line as the pins mate/separate - at best this looks like the I2C error above, at worst it briefly browns out the whole board and resets the ESP32 (you'll see the device drop off and reconnect in the proxy's log). Neither is likely to cause lasting damage, but there's no good reason to risk it - power down first if you need to re-seat a sensor cable.
 
 ---
 
