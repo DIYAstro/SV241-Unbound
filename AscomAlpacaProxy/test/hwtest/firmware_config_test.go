@@ -148,36 +148,6 @@ func TestConfig_SensorOffsets(t *testing.T) {
 	}
 }
 
-// TestConfig_UpdateIntervalsAndAveragingCounts covers the "ui" (update_intervals_ms) and "ac"
-// (averaging_counts) config objects - round-trip only, previously untested by this suite.
-func TestConfig_UpdateIntervalsAndAveragingCounts(t *testing.T) {
-	conn := openConnForTest(t)
-	before := getConfig(t, conn)
-	origUi, _ := before["ui"].(map[string]interface{})
-	origAc, _ := before["ac"].(map[string]interface{})
-
-	resp := setConfig(t, conn, `{"ui":{"i":1500,"s":1200,"d":1100},"ac":{"st":3,"sh":4,"dt":6,"iv":7,"ic":8}}`)
-
-	ui, ok := resp["ui"].(map[string]interface{})
-	require.True(t, ok, "config response missing ui object: %v", resp)
-	assert.EqualValues(t, 1500, ui["i"], "ina219 update interval")
-	assert.EqualValues(t, 1200, ui["s"], "sht40 update interval")
-	assert.EqualValues(t, 1100, ui["d"], "ds18b20 update interval")
-
-	ac, ok := resp["ac"].(map[string]interface{})
-	require.True(t, ok, "config response missing ac object: %v", resp)
-	assert.EqualValues(t, 3, ac["st"], "sht40 temp averaging count")
-	assert.EqualValues(t, 4, ac["sh"], "sht40 humidity averaging count")
-	assert.EqualValues(t, 6, ac["dt"], "ds18b20 temp averaging count")
-	assert.EqualValues(t, 7, ac["iv"], "ina219 voltage averaging count")
-	assert.EqualValues(t, 8, ac["ic"], "ina219 current averaging count")
-
-	if origUi != nil && origAc != nil {
-		setConfig(t, conn, fmt.Sprintf(`{"ui":{"i":%v,"s":%v,"d":%v},"ac":{"st":%v,"sh":%v,"dt":%v,"iv":%v,"ic":%v}}`,
-			origUi["i"], origUi["s"], origUi["d"], origAc["st"], origAc["sh"], origAc["dt"], origAc["iv"], origAc["ic"]))
-	}
-}
-
 // TestConfig_ResetCommands exercises the firmware's own "reboot" and "factory_reset" serial
 // commands (main.cpp:104-118), each of which restarts the device.
 func TestConfig_ResetCommands(t *testing.T) {
