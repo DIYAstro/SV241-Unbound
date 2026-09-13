@@ -137,15 +137,15 @@ This is almost always an **I2C Bus Error**. Most internal sensors (SHT40 for amb
 
 ### Web Flasher not working
 
-The proxy's own built-in flasher (`http://<proxy-address>:32241/flasher/`) flashes natively from
-the proxy itself - it no longer uses the browser's Web Serial API, so it works in any browser
-(including Firefox and Safari) and from any device on your network, not just Chrome/Edge running
-on the same machine the box is plugged into. If it fails:
+The proxy's own built-in flasher (Setup page → **System** tab → **Firmware Update**) flashes
+natively from the proxy itself - it no longer uses the browser's Web Serial API, so it works in
+any browser (including Firefox and Safari) and from any device on your network, not just
+Chrome/Edge running on the same machine the box is plugged into. If it fails:
 
 1. **Check the port picker.** If more than one CH340-based USB device is connected, the flasher
    will ask you to pick which one to flash instead of guessing - make sure you picked the right
-   one (see the warning box on that page).
-2. Disconnect and reconnect the USB cable, then reload the page.
+   one (see the warning box in that dialog).
+2. Disconnect and reconnect the USB cable, then close and reopen the Firmware Update dialog.
 3. Try a different USB port (preferably directly on the computer, not a hub).
 4. **Use a shorter USB cable:** flashing can fail with long or low-quality cables.
 5. **Try the standalone online flasher instead:** [diyastro.github.io/SV241-Unbound](https://diyastro.github.io/SV241-Unbound/) - a separate, browser-based flasher for when the proxy itself won't start or isn't installed at all. This one *does* need Chrome or Edge (Web Serial API) and a browser running on the same machine the box is plugged into, since it has no proxy backend to talk to.

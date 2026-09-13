@@ -24,8 +24,8 @@ const (
 	appOffset        uint32 = 0x10000
 )
 
-// loadBundledImages reads the three flash images bundled with this proxy build - the same bytes
-// server.go already serves at /flasher/firmware/*.bin for the standalone web flasher's manifest.
+// loadBundledImages reads the three flash images bundled with this proxy build (see flasherFS's
+// own doc comment in flasher.go) directly from the embedded filesystem - never served over HTTP.
 func loadBundledImages() ([]espflasher.ImagePart, error) {
 	if flasherFS == nil {
 		return nil, fmt.Errorf("flasher not initialized")

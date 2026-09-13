@@ -148,13 +148,9 @@ started) or the version shown in the web interface.
 
 The proxy has a built-in web flasher, and unlike before it no longer needs a browser running on
 the Pi itself - flashing now happens on the proxy's own side of the USB connection, so any browser
-on the same network works, the same way the rest of the proxy's web interface already does. Open:
-
-```
-http://<pi-ip-address>:32241/flasher/
-```
-
-and follow the on-screen instructions - no VNC session needed just to reach it.
+on the same network works, the same way the rest of the proxy's web interface already does. Open
+the proxy's Setup page (`http://<pi-ip-address>:32241/setup`), go to the **System** tab, and click
+**Firmware Update** under Danger Zone - it opens right there as a dialog, no VNC session needed.
 
 > [!NOTE]
 > This page has no login of its own (matching the rest of this proxy's setup UI), so anyone who

@@ -1,42 +1,53 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useDeviceStore } from '../stores/device'
+import { useFlasherStore } from '../stores/flasher'
 
 const showBanner = ref(false)
 const installedVersion = ref('')
 const bundledVersion = ref('')
 
+const deviceStore = useDeviceStore()
+const { firmwareVersion } = storeToRefs(deviceStore)
+const flasher = useFlasherStore()
+
 onMounted(async () => {
     await checkFirmwareUpdate()
 })
 
+// Re-check whenever the device store's own polled firmware version changes - in particular,
+// right after FirmwareFlasher.vue refreshes it on a successful flash, so this banner hides itself
+// without needing a page reload.
+watch(firmwareVersion, () => { checkFirmwareUpdate() })
+
 async function checkFirmwareUpdate() {
     try {
-        // Fetch installed version from API
-        const fwRes = await fetch('/api/v1/firmware/version')
-        if (!fwRes.ok) return // Device not connected
-        
-        const fwData = await fwRes.json()
-        installedVersion.value = fwData.version
-        if (!installedVersion.value || installedVersion.value.toLowerCase() === 'unknown') return
+        // Single call covers both installed and bundled version (previously two separate
+        // fetches, the second of which - a direct /flasher/firmware/version.json request - no
+        // longer exists now that the standalone flasher page is gone; see
+        // internal/flasher.GetInfo for how it derives both).
+        const res = await fetch('/api/v1/flash/info')
+        if (!res.ok) return
+        const info = await res.json()
 
-        // Fetch bundled version
-        const bundledRes = await fetch('/flasher/firmware/version.json')
-        if (!bundledRes.ok) return
-        
-        const bundledData = await bundledRes.json()
-        bundledVersion.value = bundledData.version
-
-        // Show banner if versions mismatch
-        if (bundledVersion.value && installedVersion.value !== bundledVersion.value) {
-            showBanner.value = true
+        installedVersion.value = info.installedVersion || ''
+        bundledVersion.value = info.bundledVersion || ''
+        if (!installedVersion.value || installedVersion.value.toLowerCase() === 'unknown') {
+            showBanner.value = false
+            return
         }
+
+        const bundledKnown = bundledVersion.value && bundledVersion.value.toLowerCase() !== 'unknown'
+        showBanner.value = bundledKnown && !info.upToDate
     } catch (e) {
         // Device not connected or error - don't show banner
+        showBanner.value = false
     }
 }
 
 function goToFlasher() {
-    window.location.href = '/flasher'
+    flasher.open()
 }
 </script>
 

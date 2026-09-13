@@ -55,11 +55,12 @@ import (
 // name (frontend-vue/public/flasher/index.html, before this feature).
 const ConfigFormatChangeVersion = "0.9.15"
 
-// flasherFS is the "flasher" subtree of the embedded frontend filesystem, set once by Init - the
-// same bytes server.go's own flasherFS (built the same way) serves over HTTP at
-// /flasher/firmware/*.bin for the standalone web flasher's manifest. Reading them directly here
-// avoids needing any new download/upload mechanism for "flash the version bundled with this
-// proxy build."
+// flasherFS is the "flasher" subtree of the embedded frontend filesystem, set once by Init -
+// frontend-vue/public/flasher/firmware/*.bin, populated by the build scripts. Nothing serves
+// these bytes over HTTP (there is no /flasher route - the in-app flasher is FirmwareFlasher.vue,
+// a modal on the Setup page, not a separate page); reading them directly here, entirely
+// server-side, avoids needing any download/upload mechanism for "flash the version bundled with
+// this proxy build."
 var flasherFS fs.FS
 
 // bundledFirmwareVersion is the version bundled with this proxy build, parsed once by Init from

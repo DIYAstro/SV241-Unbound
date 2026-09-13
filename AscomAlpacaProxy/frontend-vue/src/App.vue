@@ -9,6 +9,7 @@ import PowerControl from './components/PowerControl.vue'
 import Configuration from './components/Configuration.vue'
 import LiveLog from './components/LiveLog.vue'
 import AppModal from './components/AppModal.vue'
+import FirmwareFlasher from './components/FirmwareFlasher.vue'
 import { useDeviceStore } from './stores/device'
 import { useThemeStore } from './stores/theme'
 
@@ -28,6 +29,8 @@ onMounted(() => {
     <AppModal />
     <!-- Onboarding Wizard (shows on first run) -->
     <OnboardingWizard />
+    <!-- Firmware Flasher (opened from SystemSettings/OnboardingWizard/UpdateBanner via stores/flasher.js) -->
+    <FirmwareFlasher />
     
     <Header />
     

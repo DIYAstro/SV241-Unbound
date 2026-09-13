@@ -33,9 +33,13 @@ type wsClient struct {
 
 var hub = &wsHub{clients: make(map[*wsClient]bool)}
 
-// broadcast sends s to every connected /ws/flash client. A client whose send buffer is full
-// (i.e. isn't reading fast enough) is dropped rather than allowed to block the flash goroutine
-// calling this.
+// broadcast sends s to every connected /ws/flash client. A client whose send buffer is full (its
+// reader has fallen behind) has its oldest queued update evicted to make room, rather than being
+// disconnected outright - dropping a stale intermediate progress percentage is harmless, but
+// disconnecting the client here risked losing the terminal (done/error) status for good, with
+// only the slower ~1.5s polling fallback (see FirmwareFlasher.vue) left to notice it eventually.
+// The client is now never removed from hub.clients by broadcast itself - only readPump's own
+// cleanup (on an actual connection close) does that.
 func broadcast(s JobStatus) {
 	data, err := json.Marshal(s)
 	if err != nil {
@@ -48,8 +52,19 @@ func broadcast(s JobStatus) {
 		select {
 		case c.send <- data:
 		default:
-			close(c.send)
-			delete(hub.clients, c)
+			// Full - drop the oldest queued update, then retry once. A concurrent reader could
+			// race us and drain a slot between these two selects; if so the second send just
+			// succeeds. If it races the other way (still full), this one broadcast is skipped
+			// for this client - the next status update will retry, and none of this is reachable
+			// for a terminal status anyway (nothing is ever broadcast after done/error).
+			select {
+			case <-c.send:
+			default:
+			}
+			select {
+			case c.send <- data:
+			default:
+			}
 		}
 	}
 }

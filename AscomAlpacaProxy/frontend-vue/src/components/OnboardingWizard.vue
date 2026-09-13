@@ -1,10 +1,12 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useDeviceStore } from '../stores/device'
+import { useFlasherStore } from '../stores/flasher'
 import { storeToRefs } from 'pinia'
 
 const store = useDeviceStore()
 const { proxyConfig } = storeToRefs(store)
+const flasher = useFlasherStore()
 
 const showModal = ref(false)
 const status = ref('Initializing...')
@@ -25,19 +27,22 @@ onMounted(async () => {
 async function runOnboarding() {
     const maxWaitSeconds = 15
     const pollIntervalMs = 2000
-    let installedVersion = null
+    let info = null
 
-    // Poll for firmware connection
+    // Poll for firmware connection - a single /api/v1/flash/info call now covers both installed
+    // and bundled version (previously two separate fetches, the second of which - a direct
+    // /flasher/firmware/version.json request - no longer exists now that the standalone flasher
+    // page is gone; see internal/flasher.GetInfo for how it derives both).
     for (let elapsed = 0; elapsed < maxWaitSeconds; elapsed += pollIntervalMs / 1000) {
         const remaining = maxWaitSeconds - elapsed
         status.value = `Waiting for device... (${remaining}s)`
 
         try {
-            const fwRes = await fetch('/api/v1/firmware/version')
-            if (fwRes.ok) {
-                const fwData = await fwRes.json()
-                if (fwData.version && fwData.version.toLowerCase() !== 'unknown') {
-                    installedVersion = fwData.version
+            const res = await fetch('/api/v1/flash/info')
+            if (res.ok) {
+                const data = await res.json()
+                if (data.installedVersion && data.installedVersion.toLowerCase() !== 'unknown') {
+                    info = data
                     break
                 }
             }
@@ -48,29 +53,21 @@ async function runOnboarding() {
         await new Promise(resolve => setTimeout(resolve, pollIntervalMs))
     }
 
-    if (installedVersion) {
-        // Firmware connected - check for update
-        try {
-            const bundledRes = await fetch('/flasher/firmware/version.json')
-            const bundledData = await bundledRes.json()
-            const bundledVersion = bundledData.version
-
-            if (installedVersion === bundledVersion) {
-                status.value = `✅ SV241-Unbound firmware detected.\nVersion: ${installedVersion}`
-                actions.value = [
-                    { label: 'Continue Setup', primary: true, handler: completeOnboarding }
-                ]
-            } else {
-                status.value = `⚠ Firmware update available.\nInstalled: ${installedVersion} → Available: ${bundledVersion}`
-                actions.value = [
-                    { label: 'Update Firmware', primary: true, handler: releaseAndFlash },
-                    { label: 'Skip', primary: false, handler: completeOnboarding }
-                ]
-            }
-        } catch (e) {
-            status.value = `✅ SV241-Unbound firmware detected.\nVersion: ${installedVersion}`
+    if (info) {
+        // Firmware connected - check for update. A bundled version GetInfo couldn't determine
+        // (e.g. a local dev build) must not be presented as a mismatch - same reasoning as
+        // FirmwareFlasher.vue's own "unable to compare" case.
+        const bundledKnown = info.bundledVersion && info.bundledVersion.toLowerCase() !== 'unknown'
+        if (!bundledKnown || info.upToDate) {
+            status.value = `✅ SV241-Unbound firmware detected.\nVersion: ${info.installedVersion}`
             actions.value = [
                 { label: 'Continue Setup', primary: true, handler: completeOnboarding }
+            ]
+        } else {
+            status.value = `⚠ Firmware update available.\nInstalled: ${info.installedVersion} → Available: ${info.bundledVersion}`
+            actions.value = [
+                { label: 'Update Firmware', primary: true, handler: releaseAndFlash },
+                { label: 'Skip', primary: false, handler: completeOnboarding }
             ]
         }
     } else {
@@ -83,11 +80,22 @@ async function runOnboarding() {
     }
 }
 
-function releaseAndFlash() {
-    // No release call needed here anymore: the in-app flasher only takes exclusive control of
-    // the port once a flash actually starts (see internal/flasher.StartFlash /
-    // serial.AcquirePortForFlashing), not just from having the page open.
-    window.location.href = '/flasher'
+async function releaseAndFlash() {
+    // Hide this wizard and persist firstRunComplete directly (same fields completeOnboarding()
+    // saves) WITHOUT its reload - a reload here would tear down the flasher modal we're about to
+    // open along with it. The flasher modal takes over from here; there's no need for this
+    // wizard to reappear once it's done or cancelled. It only takes exclusive control of the
+    // serial port once a flash actually starts (see internal/flasher.StartFlash /
+    // serial.AcquirePortForFlashing), not just from opening.
+    showModal.value = false
+    try {
+        const currentConfig = proxyConfig.value || {}
+        currentConfig.firstRunComplete = true
+        await store.saveProxyConfig(currentConfig)
+    } catch (e) {
+        console.error('Failed to save onboarding status', e)
+    }
+    flasher.open()
 }
 
 async function completeOnboarding() {

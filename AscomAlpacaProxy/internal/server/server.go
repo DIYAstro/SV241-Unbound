@@ -76,16 +76,18 @@ func setupRoutes(frontendFS fs.FS, appVersion string) {
 		}
 	})
 
-	http.HandleFunc("/flasher", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFileFS(w, r, frontendFS, "flasher/index.html")
-	})
-	// Create a sub-filesystem for the flasher directory so that /flasher/firmware/x.bin works correctly
-	flasherFS, err := fs.Sub(frontendFS, "flasher")
-	if err != nil {
-		logger.Error("Failed to create flasher sub-filesystem: %v", err)
-	} else {
-		http.Handle("/flasher/", http.StripPrefix("/flasher/", http.FileServer(http.FS(flasherFS))))
-	}
+	// There is deliberately no /flasher route anymore - the in-app flasher is now the
+	// FirmwareFlasher.vue modal (opened from the Setup page itself), not a separate page. The
+	// bundled firmware bytes it flashes (frontend-vue/public/flasher/firmware/*.bin,
+	// version.json) still live under frontendFS and are read directly by internal/flasher.Init
+	// via its own fs.Sub(frontendFS, "flasher") - entirely Go-side, independent of any HTTP route.
+	// Explicitly 404 both forms rather than leaving them to fall through to the "/" catch-all
+	// above: with flasher/index.html gone, http.FileServer's default directory-listing behavior
+	// would otherwise expose the flasher/firmware/ subdirectory (and let anyone download the
+	// bundled .bin files directly) - harmless in itself, but not a deliberately exposed HTTP
+	// interface, so it's closed off rather than left as an accident of file removal.
+	http.HandleFunc("/flasher", http.NotFound)
+	http.HandleFunc("/flasher/", http.NotFound)
 
 	// --- Management API ---
 	http.HandleFunc("/management/v1/description", api.HandleManagementDescription)

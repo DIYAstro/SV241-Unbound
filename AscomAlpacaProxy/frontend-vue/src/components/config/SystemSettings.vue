@@ -1,6 +1,7 @@
 <script setup>
 import { useModalStore } from '../../stores/modal'
 import { useDeviceStore } from '../../stores/device'
+import { useFlasherStore } from '../../stores/flasher'
 import { storeToRefs } from 'pinia'
 import { ref, watch } from 'vue'
 
@@ -328,8 +329,9 @@ function handleFactoryReset() {
     });
 }
 
+const flasher = useFlasherStore()
 function openFlasher() {
-    window.location.href = '/flasher';
+    flasher.open()
 }
 </script>
 

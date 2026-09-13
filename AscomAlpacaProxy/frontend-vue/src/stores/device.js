@@ -321,6 +321,7 @@ export const useDeviceStore = defineStore('device', () => {
         fetchConfig,
         saveConfig,
         saveProxyConfig,
+        fetchFirmwareVersion,
         setSwitch,
         setSwitchValue,
         setAllPower,

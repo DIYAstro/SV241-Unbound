@@ -22,10 +22,6 @@ export default defineConfig({
         target: 'http://localhost:32241',
         ws: true,
         changeOrigin: true,
-      },
-      '/flasher': {
-        target: 'http://localhost:32241',
-        changeOrigin: true,
       }
     }
   }
