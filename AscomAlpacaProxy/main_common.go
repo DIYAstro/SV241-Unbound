@@ -8,6 +8,7 @@ import (
 	"sv241pro-alpaca-proxy/internal/alpaca"
 	"sv241pro-alpaca-proxy/internal/backup"
 	"sv241pro-alpaca-proxy/internal/config"
+	"sv241pro-alpaca-proxy/internal/flasher"
 	"sv241pro-alpaca-proxy/internal/logger"
 	"sv241pro-alpaca-proxy/internal/logstream"
 	"sv241pro-alpaca-proxy/internal/serial"
@@ -65,6 +66,11 @@ func startApp() {
 
 	// 6. Start the weather service poller.
 	weather.GetService().Start()
+
+	// 6a. Wire the native firmware flasher (internal/flasher) to the same embedded frontend
+	// filesystem server.Start below uses - it reads the bundled bootloader/partitions/firmware
+	// bytes from the same "flasher/firmware/*.bin" files server.go already serves over HTTP.
+	flasher.Init(frontendFS)
 
 	// 7. Start the web server. This is a blocking call and will run for the
 	// lifetime of the application, so it must be last.

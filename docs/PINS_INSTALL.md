@@ -146,20 +146,21 @@ started) or the version shown in the web interface.
 
 ## 9. Updating the firmware
 
-The proxy has a built-in web flasher, but it needs a browser running **on the Pi itself** - the
-browser talks to the SV241 directly over USB, so it only works from the same machine the box is
-physically plugged into. **Opening it from another computer on the network will not work,** even
-though the proxy's own web interface otherwise works fine remotely.
-
-To get a browser on the Pi's own desktop, install PINS' VNC plugin first, then connect to the Pi
-over VNC. From inside that VNC session, open Chromium and go to:
+The proxy has a built-in web flasher, and unlike before it no longer needs a browser running on
+the Pi itself - flashing now happens on the proxy's own side of the USB connection, so any browser
+on the same network works, the same way the rest of the proxy's web interface already does. Open:
 
 ```
-http://localhost:32241/flasher/
+http://<pi-ip-address>:32241/flasher/
 ```
 
-(`localhost`, not the Pi's IP - you're already running the browser on the Pi itself.) From there,
-click Connect and follow the on-screen instructions.
+and follow the on-screen instructions - no VNC session needed just to reach it.
+
+> [!NOTE]
+> This page has no login of its own (matching the rest of this proxy's setup UI), so anyone who
+> can reach `<pi-ip-address>:32241` on your network can trigger a flash. That's normally fine on a
+> home/observatory LAN, but worth knowing before exposing this port more broadly (e.g. port
+> forwarding it to the internet - don't).
 
 ## Manually setting the serial port (advanced)
 

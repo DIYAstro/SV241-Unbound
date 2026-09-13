@@ -5,17 +5,18 @@ go 1.25.0
 require (
 	fyne.io/systray v1.12.2
 	github.com/go-toast/toast v0.0.0-20190211030409-01e6764cf0a4
+	github.com/google/gousb v1.1.3
 	github.com/gorilla/websocket v1.5.3
 	github.com/stretchr/testify v1.12.1
 	go.bug.st/serial v1.8.0
 	golang.org/x/sys v0.47.0
 	modernc.org/sqlite v1.57.0
+	tinygo.org/x/espflasher v0.8.1
 )
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
-	github.com/google/gousb v1.1.3 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect

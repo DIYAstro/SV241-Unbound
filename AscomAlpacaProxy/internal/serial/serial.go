@@ -636,6 +636,97 @@ func handleDisconnect() {
 	firmwareVersionMu.Unlock()
 }
 
+// AmbiguousPortError is returned by AcquirePortForFlashing when the device isn't currently
+// connected and more than one candidate CH340 device/port is present, with no way to
+// disambiguate automatically - a device with corrupted, erased, or never-flashed firmware can't
+// answer the ordinary JSON probe FindPort() uses to tell the SV241 apart from an unrelated
+// CH340-based adapter. Candidates lists every match found (a platform-specific identifier: a
+// ch340PathID on Linux, a COM/tty name on Windows/macOS) so the caller (internal/flasher, via the
+// in-app flasher's UI) can present them as a picker instead of guessing.
+type AmbiguousPortError struct {
+	Candidates []string
+}
+
+func (e *AmbiguousPortError) Error() string {
+	return fmt.Sprintf("multiple candidate devices found (%d) - please choose one", len(e.Candidates))
+}
+
+// AcquirePortForFlashing pauses auto-reconnect (like ReleasePort) and hands the currently open
+// Port to the caller for exclusive use by a native flash session (internal/flasher) - WITHOUT
+// closing it, unlike ReleasePort, since nothing outside this process needs the OS-level port
+// released for a native flash the way the old browser/Web-Serial flasher did. Removes the port
+// from sv241Port (so ProcessCommands and the watchdog see a clean "port not open" rather than
+// racing the flash session's own reads/writes on the same transport) - the caller owns closing
+// it or handing it back via ReleaseFlashSession.
+//
+// If no port is currently open (never connected, or the device is bricked so ordinary probing
+// never succeeded), attempts a flashing-specific discovery instead of failing outright - see
+// findPortForFlashing's per-platform implementations (ch340_linux.go / serial_platform_other.go)
+// for what that involves. preferredPortName, if non-empty, pins that discovery to a specific
+// device/port (typically the caller's own last-known port, or the user's explicit choice after a
+// prior *AmbiguousPortError); "" means "the currently configured port, or auto-detect".
+//
+// Returns the port, the name it should be persisted/adopted under once flashing succeeds (see
+// ReleaseFlashSession), or an error - which may be an *AmbiguousPortError the caller should
+// surface as a picker rather than a plain failure.
+func AcquirePortForFlashing(preferredPortName string) (Port, string, error) {
+	portMutex.Lock()
+	defer portMutex.Unlock()
+
+	if reconnectPaused {
+		return nil, "", errors.New("a flash session (or external release, e.g. the VS Code/esptool.py workflow) is already in progress")
+	}
+
+	if sv241Port != nil {
+		p := sv241Port
+		sv241Port = nil
+		reconnectPaused = true
+
+		name := config.Get().SerialPortName
+		if rn, ok := p.(resolvableName); ok {
+			if resolved := rn.ResolvedName(); resolved != "" {
+				name = resolved
+			}
+		}
+		logger.Info("AcquirePortForFlashing: adopting the currently open connection (%s) for a flash session.", name)
+		return p, name, nil
+	}
+
+	if preferredPortName == "" {
+		preferredPortName = config.Get().SerialPortName
+	}
+	logger.Info("AcquirePortForFlashing: not currently connected - searching for a device to flash...")
+	p, name, err := findPortForFlashing(preferredPortName)
+	if err != nil {
+		return nil, "", err
+	}
+	reconnectPaused = true
+	logger.Info("AcquirePortForFlashing: found device on %s for a flash session.", name)
+	return p, name, nil
+}
+
+// ReleaseFlashSession ends a flash session started by AcquirePortForFlashing and resumes normal
+// auto-reconnect. portName and resultPort should be exactly what AcquirePortForFlashing returned
+// (portName) and the same transport, still open, after a successful flash (resultPort) - if the
+// flash failed before completing, or the caller closed the transport itself, pass nil and the
+// ordinary watchdog (ManageConnection) will rediscover the device on its own next cycle.
+//
+// Passing a non-nil resultPort adopts it directly via the same reconnect() path a normal
+// (re)connect uses (persisting the resolved port name, sending the "reconnected" notification,
+// and kicking off the firmware-version/config-sync sequence) - avoiding a redundant reset pulse
+// to the device the way ReconnectWithHandle already avoids one for an auto-detected port.
+func ReleaseFlashSession(portName string, resultPort Port) {
+	portMutex.Lock()
+	defer portMutex.Unlock()
+
+	reconnectPaused = false
+	logger.Info("ReleaseFlashSession: flash session ended, auto-reconnect resumed.")
+
+	if resultPort != nil {
+		reconnect(portName, resultPort)
+	}
+}
+
 // ReleasePort closes the serial port to allow external tools (e.g., web flasher) to access it.
 // It also pauses auto-reconnect until ResumeReconnect is called.
 func ReleasePort() error {

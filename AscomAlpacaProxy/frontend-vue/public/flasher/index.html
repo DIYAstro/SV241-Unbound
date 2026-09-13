@@ -203,15 +203,57 @@
             color: var(--danger-color);
         }
 
-        esp-web-install-button {
-            --esp-tools-button-color: var(--primary-color);
-            --esp-tools-button-text-color: #000;
-            --esp-tools-button-border-radius: 8px;
+        .erase-option {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.6rem;
+            text-align: left;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin: 1rem 0;
         }
 
-        /* Special case for dark primary button text */
-        [data-theme="default"] esp-web-install-button {
-            --esp-tools-button-text-color: #0f0c29;
+        .erase-option input {
+            margin-top: 0.2rem;
+        }
+
+        .port-picker {
+            text-align: left;
+            margin: 1rem 0;
+        }
+
+        .port-picker label {
+            display: block;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.4rem;
+        }
+
+        .port-picker select {
+            width: 100%;
+            padding: 0.6rem;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--surface-border);
+            background: rgba(0, 0, 0, 0.3);
+            color: var(--text-primary);
+            font-family: var(--font-main);
+            font-size: 0.95rem;
+        }
+
+        .progress-track {
+            width: 100%;
+            height: 10px;
+            border-radius: 5px;
+            background: rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+            margin: 1rem 0 0.5rem;
+        }
+
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            background: var(--primary-color);
+            transition: width 0.3s ease;
         }
 
         #status {
@@ -255,7 +297,90 @@
             transform: translateY(-1px);
             filter: brightness(1.1);
         }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+            filter: none;
+        }
+
+        .btn-secondary {
+            width: 100%;
+            background: transparent;
+            color: var(--text-primary);
+            border: 1px solid var(--surface-border);
+            padding: 0.6rem 1rem;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 0.9rem;
+            font-family: var(--font-main);
+            margin-top: 0.75rem;
+        }
     </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Firmware Update</h1>
+        <p style="margin-top: -1rem; color: #aaa;">SV241-Unbound</p>
+
+        <div class="info" id="network-note">
+            <strong>ℹ️ Note:</strong> Flashing now runs on the proxy itself, so this page works from any
+            device on your network - not just a browser on the machine the SV241 box is physically plugged
+            into.
+        </div>
+
+        <div class="version-info">
+            <div class="version-item">
+                <div class="version-label">Installed Firmware</div>
+                <div class="version-value" id="installed-version">Loading...</div>
+            </div>
+            <div class="version-item">
+                <div class="version-label">Bundled Firmware</div>
+                <div class="version-value" id="bundled-version">Loading...</div>
+            </div>
+        </div>
+
+        <div id="status-message" class="info" style="display: none;"></div>
+
+        <div class="info">
+            <strong>ℹ️ Note:</strong> Firmware updates preserve your existing settings (switch names, startup
+            states, heater config, etc.) by default.
+            <br><br>
+            <button onclick="backupConfig()" class="btn-primary">
+                💾 Backup Now
+            </button>
+        </div>
+
+        <div class="erase-option">
+            <input type="checkbox" id="erase-checkbox">
+            <label for="erase-checkbox">Erase device and reset all settings to defaults</label>
+        </div>
+
+        <div class="warning" style="background-color: rgba(255, 152, 0, 0.1); border-color: #ff9800; color: #ff9800;">
+            <strong>⚠️ Verify Port:</strong> Make absolutely sure you select the correct device below!
+            If you have other ESP32 devices connected, their firmware could be overwritten instead.
+        </div>
+
+        <div class="port-picker" id="port-picker" style="display: none;">
+            <label for="port-select">Device to flash</label>
+            <select id="port-select"></select>
+        </div>
+
+        <div>
+            <button id="flash-button" class="btn-primary" onclick="startFlash()">⚡ Start Flashing</button>
+        </div>
+
+        <div class="progress-track" id="progress-track" style="display: none;">
+            <div class="progress-fill" id="progress-fill"></div>
+        </div>
+
+        <div id="status">Initializing...</div>
+
+        <a href="/setup" class="back-link">← Back to Setup</a>
+    </div>
 
     <script>
         // Apply theme early to prevent flash of unstyled content. Mirrors frontend-vue/index.html's
@@ -280,235 +405,65 @@
         })();
     </script>
 
-    <script type="module" src="/flasher/js/install-button.js"></script>
-</head>
-
-<body>
-    <div class="container">
-        <h1>Firmware Update</h1>
-        <p style="margin-top: -1rem; color: #aaa;">SV241-Unbound</p>
-
-        <div class="info">
-            <strong>ℹ️ Note:</strong> Flashing requires the browser to run on the same machine where the SV241-Box is
-            connected via USB. Opening this page remotely from another device will not work.
-        </div>
-
-        <div class="version-info">
-            <div class="version-item">
-                <div class="version-label">Installed Firmware</div>
-                <div class="version-value" id="installed-version">Loading...</div>
-            </div>
-            <div class="version-item">
-                <div class="version-label">Bundled Firmware</div>
-                <div class="version-value" id="bundled-version">Loading...</div>
-            </div>
-        </div>
-
-        <div id="status-message" class="info" style="display: none;"></div>
-
-        <div class="info">
-            <strong>ℹ️ Note:</strong> Firmware updates preserve your existing settings (switch names, startup
-            states, heater config, etc.) by default. If the installer asks whether to erase the device, leave
-            the box unchecked to keep your settings - only check it for a complete reset.
-            <br><br>
-            <button onclick="backupConfig()" class="btn-primary">
-                💾 Backup Now
-            </button>
-        </div>
-
-        <div class="warning" style="background-color: rgba(255, 152, 0, 0.1); border-color: #ff9800; color: #ff9800;">
-            <strong>⚠️ Verify Port:</strong> Make absolutely sure you select the correct COM port!
-            If you have other ESP32 devices connected, their firmware will be overwritten without further confirmation.
-        </div>
-
-        <div>
-            <esp-web-install-button id="install-button"></esp-web-install-button>
-        </div>
-
-        <div id="status">Initializing...</div>
-
-        <a href="#" class="back-link"
-            onclick="event.preventDefault(); fetch('/api/serial/resume', {method: 'POST'}).finally(() => window.location.href = '/setup');">←
-            Back to Setup</a>
-    </div>
-
     <script type="module">
         const statusEl = document.getElementById('status');
         const installedVersionEl = document.getElementById('installed-version');
         const bundledVersionEl = document.getElementById('bundled-version');
         const statusMessageEl = document.getElementById('status-message');
-        const installButton = document.querySelector("esp-web-install-button");
-        const releaseBtn = document.getElementById('release-btn');
+        const eraseCheckbox = document.getElementById('erase-checkbox');
+        const flashButton = document.getElementById('flash-button');
+        const portPicker = document.getElementById('port-picker');
+        const portSelect = document.getElementById('port-select');
+        const progressTrack = document.getElementById('progress-track');
+        const progressFill = document.getElementById('progress-fill');
 
-        // Construct the base URL from the current page's location
-        const baseUrl = window.location.origin + '/flasher/';
+        let installedVersion = 'Unknown';
+        let bundledVersion = 'Unknown';
+        let defaultPort = '';
 
-        // Builds the manifest and (re-)assigns it to the install button. new_install_prompt_erase
-        // lets esp-web-tools' own install dialog ask the user whether to erase, instead of
-        // silently erasing by default; without it, esp-web-tools 10.x's dashboard logic (bundled
-        // in install-dialog-*.js) skips straight to an unconditional erase whenever the installed
-        // firmware differs from this manifest's version - there's no separate "erase-first" HTML
-        // attribute that controls this in this version, this manifest property is the actual
-        // switch. Its own dialog's checkbox defaults to unchecked (no public API to change that),
-        // so a plain "Next" click keeps existing settings.
-        //
-        // promptErase is false for firmware older than CONFIG_FORMAT_CHANGE_VERSION on purpose:
-        // updating from those always resets settings to defaults anyway (different config
-        // filename, see the version-mismatch hint below), so the erase prompt would offer a
-        // choice with no real effect - skip the extra dialog and erase directly instead.
-        let currentManifestUrl = null;
-        function buildAndAssignManifest(promptErase) {
-            const manifest = {
-                name: "SV241-Unbound",
-                new_install_prompt_erase: promptErase,
-                builds: [
-                    {
-                        chipFamily: "ESP32",
-                        parts: [
-                            { path: `${baseUrl}firmware/bootloader.bin`, offset: 0x1000 },
-                            { path: `${baseUrl}firmware/partitions.bin`, offset: 0x8000 },
-                            { path: `${baseUrl}firmware/firmware.bin`, offset: 0x10000 },
-                        ],
-                    },
-                ],
-            };
-            const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
-            if (currentManifestUrl) URL.revokeObjectURL(currentManifestUrl);
-            currentManifestUrl = URL.createObjectURL(manifestBlob);
-            installButton.manifest = currentManifestUrl;
-        }
-
-        // Safe default before fetchVersions() knows the installed version (e.g. device not yet
-        // connected/detected) - prompt rather than silently erase if we can't tell yet.
-        buildAndAssignManifest(true);
-        installButton.setAttribute('flash-baud-rate', '115200');
-
-        // Intercept clicks on the install button to auto-release serial port first
-        let isReleased = false;
-
-        installButton.addEventListener('click', async (e) => {
-            // If already released, let the normal flow continue
-            if (isReleased) return;
-
-            // Prevent the default connect action
-            e.stopPropagation();
-            e.preventDefault();
-
-            statusEl.textContent = 'Releasing serial port...';
-
+        // Fetch installed/bundled version info and pre-set the erase checkbox - replaces the old
+        // client-side CONFIG_FORMAT_CHANGE_VERSION comparison, which now lives server-side in
+        // internal/flasher (see that package's GetInfo/ConfigFormatChangeVersion).
+        async function fetchInfo() {
             try {
-                const response = await fetch('/api/serial/release', { method: 'POST' });
-                const data = await response.json();
+                const res = await fetch('/api/v1/flash/info');
+                if (!res.ok) throw new Error('request failed');
+                const info = await res.json();
 
-                if (!data.success) {
-                    statusEl.textContent = 'Failed to release port: ' + (data.error || 'Unknown error');
-                    return;
-                }
-
-                // Wait for the port to be fully released
-                statusEl.textContent = 'Port released. Handling OS delay...';
-                await new Promise(resolve => setTimeout(resolve, 3000));
-
-                isReleased = true;
-                statusEl.textContent = 'Ready! Click CONNECT to select the COM port.';
-
-                // Automatically trigger the connect dialog
-                // In v10, the button inside shadowRoot is still the way to trigger it
-                installButton.shadowRoot?.querySelector('button')?.click();
-            } catch (err) {
-                statusEl.textContent = 'Error releasing port: ' + err.message;
-            }
-        }, true); // Use capture phase to intercept before the component handles it
-
-        // Listen for the install dialog state changes
-        installButton.addEventListener('state-changed', (e) => {
-            // When the dialog is closed/finished, reload the page to show updated version
-            if (e.detail.state === 'FINISHED') {
-                statusEl.textContent = 'Firmware update complete! Resuming connection...';
-                // Resume reconnect and reload after a short delay
-                fetch('/api/serial/resume', { method: 'POST' }).finally(() => {
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 3000);
-                });
-            }
-        });
-
-        // Returns true if version string a is older than version string b, comparing only the
-        // "x.y.z" numeric core. Any pre-release suffix (e.g. daily builds' "-daily.<short-sha>",
-        // or a manual "-beta.1") is stripped first - it's never purely numeric, and left in would
-        // silently break the segment-by-segment comparison below: Number("40-daily") is NaN, and
-        // every comparison with NaN (<, >, etc.) evaluates to false, which previously made *every*
-        // -daily./-beta. version compare as "not older than 0.9.15" no matter what its actual base
-        // version was (safe-by-accident here, since that only ever suppressed the one-time
-        // pre-0.9.15 auto-erase rather than triggering it - but still worth fixing properly).
-        function isVersionOlder(a, b) {
-            const baseVersion = (v) => v.split('-')[0];
-            const pa = baseVersion(a).split('.').map(Number);
-            const pb = baseVersion(b).split('.').map(Number);
-            for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-                const na = pa[i] || 0, nb = pb[i] || 0;
-                if (na !== nb) return na < nb;
-            }
-            return false;
-        }
-
-        // Firmware 0.9.15 switched the config storage format from a raw binary struct dump to
-        // JSON (different filename on the device's filesystem) - updating from an older version
-        // means the new firmware won't find its config file and resets to defaults regardless of
-        // whether the flash was erased. Not a bug, just an unavoidable one-time transition - see
-        // buildAndAssignManifest()'s promptErase argument and fetchVersions() below, which skip
-        // the (otherwise pointless) erase prompt for exactly this case.
-        const CONFIG_FORMAT_CHANGE_VERSION = '0.9.15';
-
-        // Fetch version info
-        async function fetchVersions() {
-            try {
-                const [fwRes, bundledRes] = await Promise.all([
-                    fetch('/api/v1/firmware/version'),
-                    fetch('/flasher/firmware/version.json')
-                ]);
-
-                const fwData = await fwRes.json();
-                const bundledData = await bundledRes.json();
-
-                const installedVersion = fwData.version || 'Unknown';
-                const bundledVersion = bundledData.version || 'Unknown';
+                installedVersion = info.installedVersion || 'Unknown';
+                bundledVersion = info.bundledVersion || 'Unknown';
+                defaultPort = info.defaultPort || '';
 
                 installedVersionEl.textContent = installedVersion;
                 bundledVersionEl.textContent = bundledVersion;
+                installedVersionEl.classList.remove('match', 'mismatch');
+                bundledVersionEl.classList.remove('match', 'mismatch');
 
-                // Compare versions
-                if (installedVersion === bundledVersion) {
+                if (info.upToDate) {
                     installedVersionEl.classList.add('match');
                     bundledVersionEl.classList.add('match');
                     statusMessageEl.textContent = '✓ Firmware is up to date. No update required.';
                     statusMessageEl.className = 'info';
                     statusMessageEl.style.display = 'block';
                     statusEl.textContent = 'Ready to flash. Existing settings will be preserved.';
-                } else if (installedVersion !== 'Unknown') {
+                } else if (installedVersion.toLowerCase() !== 'unknown') {
                     installedVersionEl.classList.add('mismatch');
-                    const predatesFormatChange = isVersionOlder(installedVersion, CONFIG_FORMAT_CHANGE_VERSION);
-                    // Now that the installed version is known, rebuild the manifest with the
-                    // correct promptErase decision (see buildAndAssignManifest()'s doc comment).
-                    buildAndAssignManifest(!predatesFormatChange);
-
-                    if (predatesFormatChange) {
-                        statusMessageEl.innerHTML = `⚠ Your installed firmware (${installedVersion}) predates ${CONFIG_FORMAT_CHANGE_VERSION}, ` +
+                    if (info.forceErase) {
+                        statusMessageEl.innerHTML = `⚠ Your installed firmware (${installedVersion}) predates 0.9.15, ` +
                             `which changed how settings are stored on the device. This update will reset your settings ` +
-                            `to defaults and erase the device - that's expected for this one-time transition. Future ` +
-                            `updates will preserve your settings normally.`;
-                        statusEl.textContent = 'Ready to flash. This one-time update will reset settings to defaults.';
+                            `to defaults - that's expected for this one-time transition. Future updates will preserve ` +
+                            `your settings normally.`;
+                        eraseCheckbox.checked = true;
+                        eraseCheckbox.disabled = true;
                     } else {
                         statusMessageEl.innerHTML = '⚠ Firmware version mismatch. Consider updating to ensure compatibility.';
-                        statusEl.textContent = 'Ready to flash. Existing settings will be preserved.';
+                        eraseCheckbox.checked = info.recommendEraseDefault;
                     }
                     statusMessageEl.className = 'warning';
                     statusMessageEl.style.display = 'block';
+                    statusEl.textContent = 'Ready to flash.';
                 } else {
-                    // Installed version unknown (device not detected yet) - keep the safe
-                    // "prompt rather than silently erase" default set at page load.
-                    statusEl.textContent = 'Ready to flash. Existing settings will be preserved.';
+                    statusEl.textContent = 'Ready to flash. Existing settings will be preserved (device not detected yet).';
                 }
             } catch (e) {
                 installedVersionEl.textContent = 'Not connected';
@@ -517,78 +472,143 @@
             }
         }
 
-        fetchVersions();
+        fetchInfo();
 
-        // Make releaseSerialPort available globally
-        window.releaseSerialPort = async function () {
-            releaseBtn.disabled = true;
-            releaseBtn.textContent = 'Releasing...';
+        function showPortPicker(candidates) {
+            portSelect.innerHTML = '';
+            for (const name of candidates) {
+                const opt = document.createElement('option');
+                opt.value = name;
+                opt.textContent = name;
+                if (name === defaultPort) opt.selected = true;
+                portSelect.appendChild(opt);
+            }
+            portPicker.style.display = 'block';
+        }
+
+        window.startFlash = async function () {
+            const erase = eraseCheckbox.checked;
+            const port = portPicker.style.display === 'none' ? '' : portSelect.value;
+
+            const confirmMsg = erase
+                ? `Are you sure? This will flash ${port || 'the SV241 box'} with firmware ${bundledVersion} and erase all settings.`
+                : `Are you sure? This will flash ${port || 'the SV241 box'} with firmware ${bundledVersion}.`;
+            if (!window.confirm(confirmMsg)) return;
+
+            flashButton.disabled = true;
+            statusEl.textContent = 'Starting flash...';
+            progressTrack.style.display = 'block';
+            progressFill.style.width = '0%';
 
             try {
-                const response = await fetch('/api/serial/release', { method: 'POST' });
-                const data = await response.json();
+                const res = await fetch('/api/v1/flash/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ erase, port }),
+                });
+                const data = await res.json().catch(() => ({}));
 
-                if (data.success) {
-                    releaseBtn.textContent = '✓ Port Released';
-                    releaseBtn.style.display = 'none';
-                    document.getElementById('resume-btn').style.display = 'inline-block';
-                    statusEl.textContent = 'Serial port released. You can now click CONNECT to flash.';
-                } else {
-                    releaseBtn.textContent = 'Release Failed';
-                    releaseBtn.disabled = false;
-                    statusEl.textContent = 'Failed to release port: ' + (data.error || 'Unknown error');
+                if (res.status === 409 && data.error === 'ambiguous_port') {
+                    statusEl.textContent = 'Multiple devices found - pick the one to flash and try again.';
+                    showPortPicker(data.candidates || []);
+                    flashButton.disabled = false;
+                    progressTrack.style.display = 'none';
+                    return;
                 }
+                if (!res.ok || !data.success) {
+                    throw new Error(data.error || 'Failed to start flash');
+                }
+
+                connectProgressSocket();
             } catch (e) {
-                releaseBtn.textContent = 'Release Failed';
-                releaseBtn.disabled = false;
-                statusEl.textContent = 'Error releasing port: ' + e.message;
+                statusEl.textContent = 'Error: ' + e.message;
+                flashButton.disabled = false;
+                progressTrack.style.display = 'none';
             }
         };
 
-        // Resume reconnect after flashing is done
-        window.resumeReconnect = async function () {
-            const resumeBtn = document.getElementById('resume-btn');
-            resumeBtn.disabled = true;
-            resumeBtn.textContent = 'Resuming...';
-
+        // connectProgressSocket streams JobStatus updates from the backend (see
+        // internal/flasher's ws.go) - falls back to polling /api/v1/flash/status if the socket
+        // can't be opened at all (e.g. a proxy in front of this page that doesn't pass WebSocket
+        // upgrades through).
+        function connectProgressSocket() {
+            let ws;
             try {
-                const response = await fetch('/api/serial/resume', { method: 'POST' });
-                const data = await response.json();
-
-                if (data.success) {
-                    resumeBtn.textContent = '✓ Reconnect Resumed';
-                    statusEl.textContent = 'Auto-reconnect resumed. The proxy will reconnect shortly.';
-                    // Reload version info after a delay
-                    setTimeout(fetchVersions, 6000);
-                } else {
-                    resumeBtn.textContent = 'Resume Failed';
-                    resumeBtn.disabled = false;
-                }
+                const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                ws = new WebSocket(`${proto}//${window.location.host}/ws/flash`);
             } catch (e) {
-                resumeBtn.textContent = 'Resume Failed';
-                resumeBtn.disabled = false;
+                pollProgress();
+                return;
             }
-        };
 
-        // Backup configuration function - with serial resume/release workflow
+            ws.onmessage = (event) => {
+                try {
+                    handleStatus(JSON.parse(event.data));
+                } catch (e) { /* ignore malformed frame */ }
+            };
+            ws.onerror = () => { ws.close(); };
+            ws.onclose = () => {
+                // If the socket drops before a terminal status arrived, fall back to polling
+                // rather than leaving the UI stuck - the flash itself keeps running server-side
+                // regardless of this connection.
+                if (!terminalReached) pollProgress();
+            };
+        }
+
+        let terminalReached = false;
+        let pollTimer = null;
+
+        function pollProgress() {
+            if (pollTimer) return;
+            pollTimer = setInterval(async () => {
+                try {
+                    const res = await fetch('/api/v1/flash/status');
+                    handleStatus(await res.json());
+                } catch (e) { /* transient - try again next tick */ }
+            }, 1500);
+        }
+
+        function handleStatus(s) {
+            const percent = Math.max(0, Math.min(100, s.percent || 0));
+            progressFill.style.width = percent + '%';
+
+            const labels = {
+                idle: 'Ready.',
+                connecting: s.message || 'Connecting to bootloader...',
+                erasing: s.message || 'Erasing flash...',
+                writing: s.message || 'Writing firmware...',
+                verifying: s.message || 'Verifying...',
+                resetting: s.message || 'Resetting device...',
+            };
+
+            if (s.phase === 'done') {
+                terminalReached = true;
+                if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+                statusEl.textContent = '✅ Flash complete! Reloading version info...';
+                progressFill.style.width = '100%';
+                setTimeout(fetchInfo, 3000);
+                setTimeout(() => { flashButton.disabled = false; progressTrack.style.display = 'none'; }, 3000);
+            } else if (s.phase === 'error') {
+                terminalReached = true;
+                if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+                statusEl.textContent = '❌ Flash failed: ' + (s.error || 'unknown error');
+                flashButton.disabled = false;
+            } else {
+                statusEl.textContent = labels[s.phase] || s.message || '...';
+            }
+        }
+
+        // Backup configuration - a plain read over the normal connection now (no release/resume
+        // dance needed: unlike the old browser flasher, this page never takes the port away from
+        // the proxy just by being open - only an actual flash in progress does that).
         window.backupConfig = async function () {
             const backupBtn = event.target;
             const originalText = backupBtn.textContent;
 
             try {
-                // Step 1: Resume serial connection
-                backupBtn.textContent = '🔄 Reconnecting...';
+                backupBtn.textContent = '💾 Creating backup...';
                 backupBtn.disabled = true;
 
-                const resumeRes = await fetch('/api/serial/resume', { method: 'POST' });
-                if (!resumeRes.ok) throw new Error('Failed to resume serial connection');
-
-                // Step 2: Wait for connection to establish (5 seconds)
-                backupBtn.textContent = '⏳ Waiting for connection...';
-                await new Promise(resolve => setTimeout(resolve, 5000));
-
-                // Step 3: Create backup
-                backupBtn.textContent = '💾 Creating backup...';
                 const response = await fetch('/api/v1/backup/create');
                 if (!response.ok) throw new Error('Backup creation failed');
 
@@ -602,19 +622,10 @@
                 URL.revokeObjectURL(url);
 
                 backupBtn.textContent = '✅ Backup Complete!';
-
             } catch (e) {
                 alert('Backup failed: ' + e.message);
                 backupBtn.textContent = '❌ Failed';
             } finally {
-                // Step 4: Always release serial port again for flasher
-                try {
-                    await fetch('/api/serial/release', { method: 'POST' });
-                } catch (releaseErr) {
-                    console.error('Failed to release port after backup:', releaseErr);
-                }
-
-                // Reset button after short delay
                 setTimeout(() => {
                     backupBtn.textContent = originalText;
                     backupBtn.disabled = false;

@@ -15,6 +15,8 @@ import (
 	"sv241pro-alpaca-proxy/internal/logger"
 
 	"github.com/google/gousb"
+
+	bugstserial "go.bug.st/serial"
 )
 
 // Why this file exists.
@@ -97,6 +99,18 @@ type ch340Port struct {
 	// to - set once in openPort(), read back by FindPort() so it can return it in place of the
 	// old, non-disambiguating ch340PortLabel constant. See ch340PathID for why this matters.
 	resolvedID string
+
+	// chipVersion is the CH340 chip revision byte read once in tryOpenCH340/FindCH340ForFlashing,
+	// kept around so SetMode (below) can reconfigure the baud divisor without re-reading it.
+	chipVersion byte
+
+	// rawControlEnabled, dtrState and rtsState back EnableRawControl/DisableRawControl and the
+	// SetDTR/SetRTS methods below - see EnableRawControl's doc comment. Guarded by mu (the same
+	// lock Read/SetReadTimeout already use) rather than a separate lock, since a flash session
+	// owns this port exclusively anyway and the extra guard only matters for readTimeout-style
+	// concurrent access from Read.
+	rawControlEnabled  bool
+	dtrState, rtsState bool
 }
 
 // ch340PortLabel is used in place of a real /dev/ttyUSB* path for logging when nothing more
@@ -242,7 +256,8 @@ func tryOpenCH340(dev *gousb.Device, forceful bool) (*ch340Port, bool) {
 		done()
 		return nil, false
 	}
-	if err := p.configureBaudAndLCR(version); err != nil {
+	p.chipVersion = version
+	if err := p.configureBaud(115200, version); err != nil {
 		logger.Debug("CH340 candidate %s: configure baud/LCR failed: %v", id, err)
 		done()
 		return nil, false
@@ -395,11 +410,21 @@ func (p *ch340Port) readChipVersion() (byte, error) {
 	return buf[0], nil
 }
 
-// configureBaudAndLCR mirrors ch341_configure()/ch341_set_baudrate_lcr() from the kernel driver:
+// configureBaud mirrors ch341_configure()/ch341_set_baudrate_lcr() from the kernel driver:
 // serial-init, then baud rate (prescaler+divisor in one register write), then line control
 // (8N1) for chip versions that support the LCR register (>= 0x30 - matches this device, version
 // 0x34, confirmed against real hardware).
-func (p *ch340Port) configureBaudAndLCR(version byte) error {
+//
+// Only 115200 is implemented - the only rate this hardware is ever actually run at (openPort()'s
+// gentle/forceful probing, and a native flash session per the decision recorded in
+// EnableRawControl's doc comment: this hardware's flash is small enough that raising the baud
+// rate for speed isn't worth the extra divisor-table work and its own hardware verification).
+// SetMode (below) rejects any other rate rather than silently ignoring it.
+func (p *ch340Port) configureBaud(baud int, version byte) error {
+	if baud != 115200 {
+		return fmt.Errorf("unsupported baud rate %d (only 115200 is implemented)", baud)
+	}
+
 	if err := p.controlOut(ch341ReqSerialInit, 0, 0); err != nil {
 		return fmt.Errorf("serial init: %w", err)
 	}
@@ -506,13 +531,100 @@ func (p *ch340Port) SetReadTimeout(d time.Duration) error {
 // connected - see ch340Candidates).
 func (p *ch340Port) ResolvedName() string { return p.resolvedID }
 
-// SetDTR and SetRTS are deliberate no-ops here. DTR/RTS are only ever touched once, internally,
-// by openPort()'s forceful fallback (see the package doc comment) - if the generic reconnect
-// logic in serial.go called through to a real DTR/RTS toggle here on every open (the way it does
-// on Windows), we'd reintroduce the exact reset-on-every-reconnect problem this file exists to
-// solve.
-func (p *ch340Port) SetDTR(dtr bool) error { return nil }
-func (p *ch340Port) SetRTS(rts bool) error { return nil }
+// SetDTR and SetRTS are no-ops by default. DTR/RTS are only ever touched once, internally, by
+// openPort()'s forceful fallback (see the package doc comment) - if the generic reconnect logic
+// in serial.go called through to a real DTR/RTS toggle here on every open (the way it does on
+// Windows), we'd reintroduce the exact reset-on-every-reconnect problem this file exists to
+// solve. EnableRawControl (below) is the one deliberate exception, gated to a native flash
+// session's own exclusive use of this port.
+func (p *ch340Port) SetDTR(dtr bool) error {
+	p.mu.Lock()
+	enabled := p.rawControlEnabled
+	p.dtrState = dtr
+	rts := p.rtsState
+	p.mu.Unlock()
+	if !enabled {
+		return nil
+	}
+	return p.setModemCtrl(dtr, rts)
+}
+
+func (p *ch340Port) SetRTS(rts bool) error {
+	p.mu.Lock()
+	enabled := p.rawControlEnabled
+	p.rtsState = rts
+	dtr := p.dtrState
+	p.mu.Unlock()
+	if !enabled {
+		return nil
+	}
+	return p.setModemCtrl(dtr, rts)
+}
+
+// EnableRawControl switches SetDTR/SetRTS above from their normal no-op to actually issuing
+// CH341_REQ_MODEM_CTRL transfers, for the duration of a native in-process flash session
+// (internal/flasher) - which needs the same real reset/bootloader-strap control over DTR/RTS
+// this file's own forceful-fallback path already uses internally (see setModemCtrl), because
+// espflasher's reset sequences (reset.go: classicReset, unixTightReset, tightReset, hardReset)
+// drive a real ESP32 bootloader/reset handshake through a series of individual SetDTR/SetRTS
+// calls, each of which must reach the chip's actual modem-control lines to work.
+//
+// setModemCtrl only accepts both lines' state in one combined call (a single hardware register
+// write), unlike go.bug.st/serial's independent SetDTR/SetRTS - so each individual call above
+// re-sends *both* dtrState and rtsState together, using whichever value the other line was last
+// set to. This faithfully reproduces the sequence of intermediate combined states a reset
+// sequence's separate calls intend, just as one full register write per call instead of one
+// per line.
+//
+// DisableRawControl restores the safe no-op default. Callers MUST call it (via defer) before
+// handing the port back to normal command processing - see serial.ReleaseFlashSession.
+func (p *ch340Port) EnableRawControl() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.rawControlEnabled = true
+}
+
+// DisableRawControl restores SetDTR/SetRTS to their safe no-op default. See EnableRawControl.
+func (p *ch340Port) DisableRawControl() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.rawControlEnabled = false
+}
+
+// SetMode implements go.bug.st/serial.Port (via the FlashablePort alias - see port.go), so a
+// native flash session can use this port as espflasher's transport. Only BaudRate is meaningful
+// for this chip - 8N1 is always enforced by configureBaud regardless of what Mode.DataBits/
+// Parity/StopBits ask for, so a Mode requesting anything but 115200 is rejected outright rather
+// than silently ignored. In practice espflasher never actually calls this on this hardware: the
+// flash session's FlasherOptions set FlashBaudRate equal to BaudRate (115200) precisely so its
+// internal changeBaud() step - the only caller of Port.SetMode - is skipped entirely (see
+// internal/flasher's doc comment for why higher flash speeds aren't implemented here).
+func (p *ch340Port) SetMode(mode *bugstserial.Mode) error {
+	if mode == nil || mode.BaudRate == 115200 {
+		return nil
+	}
+	return p.configureBaud(mode.BaudRate, p.chipVersion)
+}
+
+// Drain, ResetInputBuffer, ResetOutputBuffer and GetModemStatusBits implement go.bug.st/serial.Port
+// (via FlashablePort) as honest no-ops/stubs, not approximations of hardware that doesn't exist
+// here: raw libusb bulk transfers have no OS buffering layer beyond Read/Write themselves (nothing
+// to drain or reset), and this vendor protocol exposes no readable modem-status input lines (CTS/
+// DSR/RI/DCD) - the CH340's interrupt endpoint that would carry them is never opened by this file.
+func (p *ch340Port) Drain() error             { return nil }
+func (p *ch340Port) ResetInputBuffer() error  { return nil }
+func (p *ch340Port) ResetOutputBuffer() error { return nil }
+func (p *ch340Port) GetModemStatusBits() (*bugstserial.ModemStatusBits, error) {
+	return &bugstserial.ModemStatusBits{}, nil
+}
+
+// Break implements go.bug.st/serial.Port (via FlashablePort). Not supported by this vendor
+// protocol and not needed for ESP32 reset/flashing (which uses DTR/RTS, not a UART break
+// condition) - returns an error rather than silently doing nothing, since a caller that actually
+// depends on a break condition firing needs to know it didn't.
+func (p *ch340Port) Break(time.Duration) error {
+	return errors.New("break is not supported on this CH340 transport")
+}
 
 // Close implements Port.
 func (p *ch340Port) Close() error {
@@ -526,4 +638,131 @@ func (p *ch340Port) Close() error {
 		p.ctx.Close()
 	}
 	return nil
+}
+
+// FindCH340ForFlashing locates and claims a CH340 device for a native flash session
+// (internal/flasher), skipping the verifyResponsive JSON-ping check FindPort()/openPort() require
+// (see their doc comments) - a device whose application firmware is corrupted, erased, or never
+// flashed can't answer that ping, but must still be locatable and flashable.
+//
+// preferredID pins to a specific physical device via the same ch340PathID scheme ch340Candidates
+// already uses ("" means no preference). If exactly one CH340 device is present, or preferredID
+// matches one among several, that device is opened and returned directly - espflasher's own
+// ROM-bootloader sync (once Flasher.New runs) is verification enough that it's a real, responsive
+// chip. If more than one candidate is present and none is pinned (or the pin no longer matches
+// anything connected), returns an *AmbiguousPortError listing every candidate's ch340PathID -
+// resolving that ambiguity by guessing risks flashing the wrong physical device.
+func FindCH340ForFlashing(preferredID string) (*ch340Port, error) {
+	ctx := gousb.NewContext()
+
+	candidates, err := ch340Candidates(ctx, preferredID)
+	if err != nil {
+		ctx.Close()
+		return nil, err
+	}
+
+	closeExcept := func(keep *gousb.Device) {
+		for _, d := range candidates {
+			if d != keep {
+				d.Close()
+			}
+		}
+	}
+
+	if len(candidates) > 1 && !ch340PathIDMatches(preferredID, candidates[0].Desc) {
+		ids := make([]string, len(candidates))
+		for i, d := range candidates {
+			ids[i] = ch340PathID(d.Desc)
+		}
+		closeExcept(nil)
+		ctx.Close()
+		return nil, &AmbiguousPortError{Candidates: ids}
+	}
+
+	// Exactly one candidate, or a pinned match ch340Candidates already moved to the front.
+	dev := candidates[0]
+	closeExcept(dev)
+
+	if err := dev.SetAutoDetach(true); err != nil {
+		logger.Debug("FindCH340ForFlashing: set auto-detach failed: %v", err)
+	}
+	dev.ControlTimeout = ch340ControlTimeout
+
+	intf, done, err := dev.DefaultInterface()
+	if err != nil {
+		dev.Close()
+		ctx.Close()
+		return nil, fmt.Errorf("claim interface: %w", err)
+	}
+	epIn, err := intf.InEndpoint(ch340BulkEndpointNum)
+	if err != nil {
+		done()
+		dev.Close()
+		ctx.Close()
+		return nil, fmt.Errorf("open bulk IN endpoint: %w", err)
+	}
+	epOut, err := intf.OutEndpoint(ch340BulkEndpointNum)
+	if err != nil {
+		done()
+		dev.Close()
+		ctx.Close()
+		return nil, fmt.Errorf("open bulk OUT endpoint: %w", err)
+	}
+
+	p := &ch340Port{
+		ctx:         ctx,
+		dev:         dev,
+		done:        done,
+		epIn:        epIn,
+		epOut:       epOut,
+		readTimeout: 2 * time.Second,
+		resolvedID:  ch340PathID(dev.Desc),
+	}
+
+	version, err := p.readChipVersion()
+	if err != nil {
+		p.Close()
+		return nil, fmt.Errorf("read chip version: %w", err)
+	}
+	p.chipVersion = version
+	if err := p.configureBaud(115200, version); err != nil {
+		p.Close()
+		return nil, fmt.Errorf("configure baud/LCR: %w", err)
+	}
+
+	return p, nil
+}
+
+// PrepareFlashConnection is the Linux implementation of the cross-platform hook
+// internal/flasher calls right before connecting via espflasher - see serial_platform_windows.go
+// for the contract and why Windows needs a real implementation here. On Linux, ch340Port's
+// EnableRawControl-gated SetDTR/SetRTS (see that method's doc comment) already give espflasher's
+// own ResetDefault sequence real, working hardware control - no separate reset step is needed
+// here, so this is a no-op: returns port unchanged and alreadyInBootloader=false.
+func PrepareFlashConnection(port Port, portName string) (Port, bool, error) {
+	return port, false, nil
+}
+
+// HardResetToApp is the Linux implementation of the cross-platform hook internal/flasher calls
+// right after a successful flash (and after Flasher.Reset()), to reboot the chip into its
+// newly-written application firmware - see serial_platform_windows.go for why Windows needs a
+// real implementation here. On Linux, espflasher's own Flasher.Reset() already reaches real
+// hardware correctly through ch340Port's EnableRawControl-gated SetDTR/SetRTS (still enabled at
+// that point - see internal/flasher's runFlash, which only disables it once the whole flash
+// session ends), and the CH340 doesn't disconnect from USB across an ESP32 reset - so the
+// existing connection is still perfectly good afterward. Returns port unchanged; nothing to redo.
+func HardResetToApp(port Port, portName string) (Port, error) {
+	return port, nil
+}
+
+// findPortForFlashing is the Linux implementation of the cross-platform hook serial.go's
+// AcquirePortForFlashing calls (see serial_platform_other.go for the Windows/macOS
+// implementation) - a thin adapter from FindCH340ForFlashing's *ch340Port return to the generic
+// (Port, name, error) shape the two platform implementations share.
+func findPortForFlashing(preferredName string) (Port, string, error) {
+	p, err := FindCH340ForFlashing(preferredName)
+	if err != nil {
+		return nil, "", err
+	}
+	return p, p.resolvedID, nil
 }

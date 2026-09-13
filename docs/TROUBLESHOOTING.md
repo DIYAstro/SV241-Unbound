@@ -137,16 +137,18 @@ This is almost always an **I2C Bus Error**. Most internal sensors (SHT40 for amb
 
 ### Web Flasher not working
 
-**Requirements:**
-- Use **Chrome** or **Edge** browser (Web Serial API required).
-- Firefox and Safari are not supported.
+The proxy's own built-in flasher (`http://<proxy-address>:32241/flasher/`) flashes natively from
+the proxy itself - it no longer uses the browser's Web Serial API, so it works in any browser
+(including Firefox and Safari) and from any device on your network, not just Chrome/Edge running
+on the same machine the box is plugged into. If it fails:
 
-**If flashing fails (Connect/Disconnect loop):**
-1. **Completely close the SV241 Alpaca Proxy** (Right-click tray icon -> Quit). If the proxy is running, it will fight the browser for the serial port.
-2. **Try the Online Flasher:** If the local flasher in the proxy app fails, try the official online version: [diyastro.github.io/SV241-Unbound](https://diyastro.github.io/SV241-Unbound/). This version is hosted on GitHub and uses the standard Web Tools integration which sometimes has better compatibility.
-3. Disconnect and reconnect the USB cable.
-4. Try a different USB port (preferably directly on the computer, not a hub).
-5. **Use a shorter USB cable:** High-speed flashing can fail with long or low-quality cables.
+1. **Check the port picker.** If more than one CH340-based USB device is connected, the flasher
+   will ask you to pick which one to flash instead of guessing - make sure you picked the right
+   one (see the warning box on that page).
+2. Disconnect and reconnect the USB cable, then reload the page.
+3. Try a different USB port (preferably directly on the computer, not a hub).
+4. **Use a shorter USB cable:** flashing can fail with long or low-quality cables.
+5. **Try the standalone online flasher instead:** [diyastro.github.io/SV241-Unbound](https://diyastro.github.io/SV241-Unbound/) - a separate, browser-based flasher for when the proxy itself won't start or isn't installed at all. This one *does* need Chrome or Edge (Web Serial API) and a browser running on the same machine the box is plugged into, since it has no proxy backend to talk to.
 
 ---
 

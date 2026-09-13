@@ -165,9 +165,9 @@ Maintenance and backup functions:
 *   **Manual Actions:** Trigger a sensor drying cycle manually.
 *   **Backup & Restore:** Export or import the complete configuration (both proxy and firmware settings). A backup remembers which physical box its firmware settings (calibration offsets, heater configuration, etc.) came from; restoring it while a *different* box is connected is blocked with a warning by default, since applying one box's on-device settings to another is rarely what you want - confirm explicitly if that's intentional (e.g. replacing one box with another).
 *   **Danger Zone:** Contains critical device operations:
-    *   **Update Firmware:** Opens the integrated web flasher to update the SV241 firmware directly from the browser using the Web Serial API—no additional tools required.
+    *   **Update Firmware:** Opens the integrated web flasher, which flashes the SV241 directly from the proxy - no additional tools, and no particular browser required, since flashing happens on the proxy's side of the USB connection rather than in the browser.
         > [!NOTE]
-        > Flashing requires the browser (Chrome/Edge) to run on the **same machine** where the SV241 device is connected via USB. Alternatively, use the [standalone Web Flasher](https://diyastro.github.io/SV241-Unbound/).
+        > Because the proxy does the flashing, this works from any device on your network, not just the one the SV241 is physically plugged into. If the proxy itself won't start (or isn't installed), use the [standalone Web Flasher](https://diyastro.github.io/SV241-Unbound/) instead - that one *does* need Chrome/Edge on the machine the box is connected to, since it flashes via the browser's Web Serial API directly.
     *   **Reboot Device:** Performs a soft restart of the SV241 device.
     *   **Factory Reset:** Erases all saved settings on the device and restores factory defaults.
 

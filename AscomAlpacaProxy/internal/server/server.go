@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -16,6 +17,7 @@ import (
 	"sv241pro-alpaca-proxy/internal/alpaca"
 	"sv241pro-alpaca-proxy/internal/backup"
 	"sv241pro-alpaca-proxy/internal/config"
+	"sv241pro-alpaca-proxy/internal/flasher"
 	"sv241pro-alpaca-proxy/internal/handlers"
 	"sv241pro-alpaca-proxy/internal/logger"
 	"sv241pro-alpaca-proxy/internal/logstream"
@@ -114,6 +116,9 @@ func setupRoutes(frontendFS fs.FS, appVersion string) {
 	http.HandleFunc("/api/v1/log/download", handleDownloadLog)
 	http.HandleFunc("/api/serial/release", handleSerialRelease)
 	http.HandleFunc("/api/serial/resume", handleSerialResume)
+	http.HandleFunc("/api/v1/flash/info", handleFlashInfo)
+	http.HandleFunc("/api/v1/flash/start", handleFlashStart)
+	http.HandleFunc("/api/v1/flash/status", handleFlashStatus)
 
 	// New settings endpoint combines getting and setting proxy config
 	http.HandleFunc("/api/v1/settings", func(w http.ResponseWriter, r *http.Request) {
@@ -130,6 +135,7 @@ func setupRoutes(frontendFS fs.FS, appVersion string) {
 
 	// --- WebSocket ---
 	http.HandleFunc("/ws/logs", logstream.ServeWs)
+	http.HandleFunc("/ws/flash", flasher.ServeWs)
 
 	// --- Alpaca Device API ---
 	setupAlpacaDeviceRoutes(api)
@@ -901,6 +907,78 @@ func handleSerialRelease(w http.ResponseWriter, r *http.Request) {
 		"success": true,
 		"message": "Serial port released. Auto-reconnect is paused.",
 	})
+}
+
+// handleFlashInfo reports installed vs. bundled firmware version and the resulting erase
+// recommendation for the in-app flasher's initial screen. See internal/flasher.GetInfo.
+func handleFlashInfo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	info, err := flasher.GetInfo()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get flasher info: %v", err), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(info)
+}
+
+// handleFlashStart begins a native firmware flash in the background - see
+// internal/flasher.StartFlash. Progress is reported separately via /ws/flash or by polling
+// /api/v1/flash/status, not by this request's response.
+func handleFlashStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	defer r.Body.Close()
+	var payload struct {
+		Erase bool   `json:"erase"`
+		Port  string `json:"port"`
+	}
+	// A missing/empty body just means "no erase, no port override" - both are optional.
+	json.NewDecoder(r.Body).Decode(&payload)
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := flasher.StartFlash(payload.Erase, payload.Port); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, flasher.ErrAlreadyRunning) {
+			status = http.StatusConflict
+		}
+		var ambiguous *serial.AmbiguousPortError
+		if errors.As(err, &ambiguous) {
+			status = http.StatusConflict
+			w.WriteHeader(status)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success":    false,
+				"error":      "ambiguous_port",
+				"candidates": ambiguous.Candidates,
+			})
+			return
+		}
+		w.WriteHeader(status)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "started": true})
+}
+
+// handleFlashStatus reports the current (or most recently finished) flash job's status - a
+// polling fallback for clients where /ws/flash doesn't work.
+func handleFlashStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(flasher.CurrentStatus())
 }
 
 // handleSerialResume resumes auto-reconnect after flashing is complete.

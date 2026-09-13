@@ -13,18 +13,15 @@ instead? See [PINS_INSTALL.md](./PINS_INSTALL.md).
 
 ## 2. Flashing the Firmware
 
-> [!NOTE]
-> The web flasher requires a modern browser with Web Serial API support (**Chrome** or **Edge**).
-
 On first startup, the proxy will display a **First-Run Wizard** that guides you through the firmware installation:
 
 1.  Connect the SV241 controller to your computer via USB.
 2.  The wizard will automatically check for compatible firmware.
 3.  If no firmware is detected, click **"Flash Firmware"** to open the integrated web flasher.
-4.  Select the correct COM port and follow the on-screen instructions.
+4.  If more than one CH340-based USB device is connected, pick the right one from the dropdown, then confirm to start flashing.
 
 > [!WARNING]
-> Make sure you select the correct COM port! If you have other ESP32 devices connected, their firmware will be overwritten without further confirmation.
+> Make sure you select the correct device! If you have other ESP32 devices connected, their firmware could be overwritten instead.
 
 **Alternative:** Use the standalone **[SV241-Unbound Web Flasher](https://diyastro.github.io/SV241-Unbound/)** directly.
 

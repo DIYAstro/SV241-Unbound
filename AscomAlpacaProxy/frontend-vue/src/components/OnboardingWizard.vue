@@ -83,10 +83,10 @@ async function runOnboarding() {
     }
 }
 
-async function releaseAndFlash() {
-    try {
-        await fetch('/api/serial/release', { method: 'POST' })
-    } catch (e) { /* ignore */ }
+function releaseAndFlash() {
+    // No release call needed here anymore: the in-app flasher only takes exclusive control of
+    // the port once a flash actually starts (see internal/flasher.StartFlash /
+    // serial.AcquirePortForFlashing), not just from having the page open.
     window.location.href = '/flasher'
 }
 
