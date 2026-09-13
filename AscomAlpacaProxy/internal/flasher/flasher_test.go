@@ -25,27 +25,54 @@ func TestIsVersionOlder(t *testing.T) {
 	}
 }
 
-func TestGetInfo_NotConnected(t *testing.T) {
-	// No Init() call in this test - flasherFS is nil, and serial.GetFirmwareVersion() reads
-	// this package's untouched default ("unknown", since nothing here ever calls
-	// serial.StartManager()). GetInfo must report that plainly rather than erroring out just
-	// because there's no bundled-version file to read yet.
-	info, err := GetInfo()
-	if err == nil {
-		t.Fatalf("GetInfo() with flasherFS unset: expected an error (flasher not initialized), got info=%+v", info)
+// withBundledVersion sets bundledFirmwareVersion for the duration of one test, exactly the way
+// Init would have via a real embedded release_version.json, without needing a real fs.FS.
+func withBundledVersion(t *testing.T, v string) {
+	t.Helper()
+	old := bundledFirmwareVersion
+	bundledFirmwareVersion = v
+	t.Cleanup(func() { bundledFirmwareVersion = old })
+}
+
+func TestInit_ParsesReleaseVersionJSON(t *testing.T) {
+	Init(fstest.MapFS{}, []byte(`{"proxyVersion":"0.9.40","firmwareVersion":"0.9.40"}`))
+	t.Cleanup(func() { bundledFirmwareVersion = "unknown" })
+
+	if bundledFirmwareVersion != "0.9.40" {
+		t.Errorf("bundledFirmwareVersion = %q, want \"0.9.40\"", bundledFirmwareVersion)
+	}
+}
+
+func TestInit_MalformedReleaseVersionJSONLeavesUnknown(t *testing.T) {
+	// Regression guard for the previous design's failure mode (a missing/unreadable version
+	// source silently reported as "unknown" is fine and expected here - unlike the old
+	// firmware/version.json-under-flasherFS approach, a malformed *embedded* file indicates a
+	// real build problem, but GetInfo must still degrade gracefully rather than erroring out).
+	Init(fstest.MapFS{}, []byte(`not json`))
+	t.Cleanup(func() { bundledFirmwareVersion = "unknown" })
+
+	if bundledFirmwareVersion != "unknown" {
+		t.Errorf("bundledFirmwareVersion = %q, want \"unknown\" after malformed input", bundledFirmwareVersion)
+	}
+}
+
+func TestGetInfo_NotConnectedNoBundledVersion(t *testing.T) {
+	// Neither Init() nor withBundledVersion() called - both InstalledVersion (nothing connects to
+	// a device in this test) and BundledVersion (package-level default) read "unknown". GetInfo
+	// must report that plainly rather than failing outright.
+	info := GetInfo()
+	if info.InstalledVersion != "unknown" {
+		t.Errorf("InstalledVersion = %q, want \"unknown\"", info.InstalledVersion)
+	}
+	if info.BundledVersion != "unknown" {
+		t.Errorf("BundledVersion = %q, want \"unknown\" (bundledFirmwareVersion never set in this test)", info.BundledVersion)
 	}
 }
 
 func TestGetInfo_UnknownInstalled(t *testing.T) {
-	flasherFS = fstest.MapFS{
-		"firmware/version.json": &fstest.MapFile{Data: []byte(`{"version":"0.9.40"}`)},
-	}
-	defer func() { flasherFS = nil }()
+	withBundledVersion(t, "0.9.40")
 
-	info, err := GetInfo()
-	if err != nil {
-		t.Fatalf("GetInfo() returned an error: %v", err)
-	}
+	info := GetInfo()
 	if info.InstalledVersion != "unknown" {
 		t.Errorf("InstalledVersion = %q, want \"unknown\" (nothing in this test connects to a device)", info.InstalledVersion)
 	}
@@ -58,4 +85,25 @@ func TestGetInfo_UnknownInstalled(t *testing.T) {
 	if info.ForceErase {
 		t.Error("ForceErase = true, want false when installed version is unknown (nothing to force yet)")
 	}
+}
+
+func TestGetInfo_MissingBundledVersionDoesNotHideInstalled(t *testing.T) {
+	// Regression test for the bug reported from real usage: a build where the bundled version
+	// couldn't be determined must still report whatever InstalledVersion is currently known, not
+	// fail the whole response (the original bug behind this: GetInfo used to read the bundled
+	// version from a file - firmware/version.json under flasherFS - that only the full
+	// build_exe.bat/build_linux.sh wrote, so a plain `go build`/`vite build` made the *entire*
+	// endpoint fail and hid a perfectly good InstalledVersion behind a client-side "Not
+	// connected" the user had no way to tell apart from an actual missing device).
+	withBundledVersion(t, "unknown")
+
+	info := GetInfo()
+	if info.BundledVersion != "unknown" {
+		t.Errorf("BundledVersion = %q, want \"unknown\"", info.BundledVersion)
+	}
+	// InstalledVersion is "unknown" here too (nothing in this test connects to a device), but the
+	// point is GetInfo returned a normal Info at all instead of an error/zero-value - the real
+	// regression this guards against only manifests once a device IS connected, which unit tests
+	// in this package can't simulate without real hardware (see internal/serial, which owns the
+	// connection state GetInfo reads via GetFirmwareVersion()).
 }

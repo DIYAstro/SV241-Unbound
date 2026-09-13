@@ -37,7 +37,6 @@ package flasher
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/fs"
 	"strconv"
 	"strings"
@@ -63,15 +62,36 @@ const ConfigFormatChangeVersion = "0.9.15"
 // proxy build."
 var flasherFS fs.FS
 
-// Init wires this package to the embedded frontend filesystem. Call once at startup, before any
-// GetInfo/StartFlash call, with the same fs.FS server.Start already receives.
-func Init(frontendFS fs.FS) {
+// bundledFirmwareVersion is the version bundled with this proxy build, parsed once by Init from
+// release_version.json's "firmwareVersion" field - see main_common.go's releaseVersionJSON var
+// for why it's embedded and passed in that way rather than read from a file under flasherFS
+// (firmware/version.json only exists after the full build_exe.bat/build_linux.sh, not a plain
+// `go build`/`vite build` - a gap that used to make GetInfo report the bundled version as
+// "unknown" for any non-release build). "unknown" here means releaseVersionJSON itself was
+// missing or malformed, which - unlike the old gap - indicates a real problem with the build,
+// since the file is checked into the repo and always embedded.
+var bundledFirmwareVersion = "unknown"
+
+// Init wires this package to the embedded frontend filesystem and the embedded
+// release_version.json bytes. Call once at startup, before any GetInfo/StartFlash call, with the
+// same fs.FS server.Start already receives and the raw bytes of main_common.go's
+// //go:embed build_scripts/release_version.json.
+func Init(frontendFS fs.FS, releaseVersionJSON []byte) {
 	sub, err := fs.Sub(frontendFS, "flasher")
 	if err != nil {
 		logger.Error("flasher.Init: failed to create flasher sub-filesystem: %v", err)
+	} else {
+		flasherFS = sub
+	}
+
+	var rv struct {
+		FirmwareVersion string `json:"firmwareVersion"`
+	}
+	if err := json.Unmarshal(releaseVersionJSON, &rv); err != nil || rv.FirmwareVersion == "" {
+		logger.Error("flasher.Init: could not parse embedded release_version.json: %v", err)
 		return
 	}
-	flasherFS = sub
+	bundledFirmwareVersion = rv.FirmwareVersion
 }
 
 // Info answers the in-app flasher UI's initial "what would happen if I flash now" question -
@@ -97,48 +117,30 @@ type Info struct {
 }
 
 // GetInfo reports the installed vs. bundled firmware version and the resulting erase
-// recommendation. Never fails on "not currently connected" - InstalledVersion is just "unknown"
-// in that case, matching serial.GetFirmwareVersion()'s own convention.
-func GetInfo() (Info, error) {
-	bundled, err := bundledVersion()
-	if err != nil {
-		return Info{}, err
-	}
-
+// recommendation. Never fails: InstalledVersion is "unknown" when not currently connected
+// (matching serial.GetFirmwareVersion()'s own convention), and BundledVersion is "unknown" only
+// if Init's embedded release_version.json couldn't be parsed (see bundledFirmwareVersion's doc
+// comment - a real build problem, not an expected dev-build gap). Either "unknown" value on its
+// own must not stop the OTHER one from being reported - an earlier version of this function did
+// exactly that when the bundled version came from a file that only sometimes existed: a missing
+// file made the whole endpoint fail, hiding a perfectly good InstalledVersion behind a
+// client-side "Not connected" the user had no way to tell apart from an actual missing device.
+func GetInfo() Info {
 	info := Info{
 		InstalledVersion: serial.GetFirmwareVersion(),
-		BundledVersion:   bundled,
+		BundledVersion:   bundledFirmwareVersion,
 		DefaultPort:      config.Get().SerialPortName,
 	}
 
-	if strings.EqualFold(info.InstalledVersion, "unknown") {
-		return info, nil
+	if strings.EqualFold(info.InstalledVersion, "unknown") || strings.EqualFold(info.BundledVersion, "unknown") {
+		return info // nothing to compare yet
 	}
 
-	info.UpToDate = info.InstalledVersion == bundled
+	info.UpToDate = info.InstalledVersion == info.BundledVersion
 	if !info.UpToDate && isVersionOlder(info.InstalledVersion, ConfigFormatChangeVersion) {
 		info.ForceErase = true
 	}
-	return info, nil
-}
-
-// bundledVersion reads the version bundled with this proxy build, from the same version.json the
-// standalone web flasher already serves at /flasher/firmware/version.json.
-func bundledVersion() (string, error) {
-	if flasherFS == nil {
-		return "", errors.New("flasher not initialized")
-	}
-	data, err := fs.ReadFile(flasherFS, "firmware/version.json")
-	if err != nil {
-		return "", fmt.Errorf("read bundled version.json: %w", err)
-	}
-	var v struct {
-		Version string `json:"version"`
-	}
-	if err := json.Unmarshal(data, &v); err != nil {
-		return "", fmt.Errorf("parse bundled version.json: %w", err)
-	}
-	return v.Version, nil
+	return info
 }
 
 // isVersionOlder reports whether version a is older than b, comparing only the numeric "x.y.z"

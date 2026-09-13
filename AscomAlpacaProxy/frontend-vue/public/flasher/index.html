@@ -318,6 +318,48 @@
             font-family: var(--font-main);
             margin-top: 0.75rem;
         }
+
+        /* Confirmation modal - same glass-card look as .container, matching the app's usual
+           modal pattern (frontend-vue/src/components/OnboardingWizard.vue's .modal-overlay/
+           .modal-content) rather than the browser's own unstyled window.confirm(). */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 1rem;
+        }
+
+        .modal-card {
+            padding: 2rem;
+            border-radius: var(--radius-lg);
+            background: var(--bg-color-mid);
+            border: 1px solid var(--surface-border);
+            box-shadow: var(--shadow-soft);
+            max-width: 420px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .modal-card p {
+            color: var(--text-primary);
+            margin-bottom: 1.5rem;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 0.75rem;
+        }
+
+        .modal-actions .btn-primary,
+        .modal-actions .btn-secondary {
+            width: auto;
+            flex: 1;
+            margin-top: 0;
+        }
     </style>
 </head>
 
@@ -382,6 +424,16 @@
         <a href="/setup" class="back-link">← Back to Setup</a>
     </div>
 
+    <div id="confirm-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-card">
+            <p id="confirm-modal-text"></p>
+            <div class="modal-actions">
+                <button id="confirm-modal-cancel" class="btn-secondary">Cancel</button>
+                <button id="confirm-modal-ok" class="btn-primary">⚡ Yes, Flash</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Apply theme early to prevent flash of unstyled content. Mirrors frontend-vue/index.html's
         // identical script exactly - that's the Vite app shell, which has to solve this same
@@ -416,6 +468,32 @@
         const portSelect = document.getElementById('port-select');
         const progressTrack = document.getElementById('progress-track');
         const progressFill = document.getElementById('progress-fill');
+        const confirmModal = document.getElementById('confirm-modal');
+        const confirmModalText = document.getElementById('confirm-modal-text');
+        const confirmModalOk = document.getElementById('confirm-modal-ok');
+        const confirmModalCancel = document.getElementById('confirm-modal-cancel');
+
+        // showConfirmModal replaces window.confirm() with a themed dialog matching the rest of
+        // this page (and the main app's own modal pattern) instead of the browser's unstyled
+        // native prompt. Resolves true/false; only one modal is ever shown at a time here, so a
+        // single pair of listeners re-bound per call is simpler than tracking multiple instances.
+        function showConfirmModal(message) {
+            return new Promise((resolve) => {
+                confirmModalText.textContent = message;
+                confirmModal.style.display = 'flex';
+
+                const cleanup = (result) => {
+                    confirmModal.style.display = 'none';
+                    confirmModalOk.removeEventListener('click', onOk);
+                    confirmModalCancel.removeEventListener('click', onCancel);
+                    resolve(result);
+                };
+                const onOk = () => cleanup(true);
+                const onCancel = () => cleanup(false);
+                confirmModalOk.addEventListener('click', onOk);
+                confirmModalCancel.addEventListener('click', onCancel);
+            });
+        }
 
         let installedVersion = 'Unknown';
         let bundledVersion = 'Unknown';
@@ -439,6 +517,9 @@
                 installedVersionEl.classList.remove('match', 'mismatch');
                 bundledVersionEl.classList.remove('match', 'mismatch');
 
+                const bundledKnown = bundledVersion.toLowerCase() !== 'unknown';
+                const installedKnown = installedVersion.toLowerCase() !== 'unknown';
+
                 if (info.upToDate) {
                     installedVersionEl.classList.add('match');
                     bundledVersionEl.classList.add('match');
@@ -446,7 +527,16 @@
                     statusMessageEl.className = 'info';
                     statusMessageEl.style.display = 'block';
                     statusEl.textContent = 'Ready to flash. Existing settings will be preserved.';
-                } else if (installedVersion.toLowerCase() !== 'unknown') {
+                } else if (installedKnown && !bundledKnown) {
+                    // Not a real mismatch - we just don't know the bundled version (e.g. a local
+                    // dev build made without the full release build script, which is what
+                    // actually writes firmware/version.json). Don't claim a mismatch that may not
+                    // exist, and don't hide the installed version behind it either.
+                    statusMessageEl.innerHTML = 'ℹ Bundled firmware version unknown - unable to compare. You can still flash below.';
+                    statusMessageEl.className = 'info';
+                    statusMessageEl.style.display = 'block';
+                    statusEl.textContent = 'Ready to flash.';
+                } else if (installedKnown) {
                     installedVersionEl.classList.add('mismatch');
                     if (info.forceErase) {
                         statusMessageEl.innerHTML = `⚠ Your installed firmware (${installedVersion}) predates 0.9.15, ` +
@@ -490,10 +580,11 @@
             const erase = eraseCheckbox.checked;
             const port = portPicker.style.display === 'none' ? '' : portSelect.value;
 
+            const firmwareLabel = bundledVersion.toLowerCase() === 'unknown' ? 'the bundled firmware' : `firmware ${bundledVersion}`;
             const confirmMsg = erase
-                ? `Are you sure? This will flash ${port || 'the SV241 box'} with firmware ${bundledVersion} and erase all settings.`
-                : `Are you sure? This will flash ${port || 'the SV241 box'} with firmware ${bundledVersion}.`;
-            if (!window.confirm(confirmMsg)) return;
+                ? `Are you sure? This will flash ${port || 'the SV241 box'} with ${firmwareLabel} and erase all settings.`
+                : `Are you sure? This will flash ${port || 'the SV241 box'} with ${firmwareLabel}.`;
+            if (!(await showConfirmModal(confirmMsg))) return;
 
             flashButton.disabled = true;
             statusEl.textContent = 'Starting flash...';

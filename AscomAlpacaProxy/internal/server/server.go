@@ -916,13 +916,8 @@ func handleFlashInfo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	info, err := flasher.GetInfo()
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to get flasher info: %v", err), http.StatusInternalServerError)
-		return
-	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(info)
+	json.NewEncoder(w).Encode(flasher.GetInfo())
 }
 
 // handleFlashStart begins a native firmware flash in the background - see

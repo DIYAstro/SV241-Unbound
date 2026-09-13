@@ -21,6 +21,18 @@ var embeddedFS embed.FS
 
 var frontendFS fs.FS
 
+// releaseVersionJSON is release_version.json, the checked-in single source of truth for both
+// version numbers (see that file's own comment) - embedded directly rather than relying on
+// firmware/version.json under frontend-vue/dist/flasher (only written by the full
+// build_scripts/build_exe.bat or build_linux.sh as a post-build step, and so absent from a plain
+// `go build`/`vite build`, which previously made internal/flasher.GetInfo report the bundled
+// firmware version as "unknown" for any non-release build). Embedding this file instead works
+// unconditionally: go:embed reads it straight from the module tree at compile time, with no
+// build-script step required.
+//
+//go:embed build_scripts/release_version.json
+var releaseVersionJSON []byte
+
 // AppVersion is set at build time via ldflags.
 // The default "dev" is used when the program is compiled without ldflags (e.g. 'go run').
 var AppVersion string = "dev"
@@ -68,9 +80,10 @@ func startApp() {
 	weather.GetService().Start()
 
 	// 6a. Wire the native firmware flasher (internal/flasher) to the same embedded frontend
-	// filesystem server.Start below uses - it reads the bundled bootloader/partitions/firmware
-	// bytes from the same "flasher/firmware/*.bin" files server.go already serves over HTTP.
-	flasher.Init(frontendFS)
+	// filesystem server.Start below uses (for the bundled bootloader/partitions/firmware .bin
+	// bytes) and to release_version.json (for the bundled version number - see that var's own
+	// comment for why it's embedded separately rather than read from the frontend dist tree).
+	flasher.Init(frontendFS, releaseVersionJSON)
 
 	// 7. Start the web server. This is a blocking call and will run for the
 	// lifetime of the application, so it must be last.
