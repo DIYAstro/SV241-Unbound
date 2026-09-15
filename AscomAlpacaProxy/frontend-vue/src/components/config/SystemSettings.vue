@@ -108,7 +108,7 @@ async function performAutoRestore(filename, force = false) {
         if (!response.ok) throw new Error(response.statusText);
 
         modal.show({
-            icon: '✅',
+            icon: 'ri-checkbox-circle-line',
             title: 'Restore Successful',
             message: 'Configuration restored successfully! Would you like to reboot the device to apply all settings?',
             buttons: [
@@ -228,7 +228,7 @@ async function performRestore(configContent, force = false) {
 
         // Show success modal with reboot option
         modal.show({
-            icon: '✅',
+            icon: 'ri-checkbox-circle-line',
             title: 'Restore Successful',
             message: 'Configuration restored successfully! Would you like to reboot the device to apply all settings?',
             buttons: [
@@ -299,7 +299,7 @@ function handleFactoryReset() {
                 
                 // Show success modal with reboot option
                 modal.show({
-                    icon: '✅',
+                    icon: 'ri-checkbox-circle-line',
                     title: 'Factory Reset Successful',
                     message: 'Device has been reset to factory defaults. Would you like to reboot now to ensure all settings are applied?',
                     buttons: [

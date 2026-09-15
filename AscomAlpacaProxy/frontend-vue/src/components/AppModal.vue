@@ -25,11 +25,11 @@ function handleBackdropClick() {
         <div v-if="isVisible" class="modal-overlay" @click.self="handleBackdropClick">
             <div class="modal-content">
                 <div class="modal-header">
-                    <span
+                    <i
                         v-if="modalConfig.icon"
                         class="modal-icon"
-                        :class="{ 'modal-icon-spin': modalConfig.buttons.length === 0 }"
-                    >{{ modalConfig.icon }}</span>
+                        :class="[modalConfig.icon, { 'modal-icon-spin': modalConfig.buttons.length === 0 }]"
+                    ></i>
                     <h3>{{ modalConfig.title }}</h3>
                 </div>
                 <p class="modal-message">{{ modalConfig.message }}</p>

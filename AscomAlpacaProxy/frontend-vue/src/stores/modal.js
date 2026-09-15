@@ -30,7 +30,7 @@ export const useModalStore = defineStore('modal', () => {
     // Convenience methods
     function success(message, title = 'Success') {
         show({
-            icon: '✅',
+            icon: 'ri-checkbox-circle-line',
             title,
             message,
             buttons: [{ text: 'OK', action: close, primary: true }]
@@ -39,7 +39,7 @@ export const useModalStore = defineStore('modal', () => {
 
     function error(message, title = 'Error') {
         show({
-            icon: '❌',
+            icon: 'ri-close-circle-line',
             title,
             message,
             buttons: [{ text: 'OK', action: close, primary: true }]
@@ -48,7 +48,7 @@ export const useModalStore = defineStore('modal', () => {
 
     function info(message, title = 'Info') {
         show({
-            icon: 'ℹ️',
+            icon: 'ri-information-line',
             title,
             message,
             buttons: [{ text: 'OK', action: close, primary: true }]
@@ -57,7 +57,7 @@ export const useModalStore = defineStore('modal', () => {
 
     function loading(message, title = 'Please Wait') {
         show({
-            icon: '⏳',
+            icon: 'ri-loader-4-line',
             title,
             message,
             buttons: [],
@@ -67,7 +67,7 @@ export const useModalStore = defineStore('modal', () => {
 
     function confirm(message, { onConfirm, onCancel, title = 'Confirm', confirmText = 'Yes', cancelText = 'No' } = {}) {
         show({
-            icon: '⚠️',
+            icon: 'ri-error-warning-line',
             title,
             message,
             buttons: [

@@ -309,19 +309,19 @@ async function backupConfig() {
         </div>
 
         <div v-if="upToDate" class="flasher-box flasher-info">
-          ✓ Firmware is up to date. No update required.
+          <i class="ri-checkbox-circle-line"></i> Firmware is up to date. No update required.
         </div>
         <div v-else-if="installedKnown && !bundledKnown" class="flasher-box flasher-info">
-          ℹ Bundled firmware version unknown - unable to compare. You can still flash below.
+          <i class="ri-information-line"></i> Bundled firmware version unknown - unable to compare. You can still flash below.
         </div>
         <div v-else-if="installedKnown && forceErase" class="flasher-box flasher-warning">
-          ⚠ Your installed firmware ({{ installedVersion }}) predates 0.9.15, which changed how
+          <i class="ri-error-warning-line"></i> Your installed firmware ({{ installedVersion }}) predates 0.9.15, which changed how
           settings are stored on the device. This update will reset your settings to defaults -
           that's expected for this one-time transition. Future updates will preserve your settings
           normally.
         </div>
         <div v-else-if="installedKnown" class="flasher-box flasher-warning">
-          ⚠ Firmware version mismatch. Consider updating to ensure compatibility.
+          <i class="ri-error-warning-line"></i> Firmware version mismatch. Consider updating to ensure compatibility.
         </div>
 
         <p class="flasher-text">
@@ -330,7 +330,7 @@ async function backupConfig() {
         </p>
         <div class="button-row">
           <button @click="backupConfig" class="btn-secondary flasher-full-width" :disabled="backingUp">
-            {{ backingUp ? 'Creating backup…' : '💾 Backup Now' }}
+            <i class="ri-save-line"></i> {{ backingUp ? 'Creating backup…' : 'Backup Now' }}
           </button>
         </div>
 
@@ -340,7 +340,7 @@ async function backupConfig() {
         </label>
 
         <div class="flasher-box flasher-warning">
-          ⚠️ Verify Device: Make absolutely sure you select the correct device below! If you have
+          <i class="ri-error-warning-line"></i> Verify Device: Make absolutely sure you select the correct device below! If you have
           other ESP32 devices connected, their firmware could be overwritten instead.
         </div>
 
@@ -353,7 +353,7 @@ async function backupConfig() {
 
         <div class="button-row flasher-actions">
           <button @click="flasherStore.close()" class="btn-secondary">Cancel</button>
-          <button @click="confirmAndStart" class="btn-primary">⚡ Start Flashing</button>
+          <button @click="confirmAndStart" class="btn-primary"><i class="ri-flashlight-line"></i> Start Flashing</button>
         </div>
       </template>
 
@@ -365,14 +365,14 @@ async function backupConfig() {
       </template>
 
       <template v-else-if="view === 'done'">
-        <div class="flasher-box flasher-info">✅ Flash complete! Firmware updated successfully.</div>
+        <div class="flasher-box flasher-info"><i class="ri-checkbox-circle-line"></i> Flash complete! Firmware updated successfully.</div>
         <div class="button-row flasher-actions">
           <button @click="flasherStore.close()" class="btn-primary">Back to Setup</button>
         </div>
       </template>
 
       <template v-else-if="view === 'error'">
-        <div class="flasher-box flasher-warning">❌ Flash failed: {{ errorMessage }}</div>
+        <div class="flasher-box flasher-warning"><i class="ri-close-circle-line"></i> Flash failed: {{ errorMessage }}</div>
         <div class="button-row flasher-actions">
           <button @click="fetchInfo" class="btn-secondary">Try Again</button>
           <button @click="flasherStore.close()" class="btn-primary">Back to Setup</button>

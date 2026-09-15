@@ -405,7 +405,7 @@ const chartOptions = {
 
         <section class="explorer-chart" ref="chartContainerRef">
             <div class="chart-toolbar">
-                <button class="reset-btn" @click="resetZoom" title="Reset to full view">🔄 Reset View</button>
+                <button class="reset-btn" @click="resetZoom" title="Reset to full view"><i class="ri-refresh-line"></i> Reset View</button>
             </div>
             <Line ref="chartRef" :data="chartData" :options="chartOptions" />
         </section>

@@ -1,0 +1,40 @@
+/* Trimmed local copy of Remix Icon (https://remixicon.com, v4.9.1, Remix Icon
+ * License 1.0) — self-hosted rather than loaded from a CDN, matching this project's
+ * existing fonts.css convention, and important on its own merits here: this dashboard
+ * is a local-network device controller, often run without internet access at all, so
+ * a CDN-dependent icon font would silently go invisible again in exactly that setup.
+ *
+ * Only the 11 icon glyphs this project's components actually use are included
+ * (subset from the full upstream font with the `subset-font` npm package, mirroring
+ * GeminiFlatPanel's identical remixicon.css/woff2) instead of the full upstream font's
+ * several thousand. Add a new `.ri-<name>:before` rule here (with its codepoint looked
+ * up from the upstream remixicon.css) if a future change introduces a new icon -- and
+ * regenerate remixicon.woff2 to include that glyph too. A CSS rule alone does nothing
+ * if the glyph outline isn't actually in the font file.
+ */
+@font-face {
+  font-family: 'remixicon';
+  src: url('../fonts/remixicon.woff2') format('woff2');
+  font-display: swap;
+  font-weight: normal;
+  font-style: normal;
+}
+
+[class^="ri-"], [class*=" ri-"] {
+  font-family: 'remixicon' !important;
+  font-style: normal;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.ri-checkbox-circle-line:before { content: "\eb81"; }
+.ri-close-circle-line:before { content: "\eb97"; }
+.ri-error-warning-line:before { content: "\eca1"; }
+.ri-flashlight-line:before { content: "\ed3d"; }
+.ri-information-line:before { content: "\ee59"; }
+.ri-loader-4-line:before { content: "\eec6"; }
+.ri-refresh-line:before { content: "\f064"; }
+.ri-save-line:before { content: "\f0b3"; }
+.ri-settings-3-line:before { content: "\f0e6"; }
+.ri-terminal-line:before { content: "\f1f8"; }
+.ri-toggle-line:before { content: "\f219"; }

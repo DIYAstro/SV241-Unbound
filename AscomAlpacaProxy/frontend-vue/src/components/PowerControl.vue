@@ -225,7 +225,7 @@ function handleClickOutside(event) {
 
 <template>
   <div id="live-power-control" class="glass-panel card full-width">
-      <h2>Power Control</h2>
+      <h2><i class="ri-toggle-line"></i> Power Control</h2>
       <!-- Master Switch - only show if enableMasterPower is true -->
       <div v-if="proxyConfig.enableMasterPower !== false" id="master-switch-container" class="switch-row master-row">
           <span class="name" id="master-power-label">{{ proxyConfig.switchNames?.master_power || 'Master Power' }}</span>

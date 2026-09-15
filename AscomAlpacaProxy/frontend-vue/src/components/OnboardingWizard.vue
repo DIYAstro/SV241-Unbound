@@ -10,6 +10,7 @@ const flasher = useFlasherStore()
 
 const showModal = ref(false)
 const status = ref('Initializing...')
+const statusIcon = ref('')
 const actions = ref([]) // Array of { label, primary, handler }
 
 onMounted(async () => {
@@ -59,12 +60,14 @@ async function runOnboarding() {
         // FirmwareFlasher.vue's own "unable to compare" case.
         const bundledKnown = info.bundledVersion && info.bundledVersion.toLowerCase() !== 'unknown'
         if (!bundledKnown || info.upToDate) {
-            status.value = `✅ SV241-Unbound firmware detected.\nVersion: ${info.installedVersion}`
+            statusIcon.value = 'ri-checkbox-circle-line'
+            status.value = `SV241-Unbound firmware detected.\nVersion: ${info.installedVersion}`
             actions.value = [
                 { label: 'Continue Setup', primary: true, handler: completeOnboarding }
             ]
         } else {
-            status.value = `⚠ Firmware update available.\nInstalled: ${info.installedVersion} → Available: ${info.bundledVersion}`
+            statusIcon.value = 'ri-error-warning-line'
+            status.value = `Firmware update available.\nInstalled: ${info.installedVersion} → Available: ${info.bundledVersion}`
             actions.value = [
                 { label: 'Update Firmware', primary: true, handler: releaseAndFlash },
                 { label: 'Skip', primary: false, handler: completeOnboarding }
@@ -72,7 +75,8 @@ async function runOnboarding() {
         }
     } else {
         // No firmware detected
-        status.value = `⚠ This device doesn't have SV241-Unbound firmware installed yet.\nClick below to flash it now.`
+        statusIcon.value = 'ri-error-warning-line'
+        status.value = `This device doesn't have SV241-Unbound firmware installed yet.\nClick below to flash it now.`
         actions.value = [
             { label: 'Flash Firmware', primary: true, handler: releaseAndFlash },
             { label: "I'll do it later", primary: false, handler: completeOnboarding }
@@ -117,6 +121,7 @@ async function completeOnboarding() {
           <p class="subtitle">Let's get your device set up</p>
           
           <div class="status-display">
+              <i v-if="statusIcon" :class="statusIcon" class="status-icon"></i>
               <pre>{{ status }}</pre>
           </div>
           
@@ -158,6 +163,14 @@ async function completeOnboarding() {
     white-space: pre-wrap;
     text-align: left;
     font-size: 0.95rem;
+}
+
+.status-icon {
+    display: block;
+    text-align: center;
+    font-size: 1.5rem;
+    color: var(--primary-color);
+    margin-bottom: 0.5rem;
 }
 
 .actions {

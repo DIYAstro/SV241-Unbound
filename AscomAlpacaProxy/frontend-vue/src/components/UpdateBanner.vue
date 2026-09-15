@@ -53,7 +53,7 @@ function goToFlasher() {
 
 <template>
   <div v-if="showBanner" class="update-banner">
-      <span>⚠️ Firmware update available: {{ installedVersion }} → {{ bundledVersion }}</span>
+      <span><i class="ri-error-warning-line"></i> Firmware update available: {{ installedVersion }} → {{ bundledVersion }}</span>
       <a href="#" @click.prevent="goToFlasher">Update Now</a>
   </div>
 </template>

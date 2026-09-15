@@ -105,7 +105,7 @@ function toggleCollapse() {
 <template>
   <div class="glass-panel card full-width" id="live-log-viewer">
       <div class="collapsible-header" @click="toggleCollapse">
-          <h2>Live Log</h2>
+          <h2><i class="ri-terminal-line"></i> Live Log</h2>
           <span class="toggle-icon" :class="{ collapsed: isCollapsed }"></span>
       </div>
       

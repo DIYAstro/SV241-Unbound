@@ -38,7 +38,7 @@ function toggleCollapse() {
 <template>
   <div id="config-section" class="glass-panel card full-width">
       <div class="collapsible-header" @click="toggleCollapse">
-          <h2>Configuration & Settings</h2>
+          <h2><i class="ri-settings-3-line"></i> Configuration & Settings</h2>
           <span class="toggle-icon" :class="{ collapsed: isCollapsed }"></span>
       </div>
 
