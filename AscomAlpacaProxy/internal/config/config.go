@@ -33,6 +33,16 @@ type DeviceProfile struct {
 	WeatherSourcePriority  map[string]string `json:"weatherSourcePriority"`
 }
 
+// SafetyCondition is one row in ProxyConfig.SafetyMonitorConditions - "if <Metric> <Operator>
+// <Threshold>, the box is unsafe". Operator is one of ">", ">=", "<", "<=" (see
+// internal/serial's evaluateOperator). Metric is one of the keys in that package's
+// safetyMetricExtractors (e.g. "voltage", "current", "ambientTemp").
+type SafetyCondition struct {
+	Metric    string  `json:"metric"`
+	Operator  string  `json:"operator"`
+	Threshold float64 `json:"threshold"`
+}
+
 // ProxyConfig stores configuration specific to the Go proxy itself.
 type ProxyConfig struct {
 	SerialPortName string `json:"serialPortName"`
@@ -76,18 +86,18 @@ type ProxyConfig struct {
 	WeatherInterval       int               `json:"weatherInterval"`       // Minutes
 	WeatherSourcePriority map[string]string `json:"weatherSourcePriority"` // metric -> hardware|internet|hybrid
 
-	// Safety Monitor (see internal/serial's computeSafetyUnsafe): a single input-voltage threshold
-	// with two independent consumers - a UI warning/desktop notification, and exposing the ASCOM
-	// Alpaca SafetyMonitor device (/api/v1/safetymonitor/0/) other client software (e.g. N.I.N.A.)
-	// can poll to abort a sequence in an orderly way. Proxy-side, not firmware - every consumer is
-	// already proxy/UI-side, no reflash needed. <=0 disables the check entirely, same convention
-	// as the firmware's own current_limit_amps.
+	// Safety Monitor (see internal/serial's computeSafetyUnsafe): a list of threshold conditions,
+	// OR'd together - if ANY condition matches the live reading, the box is "unsafe". Two
+	// independent consumers - a UI warning/desktop notification, and exposing the ASCOM Alpaca
+	// SafetyMonitor device (/api/v1/safetymonitor/0/) other client software (e.g. N.I.N.A.) can
+	// poll to abort a sequence in an orderly way. Proxy-side, not firmware - every consumer is
+	// already proxy/UI-side, no reflash needed. An empty list disables the check entirely.
 	//
-	// Replaces the former two fields VoltageWarningThreshold/VoltageCriticalThreshold (removed) -
-	// see doLoad()'s migration block for how an existing installation's old value carries forward.
-	SafetyMonitorVoltageThreshold float64 `json:"safetyMonitorVoltageThreshold"` // Volts; e.g. 11.0
-	SafetyMonitorUIWarningEnabled bool    `json:"safetyMonitorUIWarningEnabled"`
-	SafetyMonitorAlpacaEnabled    bool    `json:"safetyMonitorAlpacaEnabled"`
+	// Replaces the former single-threshold SafetyMonitorVoltageThreshold field (removed) - see
+	// doLoad()'s migration block for how an existing installation's old value carries forward.
+	SafetyMonitorConditions      []SafetyCondition `json:"safetyMonitorConditions"`
+	SafetyMonitorUIWarningEnabled bool             `json:"safetyMonitorUIWarningEnabled"`
+	SafetyMonitorAlpacaEnabled    bool             `json:"safetyMonitorAlpacaEnabled"`
 }
 
 // CombinedConfig defines the structure for a full backup file.
@@ -697,18 +707,27 @@ func doLoad() error {
 		proxyConfig.AutoDetectPort = true
 	}
 
-	// Safety Monitor migration: an installation from before this feature existed has
-	// voltageCriticalThreshold/voltageWarningThreshold in its file (now-removed ProxyConfig
-	// fields, so json.Unmarshal above silently dropped them) but nothing for
-	// safetyMonitorVoltageThreshold yet. Carry the old critical value forward - the stricter of
-	// the two old thresholds - rather than silently resetting an existing user's configuration to
-	// "disabled". SafetyMonitorAlpacaEnabled deliberately stays false either way: exposing a new
-	// ASCOM device is a distinct opt-in decision nobody has made yet, not something to infer from
-	// an old UI-only warning setting.
-	if proxyConfig.SafetyMonitorVoltageThreshold == 0 {
-		if oldCritical, ok := rawMap["voltageCriticalThreshold"].(float64); ok && oldCritical > 0 {
-			logger.Info("Migrating legacy voltageCriticalThreshold (%.1fV) to safetyMonitorVoltageThreshold.", oldCritical)
-			proxyConfig.SafetyMonitorVoltageThreshold = oldCritical
+	// Safety Monitor migration: an installation from before the conditions-list redesign has
+	// either the single-threshold safetyMonitorVoltageThreshold (the previous release) or the
+	// even older voltageCriticalThreshold/voltageWarningThreshold (pre-dating the Safety Monitor
+	// feature entirely) in its file - both are now-removed ProxyConfig fields, so json.Unmarshal
+	// above silently dropped them. Carry whichever old value is present forward as the new list's
+	// first (and only) entry, rather than silently resetting an existing user's configured
+	// threshold to "disabled". SafetyMonitorAlpacaEnabled deliberately stays false either way:
+	// exposing a new ASCOM device is a distinct opt-in decision nobody has made yet, not something
+	// to infer from an old UI-only warning setting.
+	if len(proxyConfig.SafetyMonitorConditions) == 0 {
+		var legacyThreshold float64
+		if v, ok := rawMap["safetyMonitorVoltageThreshold"].(float64); ok && v > 0 {
+			legacyThreshold = v
+		} else if v, ok := rawMap["voltageCriticalThreshold"].(float64); ok && v > 0 {
+			legacyThreshold = v
+		}
+		if legacyThreshold > 0 {
+			logger.Info("Migrating legacy voltage threshold (%.1fV) to safetyMonitorConditions.", legacyThreshold)
+			proxyConfig.SafetyMonitorConditions = []SafetyCondition{
+				{Metric: "voltage", Operator: "<=", Threshold: legacyThreshold},
+			}
 			proxyConfig.SafetyMonitorUIWarningEnabled = true
 		}
 	}

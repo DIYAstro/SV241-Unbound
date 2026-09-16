@@ -857,7 +857,7 @@ func updateConditionsCacheFromJSON(conditionsJSON string) {
 		// (the notification below, the Alpaca IsSafe handler, the frontend's warning dot) decides
 		// independently whether to act on it. See computeSafetyUnsafe's doc comment for why this
 		// lives here rather than in the firmware.
-		newUnsafe := computeSafetyUnsafe(conditionsData)
+		newUnsafe, unsafeReason := computeSafetyUnsafe(conditionsData)
 		wasUnsafe, _ := Conditions.Data["unsafe"].(bool)
 		conditionsData["unsafe"] = newUnsafe
 
@@ -883,7 +883,7 @@ func updateConditionsCacheFromJSON(conditionsJSON string) {
 		// Notification is opt-in and independent of the Alpaca exposure toggle - a user can expose
 		// IsSafe to N.I.N.A. without wanting a desktop toast, or vice versa.
 		if newUnsafe != wasUnsafe && config.Get().SafetyMonitorUIWarningEnabled {
-			notifySafetyStatusChange(newUnsafe)
+			notifySafetyStatusChange(newUnsafe, unsafeReason)
 		}
 
 		logMemoryStatus(conditionsData)
@@ -893,40 +893,87 @@ func updateConditionsCacheFromJSON(conditionsJSON string) {
 	}
 }
 
-// computeSafetyUnsafe reports whether the just-received voltage reading ("v" in conditionsData,
-// from the firmware's {"get":"sensors"} response) is at or below the configured safety
-// threshold. False if voltage is missing/unparseable, or if the feature is disabled
-// (SafetyMonitorVoltageThreshold <= 0 - same "<=0 means off" convention as current_limit_amps).
-// Computed here rather than in firmware: every consumer (desktop notification, UI indicator, the
-// Alpaca SafetyMonitor device) is proxy/UI-side already, and the proxy already receives "v" on
-// every poll - no firmware change or reflash needed for a pure alerting feature that doesn't
-// need to survive the proxy itself being gone.
-//
-// v1 scope is voltage-only; a future second condition (e.g. current-limit-active) would be its
-// own compute*Unsafe function, OR'd into the cached "unsafe" value alongside this one.
-func computeSafetyUnsafe(conditionsData map[string]interface{}) bool {
-	threshold := config.Get().SafetyMonitorVoltageThreshold
-	if threshold <= 0 {
-		return false
-	}
-	v, ok := conditionsData["v"].(float64)
-	if !ok {
-		return false
-	}
-	return v <= threshold
+// safetyMetricExtractors maps a config.SafetyCondition.Metric to a function that reads the
+// corresponding live value out of conditionsData, converting units where the cached value isn't
+// already in the unit a user would enter a threshold in (only "current": cached in mA by the
+// firmware, compared/displayed in A everywhere else - see handlers.go's getswitchvalue and
+// LiveTelemetry.vue).
+var safetyMetricExtractors = map[string]func(map[string]interface{}) (float64, bool){
+	"voltage":     func(d map[string]interface{}) (float64, bool) { v, ok := d["v"].(float64); return v, ok },
+	"current":     func(d map[string]interface{}) (float64, bool) { v, ok := d["i"].(float64); return v / 1000.0, ok },
+	"power":       func(d map[string]interface{}) (float64, bool) { v, ok := d["p"].(float64); return v, ok },
+	"ambientTemp": func(d map[string]interface{}) (float64, bool) { v, ok := d["t_amb"].(float64); return v, ok },
+	"humidity":    func(d map[string]interface{}) (float64, bool) { v, ok := d["h_amb"].(float64); return v, ok },
+	"dewPoint":    func(d map[string]interface{}) (float64, bool) { v, ok := d["d"].(float64); return v, ok },
+	"lensTemp":    func(d map[string]interface{}) (float64, bool) { v, ok := d["t_lens"].(float64); return v, ok },
 }
 
-func notifySafetyStatusChange(unsafe bool) {
+// safetyMetricLabels gives each metric a human-readable name and unit, used to build the
+// notification message naming which condition tripped.
+var safetyMetricLabels = map[string]struct{ Name, Unit string }{
+	"voltage":     {"Voltage", "V"},
+	"current":     {"Current", "A"},
+	"power":       {"Power", "W"},
+	"ambientTemp": {"Ambient Temperature", "°C"},
+	"humidity":    {"Humidity", "%"},
+	"dewPoint":    {"Dew Point", "°C"},
+	"lensTemp":    {"Lens Temperature", "°C"},
+}
+
+func evaluateOperator(op string, value, threshold float64) bool {
+	switch op {
+	case ">":
+		return value > threshold
+	case ">=":
+		return value >= threshold
+	case "<":
+		return value < threshold
+	case "<=":
+		return value <= threshold
+	}
+	return false
+}
+
+// computeSafetyUnsafe evaluates every configured SafetyMonitorConditions entry against the
+// just-received sensor reading and returns (unsafe, reason) - reason names the first tripped
+// condition, used to build the notification message. Conditions are OR'd together: the first
+// match wins, and an empty list (or every condition currently unevaluable) means safe. An
+// unrecognized metric name or a reading that's currently missing/unparseable is skipped rather
+// than treated as a match.
+//
+// Computed here rather than in firmware: every consumer (desktop notification, UI indicator, the
+// Alpaca SafetyMonitor device) is proxy/UI-side already, and the proxy already receives every one
+// of these readings on every poll - no firmware change or reflash needed for a pure alerting
+// feature that doesn't need to survive the proxy itself being gone.
+func computeSafetyUnsafe(conditionsData map[string]interface{}) (bool, string) {
+	for _, cond := range config.Get().SafetyMonitorConditions {
+		extractor, ok := safetyMetricExtractors[cond.Metric]
+		if !ok {
+			continue
+		}
+		value, ok := extractor(conditionsData)
+		if !ok {
+			continue
+		}
+		if evaluateOperator(cond.Operator, value, cond.Threshold) {
+			label := safetyMetricLabels[cond.Metric]
+			return true, fmt.Sprintf("%s is %.1f%s (condition: %s %s %.1f%s)", label.Name, value, label.Unit, label.Name, cond.Operator, cond.Threshold, label.Unit)
+		}
+	}
+	return false, ""
+}
+
+func notifySafetyStatusChange(unsafe bool, reason string) {
 	if unsafe {
 		notify.Dispatch(notify.Notification{
 			Title:    "SV241 Unsafe",
-			Message:  fmt.Sprintf("Input voltage dropped to or below the safety threshold (%.1fV).", config.Get().SafetyMonitorVoltageThreshold),
+			Message:  reason,
 			Severity: "critical",
 		})
 	} else {
 		notify.Dispatch(notify.Notification{
 			Title:    "SV241 Safe",
-			Message:  "Input voltage is back above the configured safety threshold.",
+			Message:  "All configured safety conditions are back within range.",
 			Severity: "info",
 		})
 	}

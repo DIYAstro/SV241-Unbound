@@ -123,7 +123,7 @@ func HandlePostSettings(w http.ResponseWriter, r *http.Request) {
 	conf.FirstRunComplete = newConfig.FirstRunComplete
 	conf.EnableAutoBackup = newConfig.EnableAutoBackup
 	conf.AutoBackupRetentionCount = newConfig.AutoBackupRetentionCount
-	conf.SafetyMonitorVoltageThreshold = newConfig.SafetyMonitorVoltageThreshold
+	conf.SafetyMonitorConditions = newConfig.SafetyMonitorConditions
 	conf.SafetyMonitorUIWarningEnabled = newConfig.SafetyMonitorUIWarningEnabled
 	conf.SafetyMonitorAlpacaEnabled = newConfig.SafetyMonitorAlpacaEnabled
 

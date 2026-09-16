@@ -11,7 +11,11 @@ const emit = defineEmits(['open-explorer'])
 <template>
   <div class="glass-panel">
     <div class="panel-header">
-        <h2>Live Telemetry</h2>
+        <h2>
+            Live Telemetry
+            <span v-if="isConnected && liveStatus.unsafe && proxyConfig.safetyMonitorUIWarningEnabled" class="unsafe-dot"
+                  title="A configured safety condition is currently triggered - see Safety Monitor tab for details."></span>
+        </h2>
         <!-- Only show Data Explorer button if telemetry logging is enabled -->
         <button v-if="proxyConfig.telemetryInterval > 0" class="icon-btn" @click="$emit('open-explorer')" title="Open Data Explorer">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -28,8 +32,6 @@ const emit = defineEmits(['open-explorer'])
         <span class="label">Voltage</span>
         <span class="value" id="status-v">
             {{ isConnected ? (liveStatus.v || 0).toFixed(2) : '--' }} <small>V</small>
-            <span v-if="isConnected && liveStatus.unsafe && proxyConfig.safetyMonitorUIWarningEnabled" class="voltage-unsafe-dot"
-                  title="Input voltage at or below the configured safety threshold (see Safety Monitor tab)."></span>
         </span>
         </div>
 
@@ -184,21 +186,23 @@ const emit = defineEmits(['open-explorer'])
   cursor: help;
 }
 
-/* Safety Monitor indicator (see Safety Monitor tab for the configured threshold). Blinks to
-   stand out - this reflects an actual "unsafe" state, not just an early warning. */
-.voltage-unsafe-dot {
+/* Safety Monitor indicator (see Safety Monitor tab for the configured conditions). Lives on the
+   panel header, not on any single metric - a condition can be based on any configured metric, not
+   just voltage. Blinks to stand out - this reflects an actual "unsafe" state, not just an early
+   warning. */
+.unsafe-dot {
   display: inline-block;
   width: 8px;
   height: 8px;
-  margin-left: 4px;
+  margin-left: 6px;
   border-radius: 50%;
   background: var(--danger-color, #e04040);
   vertical-align: middle;
   cursor: help;
-  animation: voltage-unsafe-blink 1s step-start infinite;
+  animation: unsafe-blink 1s step-start infinite;
 }
 
-@keyframes voltage-unsafe-blink {
+@keyframes unsafe-blink {
   50% { opacity: 0; }
 }
 </style>
