@@ -581,10 +581,12 @@ func reconnect(newPortName string, preOpenedPort Port) {
 			// Send a connected event if the status changed from disconnected.
 			if lastSentStatus == events.Disconnected {
 				lastSentStatus = events.Connected
-				notify.Dispatch(notify.Notification{
-					Title:   "SV241 Reconnected",
-					Message: "Connection to the COM port has been restored.",
-				})
+				if config.Get().NotifyConnectionEvents {
+					notify.Dispatch(notify.Notification{
+						Title:   "SV241 Reconnected",
+						Message: "Connection to the COM port has been restored.",
+					})
+				}
 
 				// TRIGGER CONFIG SYNC
 				// Run sequentially in a single goroutine to avoid command storms
@@ -612,10 +614,12 @@ func handleDisconnect() {
 		// Send a disconnected event if the status changed from connected.
 		if lastSentStatus == events.Connected {
 			lastSentStatus = events.Disconnected
-			notify.Dispatch(notify.Notification{
-				Title:   "SV241 Connection Lost",
-				Message: "Connection to the COM port was interrupted. Please check the device and cable.",
-			})
+			if config.Get().NotifyConnectionEvents {
+				notify.Dispatch(notify.Notification{
+					Title:   "SV241 Connection Lost",
+					Message: "Connection to the COM port was interrupted. Please check the device and cable.",
+				})
+			}
 		}
 		sv241Port.Close()
 		sv241Port = nil
@@ -852,14 +856,14 @@ func updateConditionsCacheFromJSON(conditionsJSON string) {
 
 		// Safety Monitor: computed proxy-side (not by the firmware) from the same reading, and
 		// injected into this same map - it flows straight through to /api/v1/status alongside
-		// "cl" with no new endpoint needed. Always computed regardless of either config toggle
-		// (SafetyMonitorUIWarningEnabled/SafetyMonitorAlpacaEnabled) - cheap, and each consumer
-		// (the notification below, the Alpaca IsSafe handler, the frontend's warning dot) decides
-		// independently whether to act on it. See computeSafetyUnsafe's doc comment for why this
-		// lives here rather than in the firmware.
-		newUnsafe, unsafeReason := computeSafetyUnsafe(conditionsData)
-		wasUnsafe, _ := Conditions.Data["unsafe"].(bool)
-		conditionsData["unsafe"] = newUnsafe
+		// "cl" with no new endpoint needed. Always computed regardless of any per-condition flag -
+		// cheap, and each consumer (the notification below, the Alpaca IsSafe handler, the
+		// frontend's warning dot) decides independently whether to act on it. See
+		// computeSafetyStatus's doc comment for why this lives here rather than in the firmware.
+		status := computeSafetyStatus(conditionsData)
+		wasUIUnsafe, _ := Conditions.Data["unsafeUI"].(bool)
+		conditionsData["unsafeUI"] = status.UIUnsafe
+		conditionsData["unsafeAlpaca"] = status.AlpacaUnsafe
 
 		Conditions.Data = conditionsData
 		Conditions.LastUpdate = time.Now()
@@ -867,7 +871,7 @@ func updateConditionsCacheFromJSON(conditionsJSON string) {
 
 		// Edge, not level: only notify on an actual transition, not on every 5s poll tick that
 		// happens to still be "active".
-		if newActive != wasActive {
+		if newActive != wasActive && config.Get().NotifyHeaterCurrentLimit {
 			if newActive {
 				notify.Dispatch(notify.Notification{
 					Title:   "SV241 Heater Output Reduced",
@@ -880,10 +884,10 @@ func updateConditionsCacheFromJSON(conditionsJSON string) {
 				})
 			}
 		}
-		// Notification is opt-in and independent of the Alpaca exposure toggle - a user can expose
-		// IsSafe to N.I.N.A. without wanting a desktop toast, or vice versa.
-		if newUnsafe != wasUnsafe && config.Get().SafetyMonitorUIWarningEnabled {
-			notifySafetyStatusChange(newUnsafe, unsafeReason)
+		// No extra gate needed here - each condition's own Notify flag already decided whether it
+		// could contribute to status.UIUnsafe at all (see computeSafetyStatus).
+		if status.UIUnsafe != wasUIUnsafe {
+			notifySafetyStatusChange(status.UIUnsafe, status.UIReason)
 		}
 
 		logMemoryStatus(conditionsData)
@@ -934,19 +938,33 @@ func evaluateOperator(op string, value, threshold float64) bool {
 	return false
 }
 
-// computeSafetyUnsafe evaluates every configured SafetyMonitorConditions entry against the
-// just-received sensor reading and returns (unsafe, reason) - reason names the first tripped
-// condition, used to build the notification message. Conditions are OR'd together: the first
-// match wins, and an empty list (or every condition currently unevaluable) means safe. An
-// unrecognized metric name or a reading that's currently missing/unparseable is skipped rather
-// than treated as a match.
+// SafetyStatus is the result of evaluating every configured SafetyMonitorConditions entry against
+// the just-received sensor reading, split by which of a condition's two independent flags
+// (Notify/IncludeInSafetyMonitor) it satisfies. UIUnsafe/UIReason feed the desktop notification
+// and Live Telemetry's warning dot; AlpacaUnsafe/AlpacaReason feed the ASCOM SafetyMonitor
+// device's IsSafe. A condition with neither flag set is skipped entirely (it reports to nothing).
+type SafetyStatus struct {
+	UIUnsafe     bool
+	UIReason     string
+	AlpacaUnsafe bool
+	AlpacaReason string
+}
+
+// computeSafetyStatus evaluates every configured condition once, OR'ing matches into each of the
+// two channels independently - the first match for a given channel wins and names that channel's
+// reason. An unrecognized metric name or a reading that's currently missing/unparseable is
+// skipped rather than treated as a match.
 //
 // Computed here rather than in firmware: every consumer (desktop notification, UI indicator, the
 // Alpaca SafetyMonitor device) is proxy/UI-side already, and the proxy already receives every one
 // of these readings on every poll - no firmware change or reflash needed for a pure alerting
 // feature that doesn't need to survive the proxy itself being gone.
-func computeSafetyUnsafe(conditionsData map[string]interface{}) (bool, string) {
+func computeSafetyStatus(conditionsData map[string]interface{}) SafetyStatus {
+	var status SafetyStatus
 	for _, cond := range config.Get().SafetyMonitorConditions {
+		if !cond.Notify && !cond.IncludeInSafetyMonitor {
+			continue // reports to nothing - not worth evaluating
+		}
 		extractor, ok := safetyMetricExtractors[cond.Metric]
 		if !ok {
 			continue
@@ -955,12 +973,19 @@ func computeSafetyUnsafe(conditionsData map[string]interface{}) (bool, string) {
 		if !ok {
 			continue
 		}
-		if evaluateOperator(cond.Operator, value, cond.Threshold) {
-			label := safetyMetricLabels[cond.Metric]
-			return true, fmt.Sprintf("%s is %.1f%s (condition: %s %s %.1f%s)", label.Name, value, label.Unit, label.Name, cond.Operator, cond.Threshold, label.Unit)
+		if !evaluateOperator(cond.Operator, value, cond.Threshold) {
+			continue
+		}
+		label := safetyMetricLabels[cond.Metric]
+		reason := fmt.Sprintf("%s is %.1f%s (condition: %s %s %.1f%s)", label.Name, value, label.Unit, label.Name, cond.Operator, cond.Threshold, label.Unit)
+		if cond.Notify && !status.UIUnsafe {
+			status.UIUnsafe, status.UIReason = true, reason
+		}
+		if cond.IncludeInSafetyMonitor && !status.AlpacaUnsafe {
+			status.AlpacaUnsafe, status.AlpacaReason = true, reason
 		}
 	}
-	return false, ""
+	return status
 }
 
 func notifySafetyStatusChange(unsafe bool, reason string) {

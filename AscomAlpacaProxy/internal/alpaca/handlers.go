@@ -76,10 +76,11 @@ func HandleManagementConfiguredDevices(w http.ResponseWriter, r *http.Request) {
 			UniqueID:     "b8g6b69d-g6e4-58g6-b69d-g6e458g6b69d", // Static GUID
 		},
 	}
-	// Exposing the SafetyMonitor is an explicit opt-in (SafetyMonitorAlpacaEnabled) - discovery
-	// hides it entirely rather than listing a device that's permanently forced "safe" whenever
-	// the feature is off, which would be misleading to a client like N.I.N.A.
-	if config.Get().SafetyMonitorAlpacaEnabled {
+	// Exposing the SafetyMonitor is an explicit opt-in (at least one condition marked
+	// IncludeInSafetyMonitor) - discovery hides it entirely rather than listing a device that's
+	// permanently forced "safe" whenever nothing is configured, which would be misleading to a
+	// client like N.I.N.A.
+	if config.Get().HasAlpacaSafetyCondition() {
 		devices = append(devices, AlpacaConfiguredDevice{
 			DeviceName:   "SV241 Safety Monitor",
 			DeviceType:   "SafetyMonitor",
@@ -166,12 +167,12 @@ func (a *API) HandleSupportedActions(w http.ResponseWriter, r *http.Request) {
 // --- SafetyMonitor Handlers ---
 
 func (a *API) HandleSafetyMonitorIsSafe(w http.ResponseWriter, r *http.Request) {
-	if !config.Get().SafetyMonitorAlpacaEnabled {
-		BoolResponse(w, r, true) // Feature off -> never block, even if queried directly
+	if !config.Get().HasAlpacaSafetyCondition() {
+		BoolResponse(w, r, true) // Nothing configured -> never block, even if queried directly
 		return
 	}
 	serial.Conditions.RLock()
-	unsafe, _ := serial.Conditions.Data["unsafe"].(bool)
+	unsafe, _ := serial.Conditions.Data["unsafeAlpaca"].(bool)
 	serial.Conditions.RUnlock()
 	BoolResponse(w, r, !unsafe)
 }

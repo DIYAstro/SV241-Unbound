@@ -91,10 +91,6 @@ async function save() {
                       <input type="checkbox" v-model="localConfig.autoDetectPort" @change="onChange">
                       Auto-Detect Port
                   </label>
-                  <label>
-                      <input type="checkbox" v-model="localConfig.enableNotifications" @change="onChange">
-                      Notifications
-                  </label>
               </div>
               <div class="form-group">
                   <label>Listen Address</label>

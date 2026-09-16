@@ -41,7 +41,7 @@ The project also includes the standalone SV241 Alpaca Proxy, written in Go. This
 *   Auto-detection of the SV241 serial port.
 *   Exposes all power outputs as a single ASCOM `Switch` device.
 *   Exposes environmental sensors as an ASCOM `ObservingConditions` device.
-*   **Safety Monitor:** Optional ASCOM `SafetyMonitor` device that reports "unsafe" once the input voltage drops to or below a configurable threshold - lets a sequencer (e.g. N.I.N.A.) abort a running sequence in an orderly way, useful when running off a battery in the field. Independently, a UI warning indicator and desktop notification can be enabled for the same threshold.
+*   **Safety Monitor:** Configurable conditions (voltage, current, power, temperature, humidity, etc. vs. a threshold) that report "unsafe" when tripped - lets a sequencer (e.g. N.I.N.A.) abort a running sequence in an orderly way, useful when running off a battery in the field. Each condition independently decides whether it sends a desktop notification and/or counts toward the ASCOM `SafetyMonitor` device's `IsSafe`.
 *   **Modern Web Interface:** A responsive, dark-themed dashboard with glassmorphism effects.
 *   **Telemetry History:** Automatic CSV logging of all sensor data with an interactive historical chart visualization.
 *   **Hide Unused Outputs:** Individual power switches and dew heaters can be disabled in the firmware configuration. Disabled outputs are automatically hidden from both the Web UI and the ASCOM device list, keeping your interface clean.

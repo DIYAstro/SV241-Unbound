@@ -13,7 +13,7 @@ const emit = defineEmits(['open-explorer'])
     <div class="panel-header">
         <h2>
             Live Telemetry
-            <span v-if="isConnected && liveStatus.unsafe && proxyConfig.safetyMonitorUIWarningEnabled" class="unsafe-dot"
+            <span v-if="isConnected && liveStatus.unsafeUI" class="unsafe-dot"
                   title="A configured safety condition is currently triggered - see Safety Monitor tab for details."></span>
         </h2>
         <!-- Only show Data Explorer button if telemetry logging is enabled -->

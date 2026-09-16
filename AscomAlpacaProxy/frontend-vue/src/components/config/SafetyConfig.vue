@@ -36,8 +36,8 @@ function operatorLabel(id) {
 
 // Mirrors internal/serial's safetyMetricExtractors - must stay in sync with that map. Needed
 // client-side so the Conditions list can show each row's live value and highlight which
-// condition(s) are actually the ones currently making the box unsafe, rather than only the
-// single aggregate SAFE/UNSAFE state the backend exposes via liveStatus.unsafe.
+// condition(s) are actually the ones currently tripped, rather than only the two aggregate
+// SAFE/UNSAFE states the backend exposes via liveStatus.unsafeUI/unsafeAlpaca.
 function extractMetricValue(metric, status) {
     switch (metric) {
         case 'voltage': return status.v
@@ -84,30 +84,35 @@ const triggeredConditions = computed(() => conditionStatuses.value.filter(c => c
 // poll (device.js's checkConnection) regardless of whether anything actually changed, so without
 // the hasChanges guard the very next poll tick overwrites whatever the user just typed/added/removed.
 const conditions = ref([])
-const uiWarningEnabled = ref(false)
-const alpacaEnabled = ref(false)
+const notifyConnectionEvents = ref(true)
+const notifyHeaterCurrentLimit = ref(true)
 const hasChanges = ref(false)
 watch(proxyConfig, (val) => {
     if (!val || hasChanges.value) return
     conditions.value = JSON.parse(JSON.stringify(val.safetyMonitorConditions || []))
-    uiWarningEnabled.value = val.safetyMonitorUIWarningEnabled ?? false
-    alpacaEnabled.value = val.safetyMonitorAlpacaEnabled ?? false
+    notifyConnectionEvents.value = val.notifyConnectionEvents ?? true
+    notifyHeaterCurrentLimit.value = val.notifyHeaterCurrentLimit ?? true
 }, { immediate: true })
 
 function onChange() {
     hasChanges.value = true
 }
 
-// Draft fields for the "add condition" row.
+// Draft fields for the "add condition" row. Notify defaults on, IncludeInSafetyMonitor defaults
+// off - same convention the backend used to apply when migrating an old single threshold.
 const newMetric = ref(METRICS[0].id)
 const newOperator = ref(OPERATORS[0].id)
 const newThreshold = ref(0)
+const newNotify = ref(true)
+const newIncludeInSafetyMonitor = ref(false)
 
 function addCondition() {
     conditions.value.push({
         metric: newMetric.value,
         operator: newOperator.value,
-        threshold: parseFloat(newThreshold.value) || 0
+        threshold: parseFloat(newThreshold.value) || 0,
+        notify: newNotify.value,
+        includeInSafetyMonitor: newIncludeInSafetyMonitor.value
     })
     newThreshold.value = 0
     onChange()
@@ -123,36 +128,62 @@ async function save() {
         await store.saveProxyConfig({
             ...store.proxyConfig,
             safetyMonitorConditions: conditions.value,
-            safetyMonitorUIWarningEnabled: uiWarningEnabled.value,
-            safetyMonitorAlpacaEnabled: alpacaEnabled.value
+            notifyConnectionEvents: notifyConnectionEvents.value,
+            notifyHeaterCurrentLimit: notifyHeaterCurrentLimit.value
         })
         hasChanges.value = false
-        modal.success('Safety Monitor settings saved.')
+        modal.success('Safety Monitor & Notifications settings saved.')
     } catch (e) {
-        modal.error('Error saving Safety Monitor settings: ' + e.message)
+        modal.error('Error saving settings: ' + e.message)
     }
 }
 </script>
 
 <template>
   <div class="config-group full-width-group">
-      <h3>Safety Monitor</h3>
+      <h3>Safety Monitor & Notifications</h3>
+
+      <div class="settings-card glass-panel">
+          <h4>General Notifications</h4>
+          <p class="card-description">
+              Every proxy event that can send a desktop notification, each independently switchable.
+          </p>
+          <div class="checkbox-with-hint">
+              <label class="checkbox-label">
+                  <input type="checkbox" v-model="notifyConnectionEvents" @change="onChange">
+                  Notify on Connection Lost/Restored
+              </label>
+              <small class="hint">Desktop notification when the SV241's serial connection drops or comes back.</small>
+          </div>
+          <div class="checkbox-with-hint">
+              <label class="checkbox-label">
+                  <input type="checkbox" v-model="notifyHeaterCurrentLimit" @change="onChange">
+                  Notify on Heater Current-Limit Change
+              </label>
+              <small class="hint">Desktop notification when dew heater output starts or stops being reduced by the box-wide current limit.</small>
+          </div>
+      </div>
 
       <div class="settings-card glass-panel">
           <h4>Status</h4>
           <p class="card-description">
-              Current state vs. the conditions configured below.
+              Current state vs. the conditions configured below, per channel.
           </p>
-          <div class="status-row">
-              <span v-if="isConnected" class="status-badge" :class="liveStatus.unsafe ? 'unsafe' : 'safe'">
-                  {{ liveStatus.unsafe ? 'UNSAFE' : 'SAFE' }}
+          <div class="status-row" v-if="isConnected">
+              <span class="status-badge" :class="liveStatus.unsafeUI ? 'unsafe' : 'safe'">
+                  Notify: {{ liveStatus.unsafeUI ? 'UNSAFE' : 'SAFE' }}
               </span>
-              <span v-else class="status-value">--</span>
+              <span class="status-badge" :class="liveStatus.unsafeAlpaca ? 'unsafe' : 'safe'">
+                  Safety Monitor: {{ liveStatus.unsafeAlpaca ? 'UNSAFE' : 'SAFE' }}
+              </span>
           </div>
+          <span v-else class="status-value">--</span>
           <ul v-if="isConnected && triggeredConditions.length" class="triggered-list">
               <li v-for="(cond, idx) in triggeredConditions" :key="idx">
                   {{ metricInfo(cond.metric).label }} is {{ formatValue(cond.currentValue, metricInfo(cond.metric).unit) }}
                   (condition: {{ operatorLabel(cond.operator) }} {{ cond.threshold }} {{ metricInfo(cond.metric).unit }})
+                  <span v-if="cond.notify" class="channel-tag">Notify</span>
+                  <span v-if="cond.includeInSafetyMonitor" class="channel-tag">Safety Monitor</span>
               </li>
           </ul>
       </div>
@@ -160,17 +191,22 @@ async function save() {
       <div class="settings-card glass-panel">
           <h4>Conditions</h4>
           <p class="card-description">
-              If ANY condition below is true, the box is considered "unsafe" - useful for a
-              battery-powered rig in the field, so a sequencer (e.g. N.I.N.A.) can shut down in an
-              orderly way before, say, the battery is fully drained or the box overheats.
+              Each condition independently decides whether it fires a desktop notification
+              ("Notify") and/or counts toward the ASCOM SafetyMonitor device's IsSafe ("Include in
+              Safety Monitor") - e.g. "humidity too high" can be notification-only while "voltage
+              critically low" also aborts a N.I.N.A. sequence.
           </p>
 
           <div v-if="conditions.length" class="condition-list">
-              <div v-for="(cond, idx) in conditionStatuses" :key="idx" class="condition-row" :class="{ triggered: cond.triggered }">
+              <div v-for="(cond, idx) in conditions" :key="idx" class="condition-row" :class="{ triggered: conditionStatuses[idx]?.triggered }">
                   <span class="condition-text">
                       {{ metricInfo(cond.metric).label }} {{ operatorLabel(cond.operator) }} {{ cond.threshold }} {{ metricInfo(cond.metric).unit }}
-                      <small v-if="isConnected" class="condition-current">(currently {{ formatValue(cond.currentValue, metricInfo(cond.metric).unit) }})</small>
+                      <small v-if="isConnected" class="condition-current">(currently {{ formatValue(conditionStatuses[idx]?.currentValue, metricInfo(cond.metric).unit) }})</small>
                   </span>
+                  <div class="condition-channels">
+                      <label><input type="checkbox" v-model="cond.notify" @change="onChange"> Notify</label>
+                      <label><input type="checkbox" v-model="cond.includeInSafetyMonitor" @change="onChange"> Include in Safety Monitor</label>
+                  </div>
                   <button @click="removeCondition(idx)" class="btn-danger">Remove</button>
               </div>
           </div>
@@ -184,32 +220,13 @@ async function save() {
                   <option v-for="o in OPERATORS" :key="o.id" :value="o.id">{{ o.label }}</option>
               </select>
               <input type="number" step="0.1" v-model.number="newThreshold" :placeholder="metricInfo(newMetric).unit">
+              <label><input type="checkbox" v-model="newNotify"> Notify</label>
+              <label><input type="checkbox" v-model="newIncludeInSafetyMonitor"> Include in Safety Monitor</label>
               <button @click="addCondition" class="btn-secondary">Add</button>
           </div>
       </div>
 
-      <div class="settings-card glass-panel">
-          <h4>Notification Channels</h4>
-          <p class="card-description">
-              Choose independently where a threshold crossing gets reported.
-          </p>
-          <div class="checkbox-with-hint">
-              <label class="checkbox-label">
-                  <input type="checkbox" v-model="uiWarningEnabled" @change="onChange">
-                  Show warning indicator & desktop notification
-              </label>
-              <small class="hint">Adds a warning dot in Live Telemetry and sends a desktop notification when the state changes.</small>
-          </div>
-          <div class="checkbox-with-hint">
-              <label class="checkbox-label">
-                  <input type="checkbox" v-model="alpacaEnabled" @change="onChange">
-                  Expose ASCOM Alpaca SafetyMonitor device
-              </label>
-              <small class="hint">Adds a SafetyMonitor device at /api/v1/safetymonitor/0/ that ASCOM client software (e.g. N.I.N.A.) can poll to abort a sequence.</small>
-          </div>
-      </div>
-
-      <button @click="save" class="btn-primary full-width-btn" :disabled="!hasChanges">Save Safety Monitor Settings</button>
+      <button @click="save" class="btn-primary full-width-btn" :disabled="!hasChanges">Save Settings</button>
   </div>
 </template>
 
@@ -250,7 +267,6 @@ async function save() {
 .condition-row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 0.75rem;
     padding: 0.5rem 0.6rem;
     border-radius: 6px;
@@ -267,6 +283,13 @@ async function save() {
 .condition-text {
     font-family: monospace;
     color: var(--text-color);
+    /* Grows to absorb the leftover space so .condition-channels/the Remove button always land at
+       the same fixed spot from the right edge, regardless of how long this row's metric name +
+       value text is - without this, justify-content:space-between split the row's own leftover
+       space into gaps whose size varied per row, so the checkboxes visibly zig-zagged between
+       rows. */
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 .condition-current {
@@ -290,6 +313,33 @@ async function save() {
     flex: none;
 }
 
+.condition-channels {
+    display: flex;
+    flex: none;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    font-size: 0.8rem;
+    color: var(--text-secondary, #aaa);
+}
+
+.condition-channels label {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.channel-tag {
+    display: inline-block;
+    margin-left: 0.5rem;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    background: rgba(224, 64, 64, 0.15);
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
 .add-condition-row {
     display: flex;
     gap: 0.5rem;
@@ -297,10 +347,21 @@ async function save() {
     align-items: center;
 }
 
-.add-condition-row select,
-.add-condition-row input {
+.add-condition-row > select,
+.add-condition-row > input {
     flex: 1;
     min-width: 100px;
+}
+
+.add-condition-row > label {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    flex: none;
+    white-space: nowrap;
+    font-size: 0.85rem;
+    color: var(--text-secondary, #aaa);
+    cursor: pointer;
 }
 
 .add-condition-row button {

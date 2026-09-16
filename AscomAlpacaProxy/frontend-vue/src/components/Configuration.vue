@@ -16,7 +16,7 @@ const tabs = [
     { id: 'tab-heaters', label: 'Dew Heaters', component: HeaterConfig },
     { id: 'tab-sensors', label: 'Sensors/Auto-Dry', component: SensorConfig },
     { id: 'tab-weather', label: 'Weather Service', component: WeatherConfig },
-    { id: 'tab-safety', label: 'Safety Monitor', component: SafetyConfig },
+    { id: 'tab-safety', label: 'Safety Monitor & Notifications', component: SafetyConfig },
     { id: 'tab-profiles', label: 'Profiles', component: ProfilesConfig },
     { id: 'tab-proxy', label: 'Proxy', component: ProxySettings },
     { id: 'tab-system', label: 'System', component: SystemSettings },

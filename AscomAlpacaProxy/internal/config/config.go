@@ -34,13 +34,18 @@ type DeviceProfile struct {
 }
 
 // SafetyCondition is one row in ProxyConfig.SafetyMonitorConditions - "if <Metric> <Operator>
-// <Threshold>, the box is unsafe". Operator is one of ">", ">=", "<", "<=" (see
+// <Threshold>, this condition is tripped". Operator is one of ">", ">=", "<", "<=" (see
 // internal/serial's evaluateOperator). Metric is one of the keys in that package's
-// safetyMetricExtractors (e.g. "voltage", "current", "ambientTemp").
+// safetyMetricExtractors (e.g. "voltage", "current", "ambientTemp"). Notify and
+// IncludeInSafetyMonitor are independent: a condition can fire a desktop notification without
+// affecting ASCOM IsSafe (e.g. "humidity too high" as an informational heads-up), affect IsSafe
+// without notifying, or both.
 type SafetyCondition struct {
-	Metric    string  `json:"metric"`
-	Operator  string  `json:"operator"`
-	Threshold float64 `json:"threshold"`
+	Metric                 string  `json:"metric"`
+	Operator               string  `json:"operator"`
+	Threshold              float64 `json:"threshold"`
+	Notify                 bool    `json:"notify"`
+	IncludeInSafetyMonitor bool    `json:"includeInSafetyMonitor"`
 }
 
 // ProxyConfig stores configuration specific to the Go proxy itself.
@@ -67,7 +72,6 @@ type ProxyConfig struct {
 	EnableAlpacaVoltageControl bool   `json:"enableAlpacaVoltageControl"` // Allow voltage control via Alpaca
 	EnableAlpacaDiscovery      bool   `json:"enableAlpacaDiscovery"`      // Respond to Alpaca UDP discovery packets
 	EnableMasterPower          bool   `json:"enableMasterPower"`          // Show Master Power switch
-	EnableNotifications        bool   `json:"enableNotifications"`        // Show Windows toast notifications
 	AlwaysShowLensTemp         bool   `json:"alwaysShowLensTemp"`         // Always expose Lens Temp switch regardless of PID mode
 	LensTempName               string `json:"lensTempName"`               // Custom name for Lens Temp sensor check
 	FirstRunComplete           bool   `json:"firstRunComplete"`           // Onboarding wizard completed
@@ -86,18 +90,22 @@ type ProxyConfig struct {
 	WeatherInterval       int               `json:"weatherInterval"`       // Minutes
 	WeatherSourcePriority map[string]string `json:"weatherSourcePriority"` // metric -> hardware|internet|hybrid
 
-	// Safety Monitor (see internal/serial's computeSafetyUnsafe): a list of threshold conditions,
-	// OR'd together - if ANY condition matches the live reading, the box is "unsafe". Two
-	// independent consumers - a UI warning/desktop notification, and exposing the ASCOM Alpaca
-	// SafetyMonitor device (/api/v1/safetymonitor/0/) other client software (e.g. N.I.N.A.) can
-	// poll to abort a sequence in an orderly way. Proxy-side, not firmware - every consumer is
-	// already proxy/UI-side, no reflash needed. An empty list disables the check entirely.
-	//
-	// Replaces the former single-threshold SafetyMonitorVoltageThreshold field (removed) - see
-	// doLoad()'s migration block for how an existing installation's old value carries forward.
-	SafetyMonitorConditions      []SafetyCondition `json:"safetyMonitorConditions"`
-	SafetyMonitorUIWarningEnabled bool             `json:"safetyMonitorUIWarningEnabled"`
-	SafetyMonitorAlpacaEnabled    bool             `json:"safetyMonitorAlpacaEnabled"`
+	// Per-source notification toggles - replaces the old single EnableNotifications master switch,
+	// which made it impossible to silence one source (e.g. heater) without silencing all of them.
+	// Each notify.Dispatch call site in internal/serial checks its own matching field before
+	// dispatching at all; internal/systray's ShowNotification (the one registered delivery
+	// channel) no longer gates on anything itself - it delivers whatever it's given.
+	NotifyConnectionEvents   bool `json:"notifyConnectionEvents"`
+	NotifyHeaterCurrentLimit bool `json:"notifyHeaterCurrentLimit"`
+
+	// Safety Monitor (see internal/serial's computeSafetyStatus): a list of threshold conditions.
+	// Each condition independently decides whether it fires a notification (SafetyCondition.Notify)
+	// and/or counts toward the ASCOM SafetyMonitor device's IsSafe
+	// (SafetyCondition.IncludeInSafetyMonitor) - e.g. "humidity too high" can be notification-only
+	// while "voltage critically low" also aborts a N.I.N.A. sequence. Proxy-side, not firmware -
+	// every consumer is already proxy/UI-side, no reflash needed. An empty list, or one where
+	// nothing has IncludeInSafetyMonitor set, disables ASCOM exposure entirely.
+	SafetyMonitorConditions []SafetyCondition `json:"safetyMonitorConditions"`
 }
 
 // CombinedConfig defines the structure for a full backup file.
@@ -601,7 +609,8 @@ func doLoad() error {
 				HistoryRetentionNights:   10,   // Default to 10 nights
 				TelemetryInterval:        10,   // Default to 10 seconds
 				EnableAlpacaDiscovery:    true, // Default to discovery enabled
-				EnableNotifications:      true, // Default to notifications enabled
+				NotifyConnectionEvents:   true, // Default to notifications enabled
+				NotifyHeaterCurrentLimit: true, // Default to notifications enabled
 				WeatherInterval:          5,    // Default to 5 minutes
 				WeatherModel:             "best_match",
 				WeatherSourcePriority:    make(map[string]string),
@@ -707,29 +716,16 @@ func doLoad() error {
 		proxyConfig.AutoDetectPort = true
 	}
 
-	// Safety Monitor migration: an installation from before the conditions-list redesign has
-	// either the single-threshold safetyMonitorVoltageThreshold (the previous release) or the
-	// even older voltageCriticalThreshold/voltageWarningThreshold (pre-dating the Safety Monitor
-	// feature entirely) in its file - both are now-removed ProxyConfig fields, so json.Unmarshal
-	// above silently dropped them. Carry whichever old value is present forward as the new list's
-	// first (and only) entry, rather than silently resetting an existing user's configured
-	// threshold to "disabled". SafetyMonitorAlpacaEnabled deliberately stays false either way:
-	// exposing a new ASCOM device is a distinct opt-in decision nobody has made yet, not something
-	// to infer from an old UI-only warning setting.
-	if len(proxyConfig.SafetyMonitorConditions) == 0 {
-		var legacyThreshold float64
-		if v, ok := rawMap["safetyMonitorVoltageThreshold"].(float64); ok && v > 0 {
-			legacyThreshold = v
-		} else if v, ok := rawMap["voltageCriticalThreshold"].(float64); ok && v > 0 {
-			legacyThreshold = v
-		}
-		if legacyThreshold > 0 {
-			logger.Info("Migrating legacy voltage threshold (%.1fV) to safetyMonitorConditions.", legacyThreshold)
-			proxyConfig.SafetyMonitorConditions = []SafetyCondition{
-				{Metric: "voltage", Operator: "<=", Threshold: legacyThreshold},
-			}
-			proxyConfig.SafetyMonitorUIWarningEnabled = true
-		}
+	// Default for files predating these two fields - no value migration from the old, now-removed
+	// EnableNotifications involved (that field is simply dropped; an orphaned key left behind in
+	// an old file is harmless, json.Unmarshal above already ignored it). This project has never
+	// had an official release yet (daily builds only), so breaking changes here are acceptable -
+	// a fresh default is all that's needed, same as any other new boolean field.
+	if _, ok := rawMap["notifyConnectionEvents"]; !ok {
+		proxyConfig.NotifyConnectionEvents = true
+	}
+	if _, ok := rawMap["notifyHeaterCurrentLimit"]; !ok {
+		proxyConfig.NotifyHeaterCurrentLimit = true
 	}
 
 	// Apply the loaded log level immediately.
@@ -756,6 +752,18 @@ func Save() error {
 	}
 	logger.Info("Successfully saved proxy config to file '%s'", proxyConfigFile)
 	return nil
+}
+
+// HasAlpacaSafetyCondition reports whether any configured Safety Monitor condition counts toward
+// the ASCOM SafetyMonitor device's IsSafe. Used to decide both whether that device appears in
+// Alpaca discovery at all, and whether IsSafe reflects the real computed state or is forced true.
+func (c *ProxyConfig) HasAlpacaSafetyCondition() bool {
+	for _, cond := range c.SafetyMonitorConditions {
+		if cond.IncludeInSafetyMonitor {
+			return true
+		}
+	}
+	return false
 }
 
 // Get returns a pointer to the singleton ProxyConfig instance.

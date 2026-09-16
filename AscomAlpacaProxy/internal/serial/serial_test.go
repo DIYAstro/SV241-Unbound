@@ -104,67 +104,86 @@ func TestUpdateStatusCacheFromJSON_MissingStatus(t *testing.T) {
 	}
 }
 
-func TestComputeSafetyUnsafe(t *testing.T) {
-	t.Run("empty condition list is always safe", func(t *testing.T) {
+func TestComputeSafetyStatus(t *testing.T) {
+	t.Run("empty condition list is always safe on both channels", func(t *testing.T) {
 		withSafetyConditions(t)
-		unsafe, reason := computeSafetyUnsafe(map[string]interface{}{"v": 5.0})
-		if unsafe || reason != "" {
-			t.Errorf("expected safe with no reason, got unsafe=%v reason=%q", unsafe, reason)
+		status := computeSafetyStatus(map[string]interface{}{"v": 5.0})
+		if status.UIUnsafe || status.AlpacaUnsafe || status.UIReason != "" || status.AlpacaReason != "" {
+			t.Errorf("expected fully safe with no reasons, got %+v", status)
 		}
 	})
 
-	t.Run("single matching condition is unsafe with a reason", func(t *testing.T) {
-		withSafetyConditions(t, config.SafetyCondition{Metric: "voltage", Operator: "<=", Threshold: 11.0})
-		unsafe, reason := computeSafetyUnsafe(map[string]interface{}{"v": 10.5})
-		if !unsafe {
-			t.Fatal("expected unsafe when voltage is at or below the threshold")
+	t.Run("condition with Notify only affects UIUnsafe, not AlpacaUnsafe", func(t *testing.T) {
+		withSafetyConditions(t, config.SafetyCondition{Metric: "voltage", Operator: "<=", Threshold: 11.0, Notify: true})
+		status := computeSafetyStatus(map[string]interface{}{"v": 10.5})
+		if !status.UIUnsafe || status.UIReason == "" {
+			t.Errorf("expected UIUnsafe with a reason, got %+v", status)
 		}
-		if reason == "" {
-			t.Error("expected a non-empty reason naming the tripped condition")
+		if status.AlpacaUnsafe {
+			t.Errorf("expected AlpacaUnsafe to stay false when the condition isn't IncludeInSafetyMonitor, got %+v", status)
+		}
+	})
+
+	t.Run("condition with IncludeInSafetyMonitor only affects AlpacaUnsafe, not UIUnsafe", func(t *testing.T) {
+		withSafetyConditions(t, config.SafetyCondition{Metric: "voltage", Operator: "<=", Threshold: 11.0, IncludeInSafetyMonitor: true})
+		status := computeSafetyStatus(map[string]interface{}{"v": 10.5})
+		if !status.AlpacaUnsafe || status.AlpacaReason == "" {
+			t.Errorf("expected AlpacaUnsafe with a reason, got %+v", status)
+		}
+		if status.UIUnsafe {
+			t.Errorf("expected UIUnsafe to stay false when the condition isn't Notify, got %+v", status)
+		}
+	})
+
+	t.Run("condition with neither flag set is skipped entirely, even if it would match", func(t *testing.T) {
+		withSafetyConditions(t, config.SafetyCondition{Metric: "voltage", Operator: "<=", Threshold: 11.0})
+		status := computeSafetyStatus(map[string]interface{}{"v": 5.0})
+		if status.UIUnsafe || status.AlpacaUnsafe {
+			t.Errorf("expected a condition with no channels enabled to never trip anything, got %+v", status)
 		}
 	})
 
 	t.Run("single non-matching condition is safe", func(t *testing.T) {
-		withSafetyConditions(t, config.SafetyCondition{Metric: "voltage", Operator: "<=", Threshold: 11.0})
-		unsafe, _ := computeSafetyUnsafe(map[string]interface{}{"v": 12.0})
-		if unsafe {
-			t.Error("expected safe when voltage is above the threshold")
+		withSafetyConditions(t, config.SafetyCondition{Metric: "voltage", Operator: "<=", Threshold: 11.0, Notify: true, IncludeInSafetyMonitor: true})
+		status := computeSafetyStatus(map[string]interface{}{"v": 12.0})
+		if status.UIUnsafe || status.AlpacaUnsafe {
+			t.Errorf("expected safe when voltage is above the threshold, got %+v", status)
 		}
 	})
 
-	t.Run("conditions are OR'd - only the second one tripping is still unsafe", func(t *testing.T) {
+	t.Run("conditions are OR'd per channel - only the second one tripping is still unsafe", func(t *testing.T) {
 		withSafetyConditions(t,
-			config.SafetyCondition{Metric: "voltage", Operator: "<=", Threshold: 11.0},   // does not match
-			config.SafetyCondition{Metric: "humidity", Operator: ">=", Threshold: 90.0}, // matches
+			config.SafetyCondition{Metric: "voltage", Operator: "<=", Threshold: 11.0, Notify: true},  // does not match
+			config.SafetyCondition{Metric: "humidity", Operator: ">=", Threshold: 90.0, Notify: true}, // matches
 		)
-		unsafe, _ := computeSafetyUnsafe(map[string]interface{}{"v": 12.0, "h_amb": 95.0})
-		if !unsafe {
-			t.Error("expected unsafe when the second of two OR'd conditions matches")
+		status := computeSafetyStatus(map[string]interface{}{"v": 12.0, "h_amb": 95.0})
+		if !status.UIUnsafe {
+			t.Errorf("expected unsafe when the second of two OR'd conditions matches, got %+v", status)
 		}
 	})
 
 	t.Run("unknown metric is skipped, not treated as a match", func(t *testing.T) {
-		withSafetyConditions(t, config.SafetyCondition{Metric: "windSpeed", Operator: ">", Threshold: 50})
-		unsafe, _ := computeSafetyUnsafe(map[string]interface{}{"v": 12.0})
-		if unsafe {
-			t.Error("expected an unrecognized metric to be skipped, not matched")
+		withSafetyConditions(t, config.SafetyCondition{Metric: "windSpeed", Operator: ">", Threshold: 50, Notify: true})
+		status := computeSafetyStatus(map[string]interface{}{"v": 12.0})
+		if status.UIUnsafe {
+			t.Errorf("expected an unrecognized metric to be skipped, not matched, got %+v", status)
 		}
 	})
 
 	t.Run("missing reading is skipped, not treated as a match", func(t *testing.T) {
-		withSafetyConditions(t, config.SafetyCondition{Metric: "voltage", Operator: "<=", Threshold: 11.0})
-		unsafe, _ := computeSafetyUnsafe(map[string]interface{}{})
-		if unsafe {
-			t.Error("expected a missing reading to be skipped, not matched")
+		withSafetyConditions(t, config.SafetyCondition{Metric: "voltage", Operator: "<=", Threshold: 11.0, Notify: true})
+		status := computeSafetyStatus(map[string]interface{}{})
+		if status.UIUnsafe {
+			t.Errorf("expected a missing reading to be skipped, not matched, got %+v", status)
 		}
 	})
 
 	t.Run("current is converted from mA to A before comparing", func(t *testing.T) {
-		withSafetyConditions(t, config.SafetyCondition{Metric: "current", Operator: ">=", Threshold: 5.0})
+		withSafetyConditions(t, config.SafetyCondition{Metric: "current", Operator: ">=", Threshold: 5.0, Notify: true})
 		// 5500 mA = 5.5 A, at or above a 5 A threshold.
-		unsafe, _ := computeSafetyUnsafe(map[string]interface{}{"i": 5500.0})
-		if !unsafe {
-			t.Error("expected 5500 mA to trip a >= 5 A threshold")
+		status := computeSafetyStatus(map[string]interface{}{"i": 5500.0})
+		if !status.UIUnsafe {
+			t.Errorf("expected 5500 mA to trip a >= 5 A threshold, got %+v", status)
 		}
 	})
 }

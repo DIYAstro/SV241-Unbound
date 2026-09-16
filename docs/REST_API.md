@@ -195,13 +195,16 @@ Invoke-RestMethod -Uri "http://localhost:32241/api/v1/switch/0/getswitchvalue?Id
 
 ## Safety Monitor
 
-When enabled (Configuration → Safety Monitor tab, "Expose ASCOM Alpaca SafetyMonitor device"),
-the proxy exposes a standard ASCOM `SafetyMonitor` device that reports "unsafe" once any one of
-your configured conditions is true - e.g. voltage at or below a threshold, current above a
-threshold, ambient temperature or humidity out of range. Conditions are OR'd together: any single
-one tripping is enough. Useful for a battery-powered rig in the field, so a sequencer (e.g.
-N.I.N.A.) can abort a running sequence in an orderly way. If the feature is disabled, `IsSafe`
-always returns `true` and the device doesn't appear in `management/v1/configureddevices` at all.
+Each condition in the Safety Monitor & Notifications tab has its own "Include in Safety Monitor"
+checkbox, independent of its "Notify" checkbox - a condition can send a desktop notification
+without affecting ASCOM, count toward ASCOM without notifying, or both. Once at least one
+condition has "Include in Safety Monitor" checked, the proxy exposes a standard ASCOM
+`SafetyMonitor` device that reports "unsafe" once any one of those conditions is true - e.g.
+voltage at or below a threshold, current above a threshold, ambient temperature or humidity out of
+range. Such conditions are OR'd together: any single one tripping is enough. Useful for a
+battery-powered rig in the field, so a sequencer (e.g. N.I.N.A.) can abort a running sequence in an
+orderly way. If no condition has "Include in Safety Monitor" checked, `IsSafe` always returns
+`true` and the device doesn't appear in `management/v1/configureddevices` at all.
 
 **Endpoint:** `GET /api/v1/safetymonitor/0/issafe`
 

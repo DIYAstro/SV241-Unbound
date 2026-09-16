@@ -125,13 +125,10 @@ func ShowMessageBox(title, message string, style uint) {
 	messageBoxW.Call(0, uintptr(unsafe.Pointer(lpText)), uintptr(unsafe.Pointer(lpCaption)), uintptr(style))
 }
 
-// ShowNotification displays a toast notification if enabled in config.
+// ShowNotification displays a toast notification. Delivers unconditionally - whether a given
+// event should notify at all is decided by its own source-specific config flag at the
+// notify.Dispatch call site (see internal/serial), not centrally here.
 func ShowNotification(title, message string) {
-	// Check if notifications are enabled
-	if !config.Get().EnableNotifications {
-		return
-	}
-
 	notification := toast.Notification{
 		AppID:   "SV241 Alpaca Proxy",
 		Title:   title,
