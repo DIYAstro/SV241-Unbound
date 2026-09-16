@@ -13,6 +13,12 @@ const { liveStatus, proxyConfig, isConnected } = storeToRefs(store)
 const conditions = computed(() => proxyConfig.value.safetyMonitorConditions || [])
 const { triggeredConditions } = useSafetyConditionStatuses(conditions, liveStatus, isConnected)
 
+// A badge is only worth showing if some condition actually feeds it - otherwise it would forever
+// read "SAFE" with nothing behind it. Mirrors internal/config's HasAlpacaSafetyCondition() for the
+// Safety Monitor flag; Notify has no server-side equivalent but is the same simple check.
+const showNotifyStatus = computed(() => conditions.value.some(c => c.notify))
+const showSafetyMonitorStatus = computed(() => conditions.value.some(c => c.includeInSafetyMonitor))
+
 const emit = defineEmits(['open-explorer'])
 </script>
 
@@ -20,14 +26,6 @@ const emit = defineEmits(['open-explorer'])
   <div class="glass-panel">
     <div class="panel-header">
         <h2>Live Telemetry</h2>
-        <div class="safety-status">
-            <span class="status-badge" :class="liveStatus.unsafeUI ? 'unsafe' : 'safe'">
-                Notify: {{ liveStatus.unsafeUI ? 'UNSAFE' : 'SAFE' }}
-            </span>
-            <span class="status-badge" :class="liveStatus.unsafeAlpaca ? 'unsafe' : 'safe'">
-                Safety Monitor: {{ liveStatus.unsafeAlpaca ? 'UNSAFE' : 'SAFE' }}
-            </span>
-        </div>
         <!-- Only show Data Explorer button if telemetry logging is enabled -->
         <button v-if="proxyConfig.telemetryInterval > 0" class="icon-btn" @click="$emit('open-explorer')" title="Open Data Explorer">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -38,14 +36,30 @@ const emit = defineEmits(['open-explorer'])
         </button>
     </div>
 
-    <ul v-if="isConnected && triggeredConditions.length" class="triggered-list">
-        <li v-for="(cond, idx) in triggeredConditions" :key="idx">
-            {{ metricInfo(cond.metric).label }} is {{ formatValue(cond.currentValue, metricInfo(cond.metric).unit) }}
-            (condition: {{ operatorLabel(cond.operator) }} {{ cond.threshold }} {{ metricInfo(cond.metric).unit }})
-            <span v-if="cond.notify" class="channel-tag">Notify</span>
-            <span v-if="cond.includeInSafetyMonitor" class="channel-tag">Safety Monitor</span>
-        </li>
-    </ul>
+    <!-- Safety status - its own nested card (same pattern as WeatherConfig.vue's priority-matrix:
+         a .glass-panel nested inside another .glass-panel), not gated on isConnected since the
+         whole point is reporting "unsafe" correctly even while disconnected (e.g. a lost
+         connection itself opted into "Include in Safety Monitor"). Only appears if some
+         condition actually feeds it (see Safety Monitor & Notifications tab). -->
+    <div v-if="showNotifyStatus || showSafetyMonitorStatus" class="glass-panel safety-panel">
+        <div class="safety-row">
+            <span v-if="showNotifyStatus" class="safety-item" :class="{ unsafe: liveStatus.unsafeUI }">
+                <span class="status-dot"></span> Notify: {{ liveStatus.unsafeUI ? 'UNSAFE' : 'SAFE' }}
+            </span>
+            <span v-if="showSafetyMonitorStatus" class="safety-item" :class="{ unsafe: liveStatus.unsafeAlpaca }">
+                <span class="status-dot"></span> Safety Monitor: {{ liveStatus.unsafeAlpaca ? 'UNSAFE' : 'SAFE' }}
+            </span>
+        </div>
+
+        <ul v-if="isConnected && triggeredConditions.length" class="triggered-list">
+            <li v-for="(cond, idx) in triggeredConditions" :key="idx">
+                {{ metricInfo(cond.metric).label }} is {{ formatValue(cond.currentValue, metricInfo(cond.metric).unit) }}
+                (condition: {{ operatorLabel(cond.operator) }} {{ cond.threshold }} {{ metricInfo(cond.metric).unit }})
+                <span v-if="cond.notify" class="channel-tag">Notify</span>
+                <span v-if="cond.includeInSafetyMonitor" class="channel-tag">Safety Monitor</span>
+            </li>
+        </ul>
+    </div>
 
     <div class="telemetry-grid">
         <!-- Voltage -->
@@ -142,11 +156,6 @@ const emit = defineEmits(['open-explorer'])
     padding: 1rem 1rem 0 1rem; /* Align with grid padding */
 }
 
-.safety-status {
-    display: flex;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-}
 .icon-btn {
     background: none; border: 1px solid rgba(255,255,255,0.2);
     color: #fff; padding: 0.25rem 0.5rem;
@@ -214,34 +223,55 @@ const emit = defineEmits(['open-explorer'])
   cursor: help;
 }
 
-/* Safety Monitor status badges (see Safety Monitor & Notifications tab to configure the
-   underlying conditions). Live on the panel header, not on any single metric - a condition can be
-   based on any configured metric, not just voltage. Deliberately not gated on isConnected - the
-   Safety Monitor's whole point is reporting "unsafe" correctly even while disconnected (e.g. a
-   lost connection itself opted into "Include in Safety Monitor"). */
-.status-badge {
-  padding: 0.25rem 0.75rem;
-  border-radius: 6px;
-  font-size: 0.8rem;
-  font-weight: 700;
-  letter-spacing: 0.5px;
+/* Safety status - its own nested card (see Safety Monitor & Notifications tab to configure the
+   underlying conditions). Same nesting pattern as WeatherConfig.vue's priority-matrix
+   (.glass-panel inside another .glass-panel) - no bespoke box treatment, just plain colored
+   text + a status dot inside it, so it doesn't turn into a box-in-a-box-in-a-box. */
+.safety-panel {
+  margin: 0 1rem 1rem 1rem;
+  padding: 0.85rem 1rem;
 }
 
-.status-badge.safe {
-  background: rgba(64, 200, 64, 0.15);
-  color: #40c840;
+.safety-row {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
 }
 
-.status-badge.unsafe {
-  background: rgba(224, 64, 64, 0.15);
+.safety-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--success-color);
+}
+
+.safety-item.unsafe {
   color: var(--danger-color, #e04040);
+}
+
+.status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--success-color);
+  box-shadow: 0 0 8px var(--success-color);
+  transition: all 0.3s ease;
+}
+
+.safety-item.unsafe .status-dot {
+  background: var(--danger-color, #e04040);
+  box-shadow: 0 0 8px var(--danger-color, #e04040);
 }
 
 .triggered-list {
-  margin: 0 0 0.5rem 0;
-  padding: 0 1rem 0 2.25rem;
+  margin: 0.6rem 0 0 0;
+  padding: 0.5rem 0 0 1.1rem;
+  border-top: 1px solid var(--surface-border);
   font-size: 0.85rem;
   color: var(--danger-color, #e04040);
+  text-align: left;
 }
 
 .triggered-list li {
