@@ -160,9 +160,20 @@ async function completeOnboarding() {
     border-radius: 8px;
     padding: 1.5rem;
     margin-bottom: 1.5rem;
-    white-space: pre-wrap;
     text-align: left;
     font-size: 0.95rem;
+}
+
+.status-display pre {
+    /* white-space: pre-wrap here (not just on .status-display above) matters: <pre> has its own
+       browser-default "white-space: pre" rule that targets the element directly, which wins over
+       an inherited value from the parent regardless of the parent selector's specificity - so
+       setting this only on .status-display never actually reached the <pre>, and a long status
+       line (e.g. a version-mismatch message) overflowed the modal instead of wrapping. */
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    margin: 0;
+    font-family: inherit;
 }
 
 .status-icon {
