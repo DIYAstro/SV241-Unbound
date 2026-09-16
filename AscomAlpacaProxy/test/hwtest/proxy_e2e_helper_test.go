@@ -45,22 +45,23 @@ func startProxy(t *testing.T, comPort string) *proxyProcess {
 
 	networkPort := 32300 + rand.Intn(500) // avoid the real proxy's default 32241, reduce collision risk
 	proxyCfg := map[string]interface{}{
-		"serialPortName":           comPort,
-		"autoDetectPort":           false,
-		"networkPort":              networkPort,
-		"listenAddress":            "127.0.0.1",
-		"logLevel":                 "INFO",
-		"switchNames":              map[string]string{},
-		"heaterAutoEnableLeader":   map[string]bool{},
-		"historyRetentionNights":   1,
-		"telemetryInterval":        60,
-		"enableAlpacaDiscovery":    false,
-		"notifyConnectionEvents":   false,
-		"notifyHeaterCurrentLimit": false,
-		"weatherInterval":          60,
-		"weatherModel":             "best_match",
-		"weatherSourcePriority":    map[string]string{},
-		"firstRunComplete":         true,
+		"serialPortName":         comPort,
+		"autoDetectPort":         false,
+		"networkPort":            networkPort,
+		"listenAddress":          "127.0.0.1",
+		"logLevel":               "INFO",
+		"switchNames":            map[string]string{},
+		"heaterAutoEnableLeader": map[string]bool{},
+		"historyRetentionNights": 1,
+		"telemetryInterval":      60,
+		"enableAlpacaDiscovery":  false,
+		// No safetyMonitorConditions entries - connection/heater notifications only fire for
+		// metrics that have a matching condition with Notify set (see internal/serial's
+		// fireSafetyEvent), so omitting the key entirely keeps this test run silent.
+		"weatherInterval":       60,
+		"weatherModel":          "best_match",
+		"weatherSourcePriority": map[string]string{},
+		"firstRunComplete":      true,
 	}
 	cfgBytes, err := json.MarshalIndent(proxyCfg, "", "  ")
 	require.NoError(t, err)

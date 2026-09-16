@@ -581,12 +581,7 @@ func reconnect(newPortName string, preOpenedPort Port) {
 			// Send a connected event if the status changed from disconnected.
 			if lastSentStatus == events.Disconnected {
 				lastSentStatus = events.Connected
-				if config.Get().NotifyConnectionEvents {
-					notify.Dispatch(notify.Notification{
-						Title:   "SV241 Reconnected",
-						Message: "Connection to the COM port has been restored.",
-					})
-				}
+				fireSafetyEvent("connectionRestored", "SV241 Reconnected", "Connection to the COM port has been restored.")
 
 				// TRIGGER CONFIG SYNC
 				// Run sequentially in a single goroutine to avoid command storms
@@ -614,12 +609,8 @@ func handleDisconnect() {
 		// Send a disconnected event if the status changed from connected.
 		if lastSentStatus == events.Connected {
 			lastSentStatus = events.Disconnected
-			if config.Get().NotifyConnectionEvents {
-				notify.Dispatch(notify.Notification{
-					Title:   "SV241 Connection Lost",
-					Message: "Connection to the COM port was interrupted. Please check the device and cable.",
-				})
-			}
+			fireSafetyEvent("connectionLost", "SV241 Connection Lost", "Connection to the COM port was interrupted. Please check the device and cable.")
+			applyConnectionLostSafetyState()
 		}
 		sv241Port.Close()
 		sv241Port = nil
@@ -871,17 +862,11 @@ func updateConditionsCacheFromJSON(conditionsJSON string) {
 
 		// Edge, not level: only notify on an actual transition, not on every 5s poll tick that
 		// happens to still be "active".
-		if newActive != wasActive && config.Get().NotifyHeaterCurrentLimit {
+		if newActive != wasActive {
 			if newActive {
-				notify.Dispatch(notify.Notification{
-					Title:   "SV241 Heater Output Reduced",
-					Message: "Dew heater power was reduced because the total input current is approaching the configured limit.",
-				})
+				fireSafetyEvent("heaterLimitEngaged", "SV241 Heater Output Reduced", "Dew heater power was reduced because the total input current is approaching the configured limit.")
 			} else {
-				notify.Dispatch(notify.Notification{
-					Title:   "SV241 Heater Output Restored",
-					Message: "Total input current dropped back below the configured limit - dew heater power is no longer being reduced.",
-				})
+				fireSafetyEvent("heaterLimitCleared", "SV241 Heater Output Restored", "Total input current dropped back below the configured limit - dew heater power is no longer being reduced.")
 			}
 		}
 		// No extra gate needed here - each condition's own Notify flag already decided whether it
@@ -924,6 +909,16 @@ var safetyMetricLabels = map[string]struct{ Name, Unit string }{
 	"lensTemp":    {"Lens Temperature", "°C"},
 }
 
+// booleanSafetyMetrics are conditions with no user-configurable operator/threshold - tripped
+// exactly when a live boolean flag is true. Unlike safetyMetricExtractors' numeric conditions,
+// these only ever feed AlpacaUnsafe: their Notify flag (if set) is handled separately, at the
+// exact moment of the underlying transition (see fireSafetyEvent, called from
+// updateConditionsCacheFromJSON's heater block), so each fires its own specific, edge-triggered
+// message instead of a generic aggregated one.
+var booleanSafetyMetrics = map[string]func(map[string]interface{}) (bool, bool){
+	"heaterLimitEngaged": func(d map[string]interface{}) (bool, bool) { v, ok := d["cl"].(bool); return v, ok },
+}
+
 func evaluateOperator(op string, value, threshold float64) bool {
 	switch op {
 	case ">":
@@ -936,6 +931,43 @@ func evaluateOperator(op string, value, threshold float64) bool {
 		return value <= threshold
 	}
 	return false
+}
+
+// fireSafetyEvent dispatches a notification for a discrete event condition (e.g. "connectionLost")
+// if - and only if - that exact metric appears in SafetyMonitorConditions with Notify set. Unlike
+// computeSafetyStatus's threshold conditions (evaluated continuously against live sensor data),
+// these fire once, at the exact moment the underlying event happens (connect/disconnect, heater
+// limit engage/clear) - the caller already knows the transition occurred.
+func fireSafetyEvent(metric, title, message string) {
+	for _, cond := range config.Get().SafetyMonitorConditions {
+		if cond.Metric == metric && cond.Notify {
+			notify.Dispatch(notify.Notification{Title: title, Message: message})
+			return
+		}
+	}
+}
+
+// applyConnectionLostSafetyState force-sets the cached ASCOM SafetyMonitor state to unsafe if the
+// user opted "Connection: Lost" into Include in Safety Monitor. Necessary because polling (and
+// therefore computeSafetyStatus) stops entirely while disconnected - without this, IsSafe would
+// keep reporting whatever it last computed before the connection dropped. Self-corrects: the next
+// successful poll after reconnecting overwrites unsafeAlpaca with a fresh computeSafetyStatus
+// result, same as any other transition. Called from handleDisconnect(), which runs under
+// portMutex - Conditions has its own separate RWMutex, and this is the only place that acquires
+// both, always in this order, so there's no reverse-order deadlock risk with
+// updateConditionsCacheFromJSON (which only ever takes the Conditions lock).
+func applyConnectionLostSafetyState() {
+	for _, cond := range config.Get().SafetyMonitorConditions {
+		if cond.Metric == "connectionLost" && cond.IncludeInSafetyMonitor {
+			Conditions.Lock()
+			if Conditions.Data == nil {
+				Conditions.Data = map[string]interface{}{}
+			}
+			Conditions.Data["unsafeAlpaca"] = true
+			Conditions.Unlock()
+			return
+		}
+	}
 }
 
 // SafetyStatus is the result of evaluating every configured SafetyMonitorConditions entry against
@@ -962,6 +994,14 @@ type SafetyStatus struct {
 func computeSafetyStatus(conditionsData map[string]interface{}) SafetyStatus {
 	var status SafetyStatus
 	for _, cond := range config.Get().SafetyMonitorConditions {
+		if boolExtractor, ok := booleanSafetyMetrics[cond.Metric]; ok {
+			if cond.IncludeInSafetyMonitor && !status.AlpacaUnsafe {
+				if tripped, ok := boolExtractor(conditionsData); ok && tripped {
+					status.AlpacaUnsafe, status.AlpacaReason = true, "Heater current-limit is currently engaged"
+				}
+			}
+			continue
+		}
 		if !cond.Notify && !cond.IncludeInSafetyMonitor {
 			continue // reports to nothing - not worth evaluating
 		}

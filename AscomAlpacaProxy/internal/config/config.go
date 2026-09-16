@@ -90,21 +90,16 @@ type ProxyConfig struct {
 	WeatherInterval       int               `json:"weatherInterval"`       // Minutes
 	WeatherSourcePriority map[string]string `json:"weatherSourcePriority"` // metric -> hardware|internet|hybrid
 
-	// Per-source notification toggles - replaces the old single EnableNotifications master switch,
-	// which made it impossible to silence one source (e.g. heater) without silencing all of them.
-	// Each notify.Dispatch call site in internal/serial checks its own matching field before
-	// dispatching at all; internal/systray's ShowNotification (the one registered delivery
-	// channel) no longer gates on anything itself - it delivers whatever it's given.
-	NotifyConnectionEvents   bool `json:"notifyConnectionEvents"`
-	NotifyHeaterCurrentLimit bool `json:"notifyHeaterCurrentLimit"`
-
-	// Safety Monitor (see internal/serial's computeSafetyStatus): a list of threshold conditions.
-	// Each condition independently decides whether it fires a notification (SafetyCondition.Notify)
-	// and/or counts toward the ASCOM SafetyMonitor device's IsSafe
-	// (SafetyCondition.IncludeInSafetyMonitor) - e.g. "humidity too high" can be notification-only
-	// while "voltage critically low" also aborts a N.I.N.A. sequence. Proxy-side, not firmware -
-	// every consumer is already proxy/UI-side, no reflash needed. An empty list, or one where
-	// nothing has IncludeInSafetyMonitor set, disables ASCOM exposure entirely.
+	// Safety Monitor (see internal/serial's computeSafetyStatus): a list of conditions, both
+	// numeric-threshold ones (voltage, temperature, etc.) and discrete events (connection
+	// lost/restored, heater current-limit engaged/cleared - metrics "connectionLost",
+	// "connectionRestored", "heaterLimitEngaged", "heaterLimitCleared"). Each condition
+	// independently decides whether it fires a notification (SafetyCondition.Notify) and/or
+	// counts toward the ASCOM SafetyMonitor device's IsSafe (SafetyCondition.IncludeInSafetyMonitor)
+	// - e.g. "humidity too high" can be notification-only while "voltage critically low" also
+	// aborts a N.I.N.A. sequence. Proxy-side, not firmware - every consumer is already proxy/UI-side,
+	// no reflash needed. An empty list, or one where nothing has IncludeInSafetyMonitor set,
+	// disables ASCOM exposure entirely.
 	SafetyMonitorConditions []SafetyCondition `json:"safetyMonitorConditions"`
 }
 
@@ -609,13 +604,19 @@ func doLoad() error {
 				HistoryRetentionNights:   10,   // Default to 10 nights
 				TelemetryInterval:        10,   // Default to 10 seconds
 				EnableAlpacaDiscovery:    true, // Default to discovery enabled
-				NotifyConnectionEvents:   true, // Default to notifications enabled
-				NotifyHeaterCurrentLimit: true, // Default to notifications enabled
 				WeatherInterval:          5,    // Default to 5 minutes
 				WeatherModel:             "best_match",
 				WeatherSourcePriority:    make(map[string]string),
 				EnableAutoBackup:         true, // Default to automatic backups enabled
 				AutoBackupRetentionCount: 50,   // Default to keeping the last 50 automatic backups
+				// Connection notifications on by default (matches the old EnableNotifications
+				// default) - heater current-limit notifications are NOT pre-added since the
+				// underlying current_limit_amps firmware feature itself is off by default, so a
+				// pre-seeded notification for it would just be dead weight in a fresh install.
+				SafetyMonitorConditions: []SafetyCondition{
+					{Metric: "connectionLost", Notify: true},
+					{Metric: "connectionRestored", Notify: true},
+				},
 			}
 			for _, internalName := range SwitchIDMap {
 				proxyConfig.SwitchNames[internalName] = internalName
@@ -714,18 +715,6 @@ func doLoad() error {
 	// um das bisherige Verhalten beizubehalten.
 	if !proxyConfig.AutoDetectPort && proxyConfig.SerialPortName == "" {
 		proxyConfig.AutoDetectPort = true
-	}
-
-	// Default for files predating these two fields - no value migration from the old, now-removed
-	// EnableNotifications involved (that field is simply dropped; an orphaned key left behind in
-	// an old file is harmless, json.Unmarshal above already ignored it). This project has never
-	// had an official release yet (daily builds only), so breaking changes here are acceptable -
-	// a fresh default is all that's needed, same as any other new boolean field.
-	if _, ok := rawMap["notifyConnectionEvents"]; !ok {
-		proxyConfig.NotifyConnectionEvents = true
-	}
-	if _, ok := rawMap["notifyHeaterCurrentLimit"]; !ok {
-		proxyConfig.NotifyHeaterCurrentLimit = true
 	}
 
 	// Apply the loaded log level immediately.

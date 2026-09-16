@@ -10,15 +10,25 @@ const { proxyConfig, liveStatus, isConnected } = storeToRefs(store)
 
 // Every metric the proxy currently caches per live sensor poll (serial.Conditions.Data) and
 // therefore can evaluate a condition against - see internal/serial's safetyMetricExtractors,
-// which this list must stay in sync with.
+// which this list must stay in sync with. The two "event" entries don't have a live numeric
+// value/threshold at all - they represent discrete, edge-triggered occurrences (see
+// internal/serial's fireSafetyEvent) and use a second "event" dropdown instead of operator+value.
 const METRICS = [
-    { id: 'voltage', label: 'Voltage', unit: 'V' },
-    { id: 'current', label: 'Current', unit: 'A' },
-    { id: 'power', label: 'Power', unit: 'W' },
-    { id: 'ambientTemp', label: 'Ambient Temperature', unit: '°C' },
-    { id: 'humidity', label: 'Humidity', unit: '%' },
-    { id: 'dewPoint', label: 'Dew Point', unit: '°C' },
-    { id: 'lensTemp', label: 'Lens Temperature', unit: '°C' },
+    { id: 'voltage', label: 'Voltage', unit: 'V', kind: 'numeric' },
+    { id: 'current', label: 'Current', unit: 'A', kind: 'numeric' },
+    { id: 'power', label: 'Power', unit: 'W', kind: 'numeric' },
+    { id: 'ambientTemp', label: 'Ambient Temperature', unit: '°C', kind: 'numeric' },
+    { id: 'humidity', label: 'Humidity', unit: '%', kind: 'numeric' },
+    { id: 'dewPoint', label: 'Dew Point', unit: '°C', kind: 'numeric' },
+    { id: 'lensTemp', label: 'Lens Temperature', unit: '°C', kind: 'numeric' },
+    { id: 'connection', label: 'Connection', kind: 'event', events: [
+        { id: 'connectionLost', label: 'Lost' },
+        { id: 'connectionRestored', label: 'Restored' },
+    ]},
+    { id: 'heaterCurrentLimit', label: 'Heater Current-Limit', kind: 'event', events: [
+        { id: 'heaterLimitEngaged', label: 'Engaged' },
+        { id: 'heaterLimitCleared', label: 'Cleared' },
+    ]},
 ]
 const OPERATORS = [
     { id: '>', label: '>' },
@@ -26,6 +36,23 @@ const OPERATORS = [
     { id: '<', label: '<' },
     { id: '<=', label: '≤' },
 ]
+
+// Flat label lookup for event-metric rows (they have no operator/threshold to render from).
+const EVENT_METRIC_LABELS = {
+    connectionLost: 'Connection: Lost',
+    connectionRestored: 'Connection: Restored',
+    heaterLimitEngaged: 'Heater Current-Limit: Engaged',
+    heaterLimitCleared: 'Heater Current-Limit: Cleared',
+}
+function isEventMetric(metric) {
+    return metric in EVENT_METRIC_LABELS
+}
+
+// Only the two "bad state" events can meaningfully be included in the ASCOM SafetyMonitor
+// calculation - "restored"/"cleared" are momentary recoveries with nothing to include (see
+// internal/serial's applyConnectionLostSafetyState/booleanSafetyMetrics for how these two are
+// actually evaluated, which differs between them since polling stops entirely on disconnect).
+const SAFETY_MONITOR_ELIGIBLE_EVENTS = ['connectionLost', 'heaterLimitEngaged']
 
 function metricInfo(id) {
     return METRICS.find(m => m.id === id) || { label: id, unit: '' }
@@ -84,14 +111,10 @@ const triggeredConditions = computed(() => conditionStatuses.value.filter(c => c
 // poll (device.js's checkConnection) regardless of whether anything actually changed, so without
 // the hasChanges guard the very next poll tick overwrites whatever the user just typed/added/removed.
 const conditions = ref([])
-const notifyConnectionEvents = ref(true)
-const notifyHeaterCurrentLimit = ref(true)
 const hasChanges = ref(false)
 watch(proxyConfig, (val) => {
     if (!val || hasChanges.value) return
     conditions.value = JSON.parse(JSON.stringify(val.safetyMonitorConditions || []))
-    notifyConnectionEvents.value = val.notifyConnectionEvents ?? true
-    notifyHeaterCurrentLimit.value = val.notifyHeaterCurrentLimit ?? true
 }, { immediate: true })
 
 function onChange() {
@@ -100,19 +123,36 @@ function onChange() {
 
 // Draft fields for the "add condition" row. Notify defaults on, IncludeInSafetyMonitor defaults
 // off - same convention the backend used to apply when migrating an old single threshold.
-const newMetric = ref(METRICS[0].id)
+const newCategory = ref(METRICS[0].id)
+const selectedCategory = computed(() => METRICS.find(m => m.id === newCategory.value))
 const newOperator = ref(OPERATORS[0].id)
 const newThreshold = ref(0)
+const newEventMetric = ref(null)
 const newNotify = ref(true)
 const newIncludeInSafetyMonitor = ref(false)
 
+// Reset the event sub-selection whenever the category changes, so switching e.g. from
+// "Connection" to "Heater Current-Limit" doesn't leave a stale connectionLost/Restored value
+// selected underneath a now-unrelated category.
+watch(newCategory, (id) => {
+    const category = METRICS.find(m => m.id === id)
+    newEventMetric.value = category?.kind === 'event' ? category.events[0].id : null
+}, { immediate: true })
+
+const showIncludeCheckbox = computed(() =>
+    selectedCategory.value?.kind === 'numeric' || SAFETY_MONITOR_ELIGIBLE_EVENTS.includes(newEventMetric.value)
+)
+
 function addCondition() {
+    const category = selectedCategory.value
+    const metricId = category.kind === 'numeric' ? category.id : newEventMetric.value
+    const eligible = category.kind === 'numeric' || SAFETY_MONITOR_ELIGIBLE_EVENTS.includes(metricId)
     conditions.value.push({
-        metric: newMetric.value,
-        operator: newOperator.value,
-        threshold: parseFloat(newThreshold.value) || 0,
+        metric: metricId,
+        operator: category.kind === 'numeric' ? newOperator.value : '',
+        threshold: category.kind === 'numeric' ? (parseFloat(newThreshold.value) || 0) : 0,
         notify: newNotify.value,
-        includeInSafetyMonitor: newIncludeInSafetyMonitor.value
+        includeInSafetyMonitor: eligible ? newIncludeInSafetyMonitor.value : false
     })
     newThreshold.value = 0
     onChange()
@@ -127,9 +167,7 @@ async function save() {
     try {
         await store.saveProxyConfig({
             ...store.proxyConfig,
-            safetyMonitorConditions: conditions.value,
-            notifyConnectionEvents: notifyConnectionEvents.value,
-            notifyHeaterCurrentLimit: notifyHeaterCurrentLimit.value
+            safetyMonitorConditions: conditions.value
         })
         hasChanges.value = false
         modal.success('Safety Monitor & Notifications settings saved.')
@@ -142,27 +180,6 @@ async function save() {
 <template>
   <div class="config-group full-width-group">
       <h3>Safety Monitor & Notifications</h3>
-
-      <div class="settings-card glass-panel">
-          <h4>General Notifications</h4>
-          <p class="card-description">
-              Every proxy event that can send a desktop notification, each independently switchable.
-          </p>
-          <div class="checkbox-with-hint">
-              <label class="checkbox-label">
-                  <input type="checkbox" v-model="notifyConnectionEvents" @change="onChange">
-                  Notify on Connection Lost/Restored
-              </label>
-              <small class="hint">Desktop notification when the SV241's serial connection drops or comes back.</small>
-          </div>
-          <div class="checkbox-with-hint">
-              <label class="checkbox-label">
-                  <input type="checkbox" v-model="notifyHeaterCurrentLimit" @change="onChange">
-                  Notify on Heater Current-Limit Change
-              </label>
-              <small class="hint">Desktop notification when dew heater output starts or stops being reduced by the box-wide current limit.</small>
-          </div>
-      </div>
 
       <div class="settings-card glass-panel">
           <h4>Status</h4>
@@ -200,12 +217,19 @@ async function save() {
           <div v-if="conditions.length" class="condition-list">
               <div v-for="(cond, idx) in conditions" :key="idx" class="condition-row" :class="{ triggered: conditionStatuses[idx]?.triggered }">
                   <span class="condition-text">
-                      {{ metricInfo(cond.metric).label }} {{ operatorLabel(cond.operator) }} {{ cond.threshold }} {{ metricInfo(cond.metric).unit }}
-                      <small v-if="isConnected" class="condition-current">(currently {{ formatValue(conditionStatuses[idx]?.currentValue, metricInfo(cond.metric).unit) }})</small>
+                      <template v-if="isEventMetric(cond.metric)">
+                          {{ EVENT_METRIC_LABELS[cond.metric] }}
+                      </template>
+                      <template v-else>
+                          {{ metricInfo(cond.metric).label }} {{ operatorLabel(cond.operator) }} {{ cond.threshold }} {{ metricInfo(cond.metric).unit }}
+                          <small v-if="isConnected" class="condition-current">(currently {{ formatValue(conditionStatuses[idx]?.currentValue, metricInfo(cond.metric).unit) }})</small>
+                      </template>
                   </span>
                   <div class="condition-channels">
                       <label><input type="checkbox" v-model="cond.notify" @change="onChange"> Notify</label>
-                      <label><input type="checkbox" v-model="cond.includeInSafetyMonitor" @change="onChange"> Include in Safety Monitor</label>
+                      <label v-if="!isEventMetric(cond.metric) || SAFETY_MONITOR_ELIGIBLE_EVENTS.includes(cond.metric)">
+                          <input type="checkbox" v-model="cond.includeInSafetyMonitor" @change="onChange"> Include in Safety Monitor
+                      </label>
                   </div>
                   <button @click="removeCondition(idx)" class="btn-danger">Remove</button>
               </div>
@@ -213,15 +237,20 @@ async function save() {
           <p v-else class="card-description">No conditions configured - IsSafe always reports true.</p>
 
           <div class="add-condition-row">
-              <select v-model="newMetric">
+              <select v-model="newCategory">
                   <option v-for="m in METRICS" :key="m.id" :value="m.id">{{ m.label }}</option>
               </select>
-              <select v-model="newOperator">
-                  <option v-for="o in OPERATORS" :key="o.id" :value="o.id">{{ o.label }}</option>
+              <template v-if="selectedCategory?.kind === 'numeric'">
+                  <select v-model="newOperator">
+                      <option v-for="o in OPERATORS" :key="o.id" :value="o.id">{{ o.label }}</option>
+                  </select>
+                  <input type="number" step="0.1" v-model.number="newThreshold" :placeholder="selectedCategory.unit">
+              </template>
+              <select v-else v-model="newEventMetric">
+                  <option v-for="e in selectedCategory?.events" :key="e.id" :value="e.id">{{ e.label }}</option>
               </select>
-              <input type="number" step="0.1" v-model.number="newThreshold" :placeholder="metricInfo(newMetric).unit">
               <label><input type="checkbox" v-model="newNotify"> Notify</label>
-              <label><input type="checkbox" v-model="newIncludeInSafetyMonitor"> Include in Safety Monitor</label>
+              <label v-if="showIncludeCheckbox"><input type="checkbox" v-model="newIncludeInSafetyMonitor"> Include in Safety Monitor</label>
               <button @click="addCondition" class="btn-secondary">Add</button>
           </div>
       </div>
@@ -316,6 +345,12 @@ async function save() {
 .condition-channels {
     display: flex;
     flex: none;
+    /* Fixed width regardless of how many checkboxes this row actually renders (event rows like
+       "Connection: Restored" only show "Notify", not "Include in Safety Monitor") - without this,
+       a narrower row here shifts its own "Notify" checkbox rightward to stay flush against the
+       Remove button, so it visibly zig-zags out of column alignment with rows that show both
+       checkboxes. */
+    min-width: 280px;
     gap: 0.75rem;
     flex-wrap: wrap;
     font-size: 0.8rem;
@@ -366,43 +401,6 @@ async function save() {
 
 .add-condition-row button {
     flex: none;
-}
-
-.form-group {
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-}
-
-.form-group label {
-    font-size: 0.85rem;
-    color: var(--text-secondary, #aaa);
-}
-
-.checkbox-with-hint {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    margin-bottom: 0.75rem;
-}
-
-.checkbox-with-hint:last-child {
-    margin-bottom: 0;
-}
-
-.checkbox-label {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    cursor: pointer;
-    color: var(--text-secondary, #aaa);
-    font-size: 0.9rem;
-}
-
-.hint {
-    font-size: 0.8rem;
-    color: var(--text-muted, #666);
-    display: block;
 }
 
 .status-row {
