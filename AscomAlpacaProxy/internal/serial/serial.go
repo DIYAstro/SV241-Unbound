@@ -587,6 +587,18 @@ func reconnect(newPortName string, preOpenedPort Port) {
 				// Run sequentially in a single goroutine to avoid command storms
 				// on systems with slower USB stacks.
 				go func() {
+					// Refresh the sensor cache immediately, rather than waiting for
+					// periodicCacheUpdater's next 5s tick - this is what actually clears any
+					// "unsafe" state a prior disconnect forced onto Conditions.Data["unsafeAlpaca"]
+					// (see applyConnectionLostSafetyState). computeSafetyStatus doesn't know
+					// "connectionLost" as a metric at all, so simply running it again with a fresh
+					// reading naturally supersedes the forced flag with whatever the OTHER
+					// configured conditions currently say - correctly staying unsafe if, say,
+					// voltage is still critically low, rather than blindly clearing it.
+					if conditionsJSON, err := SendCommand(`{"get":"sensors"}`, false, 0); err == nil {
+						updateConditionsCacheFromJSON(conditionsJSON)
+					}
+
 					time.Sleep(2 * time.Second)
 					FetchFirmwareVersion()
 					time.Sleep(1 * time.Second)

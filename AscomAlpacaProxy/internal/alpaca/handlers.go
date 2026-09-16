@@ -154,6 +154,31 @@ func (a *API) HandleConnected(w http.ResponseWriter, r *http.Request) {
 	BoolResponse(w, r, a.driverConnected.Load() && serial.IsConnected())
 }
 
+// HandleSafetyMonitorConnected is a SafetyMonitor-specific variant of the shared HandleConnected -
+// deliberately NOT gated on serial.IsConnected() the way Switch/ObservingConditions are. The whole
+// point of the Safety Monitor is to keep reporting IsSafe correctly - including "unsafe" due to a
+// lost connection, if the user opted "Connection: Lost" into Include in Safety Monitor - precisely
+// when the SV241 itself is unreachable. If this device disconnected right along with the hardware,
+// an ASCOM client (e.g. N.I.N.A.) would stop polling IsSafe at exactly the moment it matters most.
+func (a *API) HandleSafetyMonitorConnected(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "PUT" {
+		connectedStr, ok := GetFormValueIgnoreCase(r, "Connected")
+		if !ok {
+			ErrorResponse(w, r, http.StatusOK, 0x400, "Missing Connected parameter for PUT request")
+			return
+		}
+		connected, err := strconv.ParseBool(connectedStr)
+		if err != nil {
+			ErrorResponse(w, r, http.StatusOK, 0x400, fmt.Sprintf("Invalid value for Connected: '%s'", connectedStr))
+			return
+		}
+		a.driverConnected.Store(connected)
+		EmptyResponse(w, r)
+		return
+	}
+	BoolResponse(w, r, a.driverConnected.Load())
+}
+
 func (a *API) HandleDeviceName(name string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		StringResponse(w, r, name)

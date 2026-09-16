@@ -245,10 +245,14 @@ export const useDeviceStore = defineStore('device', () => {
 
         setInterval(() => {
             checkConnection();
+            // Conditions.Data (which this fetches) includes proxy-computed state like the Safety
+            // Monitor's unsafeAlpaca/unsafeUI that can stay meaningful - even change - while
+            // disconnected (see internal/serial's applyConnectionLostSafetyState), so this must
+            // keep polling regardless of isConnected, unlike the device-dependent calls below.
+            fetchLiveStatus();
             // Firmware version usually doesn't change often, but we can poll it less frequently or same
             if (isConnected.value) {
                 fetchFirmwareVersion();
-                fetchLiveStatus();
                 fetchPowerStatus();
                 if (Object.keys(config.value).length === 0) fetchConfig();
             }

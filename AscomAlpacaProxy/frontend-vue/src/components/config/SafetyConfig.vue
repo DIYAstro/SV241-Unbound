@@ -186,7 +186,7 @@ async function save() {
           <p class="card-description">
               Current state vs. the conditions configured below, per channel.
           </p>
-          <div class="status-row" v-if="isConnected">
+          <div class="status-row">
               <span class="status-badge" :class="liveStatus.unsafeUI ? 'unsafe' : 'safe'">
                   Notify: {{ liveStatus.unsafeUI ? 'UNSAFE' : 'SAFE' }}
               </span>
@@ -194,7 +194,6 @@ async function save() {
                   Safety Monitor: {{ liveStatus.unsafeAlpaca ? 'UNSAFE' : 'SAFE' }}
               </span>
           </div>
-          <span v-else class="status-value">--</span>
           <ul v-if="isConnected && triggeredConditions.length" class="triggered-list">
               <li v-for="(cond, idx) in triggeredConditions" :key="idx">
                   {{ metricInfo(cond.metric).label }} is {{ formatValue(cond.currentValue, metricInfo(cond.metric).unit) }}
@@ -407,12 +406,6 @@ async function save() {
     display: flex;
     align-items: center;
     gap: 1rem;
-}
-
-.status-value {
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: var(--text-color);
 }
 
 .status-badge {

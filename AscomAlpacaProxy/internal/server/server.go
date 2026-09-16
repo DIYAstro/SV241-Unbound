@@ -220,6 +220,9 @@ func setupAlpacaDeviceRoutes(api *alpaca.API) {
 	for k, v := range commonHandlers {
 		safetyMonitorHandlers[k] = v
 	}
+	// Override the shared "connected" handler - see HandleSafetyMonitorConnected's doc comment for
+	// why this device must not disconnect in ASCOM clients just because the hardware did.
+	safetyMonitorHandlers["connected"] = api.HandleSafetyMonitorConnected
 	http.HandleFunc("/api/v1/safetymonitor/0/", alpaca.Handler(deviceMux(safetyMonitorHandlers, api)))
 }
 
