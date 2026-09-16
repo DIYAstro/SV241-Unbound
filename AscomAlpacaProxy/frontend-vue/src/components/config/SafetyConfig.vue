@@ -3,108 +3,14 @@ import { useDeviceStore } from '../../stores/device'
 import { useModalStore } from '../../stores/modal'
 import { storeToRefs } from 'pinia'
 import { ref, watch, computed } from 'vue'
+import {
+    METRICS, OPERATORS, EVENT_METRIC_LABELS, isEventMetric, SAFETY_MONITOR_ELIGIBLE_EVENTS,
+    metricInfo, operatorLabel, formatValue, useSafetyConditionStatuses
+} from '../../composables/useSafetyMonitor'
 
 const store = useDeviceStore()
 const modal = useModalStore()
 const { proxyConfig, liveStatus, isConnected } = storeToRefs(store)
-
-// Every metric the proxy currently caches per live sensor poll (serial.Conditions.Data) and
-// therefore can evaluate a condition against - see internal/serial's safetyMetricExtractors,
-// which this list must stay in sync with. The two "event" entries don't have a live numeric
-// value/threshold at all - they represent discrete, edge-triggered occurrences (see
-// internal/serial's fireSafetyEvent) and use a second "event" dropdown instead of operator+value.
-const METRICS = [
-    { id: 'voltage', label: 'Voltage', unit: 'V', kind: 'numeric' },
-    { id: 'current', label: 'Current', unit: 'A', kind: 'numeric' },
-    { id: 'power', label: 'Power', unit: 'W', kind: 'numeric' },
-    { id: 'ambientTemp', label: 'Ambient Temperature', unit: '°C', kind: 'numeric' },
-    { id: 'humidity', label: 'Humidity', unit: '%', kind: 'numeric' },
-    { id: 'dewPoint', label: 'Dew Point', unit: '°C', kind: 'numeric' },
-    { id: 'lensTemp', label: 'Lens Temperature', unit: '°C', kind: 'numeric' },
-    { id: 'connection', label: 'Connection', kind: 'event', events: [
-        { id: 'connectionLost', label: 'Lost' },
-        { id: 'connectionRestored', label: 'Restored' },
-    ]},
-    { id: 'heaterCurrentLimit', label: 'Heater Current-Limit', kind: 'event', events: [
-        { id: 'heaterLimitEngaged', label: 'Engaged' },
-        { id: 'heaterLimitCleared', label: 'Cleared' },
-    ]},
-]
-const OPERATORS = [
-    { id: '>', label: '>' },
-    { id: '>=', label: '≥' },
-    { id: '<', label: '<' },
-    { id: '<=', label: '≤' },
-]
-
-// Flat label lookup for event-metric rows (they have no operator/threshold to render from).
-const EVENT_METRIC_LABELS = {
-    connectionLost: 'Connection: Lost',
-    connectionRestored: 'Connection: Restored',
-    heaterLimitEngaged: 'Heater Current-Limit: Engaged',
-    heaterLimitCleared: 'Heater Current-Limit: Cleared',
-}
-function isEventMetric(metric) {
-    return metric in EVENT_METRIC_LABELS
-}
-
-// Only the two "bad state" events can meaningfully be included in the ASCOM SafetyMonitor
-// calculation - "restored"/"cleared" are momentary recoveries with nothing to include (see
-// internal/serial's applyConnectionLostSafetyState/booleanSafetyMetrics for how these two are
-// actually evaluated, which differs between them since polling stops entirely on disconnect).
-const SAFETY_MONITOR_ELIGIBLE_EVENTS = ['connectionLost', 'heaterLimitEngaged']
-
-function metricInfo(id) {
-    return METRICS.find(m => m.id === id) || { label: id, unit: '' }
-}
-function operatorLabel(id) {
-    return OPERATORS.find(o => o.id === id)?.label || id
-}
-
-// Mirrors internal/serial's safetyMetricExtractors - must stay in sync with that map. Needed
-// client-side so the Conditions list can show each row's live value and highlight which
-// condition(s) are actually the ones currently tripped, rather than only the two aggregate
-// SAFE/UNSAFE states the backend exposes via liveStatus.unsafeUI/unsafeAlpaca.
-function extractMetricValue(metric, status) {
-    switch (metric) {
-        case 'voltage': return status.v
-        case 'current': return typeof status.i === 'number' ? status.i / 1000 : undefined
-        case 'power': return status.p
-        case 'ambientTemp': return status.t_amb
-        case 'humidity': return status.h_amb
-        case 'dewPoint': return status.d
-        case 'lensTemp': return status.t_lens
-        default: return undefined
-    }
-}
-
-function evaluateCondition(operator, value, threshold) {
-    if (typeof value !== 'number') return false
-    switch (operator) {
-        case '>': return value > threshold
-        case '>=': return value >= threshold
-        case '<': return value < threshold
-        case '<=': return value <= threshold
-        default: return false
-    }
-}
-
-function formatValue(value, unit) {
-    return typeof value === 'number' ? `${value.toFixed(1)} ${unit}` : '--'
-}
-
-// Each saved condition, enriched with its current live value and whether it's the one (or one of
-// several) currently tripping "unsafe" - drives both the per-row highlight below and the Status
-// card's list of active violations.
-const conditionStatuses = computed(() => conditions.value.map(cond => {
-    const value = extractMetricValue(cond.metric, liveStatus.value || {})
-    return {
-        ...cond,
-        currentValue: value,
-        triggered: isConnected.value && evaluateCondition(cond.operator, value, cond.threshold)
-    }
-}))
-const triggeredConditions = computed(() => conditionStatuses.value.filter(c => c.triggered))
 
 // Local edit buffer, separate from the store's live value - same pattern as ProxySettings.vue's
 // localConfig/hasChanges. proxyConfig gets reassigned to a brand-new object on every 2s settings
@@ -116,6 +22,12 @@ watch(proxyConfig, (val) => {
     if (!val || hasChanges.value) return
     conditions.value = JSON.parse(JSON.stringify(val.safetyMonitorConditions || []))
 }, { immediate: true })
+
+// Enriched with each condition's current live value and whether it's the one (or one of several)
+// currently tripping "unsafe" - drives the per-row highlight below. The at-a-glance SAFE/UNSAFE
+// status itself now lives in LiveTelemetry.vue (always visible on the dashboard), not here - see
+// that component for the other half of this shared computation.
+const { conditionStatuses } = useSafetyConditionStatuses(conditions, liveStatus, isConnected)
 
 function onChange() {
     hasChanges.value = true
@@ -180,29 +92,6 @@ async function save() {
 <template>
   <div class="config-group full-width-group">
       <h3>Safety Monitor & Notifications</h3>
-
-      <div class="settings-card glass-panel">
-          <h4>Status</h4>
-          <p class="card-description">
-              Current state vs. the conditions configured below, per channel.
-          </p>
-          <div class="status-row">
-              <span class="status-badge" :class="liveStatus.unsafeUI ? 'unsafe' : 'safe'">
-                  Notify: {{ liveStatus.unsafeUI ? 'UNSAFE' : 'SAFE' }}
-              </span>
-              <span class="status-badge" :class="liveStatus.unsafeAlpaca ? 'unsafe' : 'safe'">
-                  Safety Monitor: {{ liveStatus.unsafeAlpaca ? 'UNSAFE' : 'SAFE' }}
-              </span>
-          </div>
-          <ul v-if="isConnected && triggeredConditions.length" class="triggered-list">
-              <li v-for="(cond, idx) in triggeredConditions" :key="idx">
-                  {{ metricInfo(cond.metric).label }} is {{ formatValue(cond.currentValue, metricInfo(cond.metric).unit) }}
-                  (condition: {{ operatorLabel(cond.operator) }} {{ cond.threshold }} {{ metricInfo(cond.metric).unit }})
-                  <span v-if="cond.notify" class="channel-tag">Notify</span>
-                  <span v-if="cond.includeInSafetyMonitor" class="channel-tag">Safety Monitor</span>
-              </li>
-          </ul>
-      </div>
 
       <div class="settings-card glass-panel">
           <h4>Conditions</h4>
@@ -326,17 +215,6 @@ async function save() {
     margin-left: 0.35rem;
 }
 
-.triggered-list {
-    margin: 0.75rem 0 0 0;
-    padding-left: 1.25rem;
-    font-size: 0.85rem;
-    color: var(--danger-color, #e04040);
-}
-
-.triggered-list li {
-    margin-bottom: 0.25rem;
-}
-
 .condition-row button {
     flex: none;
 }
@@ -362,16 +240,6 @@ async function save() {
     gap: 0.3rem;
     cursor: pointer;
     white-space: nowrap;
-}
-
-.channel-tag {
-    display: inline-block;
-    margin-left: 0.5rem;
-    padding: 0.1rem 0.4rem;
-    border-radius: 4px;
-    background: rgba(224, 64, 64, 0.15);
-    font-size: 0.75rem;
-    font-weight: 600;
 }
 
 .add-condition-row {
@@ -400,30 +268,6 @@ async function save() {
 
 .add-condition-row button {
     flex: none;
-}
-
-.status-row {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-}
-
-.status-badge {
-    padding: 0.25rem 0.75rem;
-    border-radius: 6px;
-    font-size: 0.8rem;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-}
-
-.status-badge.safe {
-    background: rgba(64, 200, 64, 0.15);
-    color: #40c840;
-}
-
-.status-badge.unsafe {
-    background: rgba(224, 64, 64, 0.15);
-    color: var(--danger-color, #e04040);
 }
 
 .full-width-btn {
