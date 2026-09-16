@@ -194,7 +194,7 @@ async function save() {
 </script>
 
 <template>
-  <div class="config-group full-width-group">
+  <div class="config-group">
       <h3>Dew Heater Configuration</h3>
 
       <!-- Box-wide current-limit protection - not per-heater, applies to both channels
@@ -202,8 +202,8 @@ async function save() {
            per-channel cards below. -->
       <div class="glass-panel settings-card current-limit-card">
           <h4>Power Protection</h4>
-          <div class="form-group checkbox-group">
-              <label title="When enabled, heater output is gradually reduced as the total measured input current approaches the threshold below, instead of relying only on the box's own hardware overcurrent protection. Does not affect DC/USB outputs.">
+          <div class="form-group">
+              <label class="checkbox-label" title="When enabled, heater output is gradually reduced as the total measured input current approaches the threshold below, instead of relying only on the box's own hardware overcurrent protection. Does not affect DC/USB outputs.">
                   <input type="checkbox" v-model="currentLimitEnabled" @change="onChange">
                   Reduce heater power near a current limit
               </label>
@@ -211,7 +211,7 @@ async function save() {
           <div class="form-group" v-if="currentLimitEnabled">
               <label>Current Limit (A)</label>
               <input type="number" v-model.number="currentLimitAmps" min="0" step="0.1" @input="onChange">
-              <small class="duty-voltage-hint">
+              <small class="hint">
                   Heater output starts ramping down 1 A below this value and reaches 0% at this
                   value. The SV241's own input rating is 10 A - set this at or below whatever
                   your power supply is actually rated for.
@@ -234,18 +234,18 @@ async function save() {
           </div>
 
           <!-- Enable on Startup - hide for Mode 5 (Disabled) -->
-          <div class="form-group checkbox-group" v-if="heater.m !== 5">
-            <label>
+          <div class="form-group" v-if="heater.m !== 5">
+            <label class="checkbox-label">
                 <input type="checkbox" v-model="heater.en" @change="onChange">
                 Enable on Startup
             </label>
           </div>
-          
+
            <!-- Auto Enable Leader - only show for Mode 3 (Follower/Sync) -->
-           <div class="form-group checkbox-group" v-if="heater.m === 3">
-            <label title="Automatically enable the leader heater when this follower starts?">
-                <input type="checkbox" 
-                       v-model="localAutoEnable[getHeaterKey(index)]" 
+           <div class="form-group" v-if="heater.m === 3">
+            <label class="checkbox-label" title="Automatically enable the leader heater when this follower starts?">
+                <input type="checkbox"
+                       v-model="localAutoEnable[getHeaterKey(index)]"
                        @change="onChange">
                 Auto-Enable Leader (Proxy)
             </label>
@@ -266,7 +266,7 @@ async function save() {
                   Max PWM Duty (%) &ndash; Hardware Safety Limit
               </label>
               <input type="number" v-model.number="heater.xd" min="0" max="100" @input="onChange">
-              <small v-if="estimatedVoltage(heater.xd) !== null" class="duty-voltage-hint">
+              <small v-if="estimatedVoltage(heater.xd) !== null" class="hint">
                   &asymp; {{ estimatedVoltage(heater.xd).toFixed(1) }} V average at current {{ liveStatus.v.toFixed(1) }} V input voltage
                   (estimate, matches a DC multimeter reading - peak voltage during each pulse is still the full input voltage)
               </small>
@@ -322,24 +322,13 @@ async function save() {
 
       </div>
       
-      <button @click="save" class="btn-primary" style="margin-top: 1rem; width: 100%;" :disabled="!hasChanges">
+      <button @click="save" class="btn-primary full-width-btn" :disabled="!hasChanges">
           Save Heater Settings
       </button>
   </div>
 </template>
 
 <style scoped>
-.settings-card {
-    padding: 1.25rem;
-    margin-bottom: 1rem;
-}
-
-.settings-card h4 {
-    margin: 0 0 1rem 0;
-    color: var(--primary-color);
-    font-weight: 600;
-}
-
 /* Visually set apart from the per-channel cards below - this one is box-wide, not per-heater. */
 .current-limit-card {
     border-left: 3px solid var(--warning-color, #e0a030);
@@ -367,13 +356,5 @@ label {
 
 input[type="number"], select {
     width: 100%;
-}
-
-.duty-voltage-hint {
-    display: block;
-    margin-top: 0.35rem;
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    opacity: 0.8;
 }
 </style>

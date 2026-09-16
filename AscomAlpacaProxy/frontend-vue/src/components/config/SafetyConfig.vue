@@ -90,7 +90,7 @@ async function save() {
 </script>
 
 <template>
-  <div class="config-group full-width-group">
+  <div class="config-group">
       <h3>Safety Monitor & Notifications</h3>
 
       <div class="settings-card glass-panel">
@@ -114,8 +114,8 @@ async function save() {
                       </template>
                   </span>
                   <div class="condition-channels">
-                      <label><input type="checkbox" v-model="cond.notify" @change="onChange"> Notify</label>
-                      <label v-if="!isEventMetric(cond.metric) || SAFETY_MONITOR_ELIGIBLE_EVENTS.includes(cond.metric)">
+                      <label class="checkbox-label"><input type="checkbox" v-model="cond.notify" @change="onChange"> Notify</label>
+                      <label class="checkbox-label" v-if="!isEventMetric(cond.metric) || SAFETY_MONITOR_ELIGIBLE_EVENTS.includes(cond.metric)">
                           <input type="checkbox" v-model="cond.includeInSafetyMonitor" @change="onChange"> Include in Safety Monitor
                       </label>
                   </div>
@@ -137,8 +137,8 @@ async function save() {
               <select v-else v-model="newEventMetric">
                   <option v-for="e in selectedCategory?.events" :key="e.id" :value="e.id">{{ e.label }}</option>
               </select>
-              <label><input type="checkbox" v-model="newNotify"> Notify</label>
-              <label v-if="showIncludeCheckbox"><input type="checkbox" v-model="newIncludeInSafetyMonitor"> Include in Safety Monitor</label>
+              <label class="checkbox-label"><input type="checkbox" v-model="newNotify"> Notify</label>
+              <label class="checkbox-label" v-if="showIncludeCheckbox"><input type="checkbox" v-model="newIncludeInSafetyMonitor"> Include in Safety Monitor</label>
               <button @click="addCondition" class="btn-secondary">Add</button>
           </div>
       </div>
@@ -148,30 +148,6 @@ async function save() {
 </template>
 
 <style scoped>
-.settings-card {
-    padding: 1.25rem;
-    margin-bottom: 1rem;
-}
-
-.settings-card h4 {
-    margin: 0 0 0.5rem 0;
-    color: var(--primary-color);
-    font-size: 1rem;
-    font-weight: 600;
-}
-
-.card-description {
-    font-size: 0.85rem;
-    color: var(--text-muted);
-    margin: 0 0 0.75rem 0;
-}
-
-.card-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-}
-
 .condition-list {
     display: flex;
     flex-direction: column;
@@ -211,7 +187,7 @@ async function save() {
 
 .condition-current {
     font-family: inherit;
-    color: var(--text-muted, #888);
+    color: var(--text-muted);
     margin-left: 0.35rem;
 }
 
@@ -231,14 +207,12 @@ async function save() {
     gap: 0.75rem;
     flex-wrap: wrap;
     font-size: 0.8rem;
-    color: var(--text-secondary, #aaa);
+    color: var(--text-secondary);
 }
 
+/* .checkbox-label (global) already handles the flex/gap/color/cursor look - this only adds the
+   layout override specific to sitting inside this fixed-width column (don't wrap). */
 .condition-channels label {
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    cursor: pointer;
     white-space: nowrap;
 }
 
@@ -255,29 +229,14 @@ async function save() {
     min-width: 100px;
 }
 
+/* .checkbox-label (global) already handles the flex/gap/color/cursor look - this only adds the
+   layout overrides specific to sitting inside the add-row (don't grow, don't wrap). */
 .add-condition-row > label {
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
     flex: none;
     white-space: nowrap;
-    font-size: 0.85rem;
-    color: var(--text-secondary, #aaa);
-    cursor: pointer;
 }
 
 .add-condition-row button {
     flex: none;
-}
-
-.full-width-btn {
-    margin-top: 0.5rem;
-    width: 100%;
-}
-
-@media (max-width: 600px) {
-    .card-grid {
-        grid-template-columns: 1fr;
-    }
 }
 </style>

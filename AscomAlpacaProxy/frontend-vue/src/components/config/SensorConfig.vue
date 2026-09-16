@@ -11,6 +11,7 @@ const { config } = storeToRefs(store)
 const sensorConfig = ref({})
 const autoDryConfig = ref({})
 const hasChanges = ref(false)
+const autoDryHasChanges = ref(false)
 
 watch(() => config.value, (newConfig) => {
     if (newConfig && !hasChanges.value) {
@@ -47,6 +48,10 @@ function onChange() {
     hasChanges.value = true;
 }
 
+function onAutoDryChange() {
+    autoDryHasChanges.value = true;
+}
+
 async function saveSensors() {
     const payload = {
         so: {
@@ -78,6 +83,7 @@ async function saveAutoDry() {
     try {
         await store.saveConfig(payload);
         modal.success('Auto-drying settings saved.');
+        autoDryHasChanges.value = false;
     } catch (e) {
         modal.error('Error saving: ' + e.message);
     }
@@ -106,7 +112,7 @@ async function triggerDry() {
 </script>
 
 <template>
-  <div class="config-group full-width-group sensor-settings">
+  <div class="config-group">
       <h3>Sensor Calibration & Configuration</h3>
       
       <!-- SHT40 (Ambient) -->
@@ -153,30 +159,30 @@ async function triggerDry() {
       <button @click="saveSensors" class="btn-primary full-width-btn" :disabled="!hasChanges">Save Sensor Settings</button>
 
       <!-- Auto Drying -->
-      <div class="config-group full-width-group">
+      <div class="config-group">
           <h3>Auto-Drying</h3>
           <p class="subtitle">Automatically heat the sensor if humidity is high to prevent saturation.</p>
-          
+
           <div class="form-group">
-              <label>
-                  <input type="checkbox" v-model="autoDryConfig.en">
+              <label class="checkbox-label">
+                  <input type="checkbox" v-model="autoDryConfig.en" @change="onAutoDryChange">
                   Enable Auto-Drying
               </label>
           </div>
-          
-          <div class="form-grid">
+
+          <div class="card-grid">
               <div class="form-group">
                   <label>Humidity Threshold (%)</label>
-                  <input type="number" v-model.number="autoDryConfig.ht" min="0" max="100">
+                  <input type="number" v-model.number="autoDryConfig.ht" min="0" max="100" @input="onAutoDryChange">
               </div>
               <div class="form-group">
                   <label>Trigger Duration (s)</label>
-                  <input type="number" v-model.number="autoDryConfig.td" min="0" max="600">
+                  <input type="number" v-model.number="autoDryConfig.td" min="0" max="600" @input="onAutoDryChange">
               </div>
           </div>
 
           <div class="button-row">
-              <button @click="saveAutoDry" class="btn-primary">Save Auto-Dry Settings</button>
+              <button @click="saveAutoDry" class="btn-primary" :disabled="!autoDryHasChanges">Save Auto-Dry Settings</button>
               <button @click="triggerDry" class="btn-secondary">Trigger Manual Dry Cycle</button>
           </div>
       </div>
@@ -184,29 +190,6 @@ async function triggerDry() {
 </template>
 
 <style scoped>
-.sensor-settings {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-}
-
-.settings-card {
-    padding: 1.25rem;
-}
-
-.settings-card h4 {
-    margin: 0 0 1rem 0;
-    color: var(--primary-color);
-    font-size: 1rem;
-    font-weight: 600;
-}
-
-.card-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-}
-
 .form-group {
     display: flex;
     flex-direction: column;
@@ -215,37 +198,12 @@ async function triggerDry() {
 
 .form-group label {
     font-size: 0.85rem;
-    color: var(--text-secondary, #aaa);
-}
-
-.form-group.full-width {
-    grid-column: span 2;
-}
-
-.full-width-btn {
-    margin-top: 1rem;
-    width: 100%;
-}
-
-.form-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-    margin-bottom: 1rem;
+    color: var(--text-secondary);
 }
 
 .button-row {
     display: flex;
     gap: 1rem;
     margin-top: 1rem;
-}
-
-@media (max-width: 600px) {
-    .card-grid {
-        grid-template-columns: 1fr;
-    }
-    .form-group.full-width {
-        grid-column: span 1;
-    }
 }
 </style>

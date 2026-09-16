@@ -17,6 +17,10 @@
     --accent-color: #3d8a7a;
     --text-primary: #e1e1e1;
     --text-secondary: #a0a0a0;
+    /* Dimmer than --text-secondary, for card descriptions/hints - was referenced in several
+       component styles without ever being defined anywhere, silently falling back to inherited
+       (undimmed) text color instead of the muted look those components intended. */
+    --text-muted: #787878;
 
     --success-color: #3d8a7a;
     --warning-color: #ffb74d;
@@ -47,6 +51,7 @@
     --accent-color: #928dab;
     --text-primary: #ffffff;
     --text-secondary: #b0b0b0;
+    --text-muted: #868686;
 
     --success-color: #00ff88;
     --warning-color: #ffc107;
@@ -76,6 +81,8 @@
     --accent-color: #8b4545;
     --text-primary: #dd9999;
     --text-secondary: #bb6666;
+    /* Dimmer red, not gray - this theme deliberately avoids gray/white light. */
+    --text-muted: #8c4d4d;
 
     /* Adjusted status colors for red theme */
     --success-color: #cc5555;
@@ -551,6 +558,103 @@ input:checked+.slider:before {
 
 .form-group {
     margin-bottom: 1rem;
+}
+
+/* --- Configuration tab shared building blocks ---
+   Every Configuration.vue tab used to hand-roll its own version of these (card wrapper, card
+   description, hint text, checkbox, 2-column grid, full-width save button), each drifting
+   slightly from the others in padding/size/margin. Defined once here so every tab actually shares
+   one design instead of eight independently-maintained near-copies. */
+.settings-card {
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+}
+
+.settings-card h4 {
+    margin: 0 0 1rem 0;
+    color: var(--primary-color);
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.action-card {
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.action-card h4 {
+    margin: 0;
+    color: var(--primary-color);
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.card-description {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin: 0 0 0.75rem 0;
+}
+
+/* .action-card already spaces its children via flex gap - avoid doubling up the spacing. */
+.action-card .card-description {
+    margin: 0;
+}
+
+.hint {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-top: 0.35rem;
+}
+
+/* .checkbox-with-hint already spaces its children via flex gap. */
+.checkbox-with-hint .hint {
+    margin-top: 0;
+}
+
+.checkbox-with-hint {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.checkbox-label input[type="number"] {
+    width: 70px;
+}
+
+.card-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.card-grid .full-width {
+    grid-column: span 2;
+}
+
+@media (max-width: 600px) {
+    .card-grid {
+        grid-template-columns: 1fr;
+    }
+    .card-grid .full-width {
+        grid-column: span 1;
+    }
+}
+
+.full-width-btn {
+    margin-top: 1rem;
+    width: 100%;
 }
 
 label {

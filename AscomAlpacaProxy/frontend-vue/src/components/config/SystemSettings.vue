@@ -336,7 +336,7 @@ function openFlasher() {
 </script>
 
 <template>
-  <div class="config-group full-width-group">
+  <div class="config-group">
       <h3>System Maintenance</h3>
 
       <!-- Device Identity: lets a user tell multiple boxes apart by a friendly label instead of
@@ -352,7 +352,7 @@ function openFlasher() {
               <input type="text" v-model="rigNameEdit" placeholder="e.g. Imaging Rig" style="flex: 2;">
               <button @click="saveRigName" class="btn-secondary">Save</button>
           </div>
-          <small style="color: var(--text-muted); opacity: 0.8;" :title="activeDeviceSerial">
+          <small class="hint" :title="activeDeviceSerial">
               Serial: {{ activeDeviceSerial }}
           </small>
       </div>
@@ -385,7 +385,7 @@ function openFlasher() {
       </div>
 
       <!-- Top Row: Backup & Firmware (larger cards) -->
-      <div class="actions-grid-2x2">
+      <div class="card-grid actions-grid-2x2">
           <div class="action-card glass-panel">
               <h4>Backup & Restore</h4>
               <p class="card-description">Download or restore device configuration.</p>
@@ -442,7 +442,7 @@ function openFlasher() {
       </div>
 
       <!-- Bottom Row: Reboot & Reset (compact cards) -->
-      <div class="actions-grid-2x2 compact-row">
+      <div class="card-grid actions-grid-2x2 compact-row">
           <div class="action-card-compact glass-panel">
               <h4>Power & Reboot</h4>
               <button @click="sendRebootCommand" class="btn-danger">Reboot Device</button>
@@ -457,29 +457,10 @@ function openFlasher() {
 </template>
 
 <style scoped>
+/* .card-grid (global) already provides the 2-column shape/responsive collapse - this only adds
+   the extra spacing this instance needs beyond that. */
 .actions-grid-2x2 {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
     margin-bottom: 1rem;
-}
-
-.action-card {
-    padding: 1.25rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-}
-
-.action-card h4 {
-    margin: 0;
-    color: var(--primary-color);
-}
-
-.card-description {
-    font-size: 0.85rem;
-    color: var(--text-muted);
-    margin: 0;
 }
 
 .button-row {
@@ -497,19 +478,11 @@ function openFlasher() {
     align-items: center;
 }
 
-.checkbox-label {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    cursor: pointer;
-    color: var(--text-secondary, #aaa);
-    font-size: 0.85rem;
+/* .checkbox-label (global) already handles the flex/gap/color/cursor look and the number-input
+   width - this only stops it from stretching to fill the row alongside the Save button. */
+.auto-backup-settings-row .checkbox-label {
     flex: none;
     min-width: 0;
-}
-
-.checkbox-label input[type="number"] {
-    width: 70px;
 }
 
 .auto-backup-list {
@@ -584,11 +557,9 @@ function openFlasher() {
     margin: 1rem 0;
 }
 
-/* Responsive: Stack on small screens */
+/* Responsive: Stack on small screens - the 2-column collapse itself comes from the global
+   .card-grid rule, this only covers what's specific to the compact cards. */
 @media (max-width: 600px) {
-    .actions-grid-2x2 {
-        grid-template-columns: 1fr;
-    }
     .action-card-compact {
         flex-direction: column;
         align-items: stretch;

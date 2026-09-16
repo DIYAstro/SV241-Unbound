@@ -273,10 +273,11 @@ async function save() {
 </script>
 
 <template>
-  <div class="config-group full-width-group">
+  <div class="config-group">
       <h3>Switch Configuration</h3>
       <p class="subtitle">Configure switch names, startup states, and visibility.</p>
 
+      <div class="glass-panel settings-card">
       <div class="table-container">
           <table class="config-table">
               <thead>
@@ -325,12 +326,13 @@ async function save() {
               Power-On Stagger Delay (ms)
           </label>
           <input type="number" :value="psdDisplayValue" @input="e => onPsdChange(e.target.value)" min="0" max="5000" style="width: 120px;">
-          <small style="display: block; color: var(--text-secondary); margin-top: 0.3rem; opacity: 0.8;">
+          <small class="hint">
               Applies to both boot-time startup and Master Power On / "all" switch (including dew heater outputs).
           </small>
       </div>
+      </div>
 
-      <button @click="save" class="btn-primary" style="margin-top: 1rem; width: 100%;" :disabled="!hasChanges">Save Switch Configuration</button>
+      <button @click="save" class="btn-primary full-width-btn" :disabled="!hasChanges">Save Switch Configuration</button>
   </div>
 </template>
 

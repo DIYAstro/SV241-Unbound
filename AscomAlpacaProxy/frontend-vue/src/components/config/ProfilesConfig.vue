@@ -178,7 +178,7 @@ function confirmDelete(profile) {
 </script>
 
 <template>
-  <div class="config-group full-width-group">
+  <div class="config-group">
       <h3>Configuration Profiles</h3>
 
       <div class="action-card glass-panel" style="margin-bottom: 1rem;">
@@ -236,24 +236,6 @@ function confirmDelete(profile) {
 </template>
 
 <style scoped>
-.action-card {
-    padding: 1.25rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-}
-
-.action-card h4 {
-    margin: 0;
-    color: var(--primary-color);
-}
-
-.card-description {
-    font-size: 0.85rem;
-    color: var(--text-muted);
-    margin: 0;
-}
-
 .button-row {
     display: flex;
     gap: 0.5rem;

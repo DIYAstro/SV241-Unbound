@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch, nextTick } from 'vue'
 import { useModalStore } from '../../stores/modal'
 
 const modal = useModalStore()
@@ -11,6 +11,16 @@ const config = ref({
     weatherInterval: 5,
     weatherSourcePriority: {}
 })
+
+// Every field in this tab writes directly into `config` (no per-field edit buffer like the other
+// tabs use), so a single deep watcher covers all of them at once instead of wiring an @change/
+// @input handler onto each one individually. `loaded` suppresses the watcher firing for
+// loadSettings()'s own initial assignment - see loadSettings() for how it's sequenced.
+const hasChanges = ref(false)
+let loaded = false
+watch(config, () => {
+    if (loaded) hasChanges.value = true
+}, { deep: true })
 
 const metrics = [
     { id: 'temperature', label: 'Temperature', hasHardware: true },
@@ -50,6 +60,10 @@ async function loadSettings() {
     } catch (e) {
         modal.error('Failed to load weather settings: ' + e.message)
     }
+    // Let the deep watcher's pending flush (triggered by the assignments above) run first, so it
+    // sees `loaded` still false and doesn't mistake this initial load for a user edit.
+    await nextTick()
+    loaded = true
 }
 
 async function saveSettings() {
@@ -61,6 +75,7 @@ async function saveSettings() {
         })
         if (!resp.ok) throw new Error(resp.statusText)
         modal.success('Weather settings saved successfully.')
+        hasChanges.value = false
     } catch (e) {
         modal.error('Failed to save settings: ' + e.message)
     }
@@ -103,15 +118,18 @@ onMounted(loadSettings)
 
 <template>
   <div class="weather-content animate-in">
+   <div class="config-group">
+    <h3>Weather Service</h3>
+
     <!-- Main Service Toggle & Settings -->
-    <div class="config-group">
+    <div class="glass-panel settings-card">
       <div class="settings-header">
         <label class="header-toggle" for="enable-weather">
           <input type="checkbox" id="enable-weather" v-model="config.enableWeatherService">
-          <h3>Open-Meteo Weather Service</h3>
+          <h4>Open-Meteo Weather Service</h4>
         </label>
       </div>
-      <p class="description">
+      <p class="card-description">
         Fetch supplemental meteorological data from Open-Meteo to provide missing metrics for ASCOM Observing Conditions.
       </p>
 
@@ -130,7 +148,7 @@ onMounted(loadSettings)
               Detect
             </button>
           </div>
-          <span class="input-hint">Convention: Latitude (+N / -S) | Longitude (+E / -W)</span>
+          <span class="hint">Convention: Latitude (+N / -S) | Longitude (+E / -W)</span>
         </div>
 
         <div class="setting-item">
@@ -138,7 +156,7 @@ onMounted(loadSettings)
           <select v-model="config.weatherModel">
             <option v-for="m in models" :key="m.id" :value="m.id">{{ m.label }}</option>
           </select>
-          <span class="input-hint">Default: Best Match for your region.</span>
+          <span class="hint">Default: Best Match for your region.</span>
         </div>
 
         <div class="setting-item">
@@ -147,18 +165,18 @@ onMounted(loadSettings)
              <input type="number" v-model.number="config.weatherInterval" min="1" max="60">
              <span class="unit">min</span>
           </div>
-          <span class="input-hint">Recommended: 2 - 10 minutes.</span>
+          <span class="hint">Recommended: 2 - 10 minutes.</span>
         </div>
       </div>
     </div>
 
     <!-- Priority Matrix -->
-    <div class="config-group" :class="{ disabled: !config.enableWeatherService }">
+    <div class="glass-panel settings-card" :class="{ disabled: !config.enableWeatherService }">
       <div class="title-with-icon">
-          <h3>Metric Data Sourcing</h3>
+          <h4>Metric Data Sourcing</h4>
       </div>
-      <p class="description">Choose how each ObservingCondition property should be sourced.</p>
-      
+      <p class="card-description">Choose how each ObservingCondition property should be sourced.</p>
+
       <div class="priority-matrix glass-panel">
         <div class="matrix-row header">
           <div class="metric-col">Metric</div>
@@ -189,16 +207,14 @@ onMounted(loadSettings)
       </div>
     </div>
 
-    <button @click="saveSettings" class="btn-primary full-width-btn">Save Weather Configuration</button>
+    <button @click="saveSettings" class="btn-primary full-width-btn" :disabled="!hasChanges">Save Weather Configuration</button>
+   </div>
   </div>
 </template>
 
 <style scoped>
-.weather-content {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-}
+/* Each section is now a .settings-card (global), which already carries its own margin-bottom -
+   no extra flex/gap wrapper needed here, matching every other Configuration tab's spacing model. */
 
 .header-toggle {
     display: flex;
@@ -207,7 +223,7 @@ onMounted(loadSettings)
     cursor: pointer;
 }
 
-.header-toggle h3 {
+.header-toggle h4 {
     margin: 0;
 }
 
@@ -215,13 +231,6 @@ onMounted(loadSettings)
     width: 1.25rem;
     height: 1.25rem;
     accent-color: var(--primary-color);
-}
-
-.description {
-    font-size: 0.9rem;
-    color: var(--text-secondary);
-    margin-bottom: 1.25rem;
-    line-height: 1.4;
 }
 
 .settings-grid {
@@ -282,11 +291,6 @@ onMounted(loadSettings)
 .unit {
     color: var(--text-muted);
     font-size: 0.85rem;
-}
-
-.input-hint {
-    font-size: 0.75rem;
-    color: var(--text-muted);
 }
 
 /* Priority Matrix Styles */
@@ -362,11 +366,6 @@ onMounted(loadSettings)
     background: rgba(0, 210, 255, 0.1);
     color: var(--primary-color);
     border: 1px solid rgba(0, 210, 255, 0.2);
-}
-
-.full-width-btn {
-    margin-top: 1rem;
-    width: 100%;
 }
 
 .animate-in {

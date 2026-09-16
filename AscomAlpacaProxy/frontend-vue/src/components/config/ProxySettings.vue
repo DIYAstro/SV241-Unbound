@@ -58,7 +58,7 @@ async function save() {
 </script>
 
 <template>
-  <div class="config-group full-width-group proxy-settings">
+  <div class="config-group proxy-settings">
       <h3>Proxy Settings</h3>
 
       <!-- Appearance Card - client-side only, applies instantly, no Save button needed -->
@@ -87,7 +87,7 @@ async function save() {
                          :placeholder="localConfig.autoDetectPort ? 'Auto-detecting...' : 'e.g. COM3'">
               </div>
               <div class="form-group checkbox-row">
-                  <label>
+                  <label class="checkbox-label">
                       <input type="checkbox" v-model="localConfig.autoDetectPort" @change="onChange">
                       Auto-Detect Port
                   </label>
@@ -98,7 +98,7 @@ async function save() {
                       <option v-for="ip in availableIps" :key="ip" :value="ip">{{ ip }}</option>
                   </select>
               </div>
-              <div class="split-row">
+              <div class="card-grid">
                   <div class="form-group">
                       <label>Network Port</label>
                       <input type="number" v-model.number="localConfig.networkPort" @input="onChange" placeholder="32241">
@@ -161,7 +161,7 @@ async function save() {
               <hr class="divider">
               
                <div class="master-power-section">
-                  <div class="master-power-row">
+                  <div class="card-grid">
                       <div class="checkbox-with-hint">
                            <label class="checkbox-label">
                                <input type="checkbox" v-model="localConfig.alwaysShowLensTemp" @change="onChange">
@@ -182,7 +182,7 @@ async function save() {
                <hr class="divider">
                
                <div class="master-power-section">
-                  <div class="master-power-row">
+                  <div class="card-grid">
                       <div class="form-group">
                           <label>Master Power Switch</label>
                           <select v-model="localConfig.enableMasterPower" @change="onChange">
@@ -215,39 +215,10 @@ async function save() {
     gap: 1rem;
 }
 
-.settings-card {
-    padding: 1.25rem;
-}
-
-.settings-card h4 {
-    margin: 0 0 1rem 0;
-    color: var(--primary-color);
-    font-size: 1rem;
-    font-weight: 600;
-}
-
-.card-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-}
-
 .card-content {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
-}
-
-.master-power-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-}
-
-.split-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
 }
 
 .form-group {
@@ -258,23 +229,13 @@ async function save() {
 
 .form-group label {
     font-size: 0.85rem;
-    color: var(--text-secondary, #aaa);
+    color: var(--text-secondary);
 }
 
-.checkbox-group {
-    flex-direction: row;
-    align-items: flex-end;
-    justify-content: flex-start;
-    padding-bottom: 0.5rem;
-}
-
-.checkbox-group label {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    cursor: pointer;
-}
-
+/* .checkbox-label (global) already handles the flex/gap/color/cursor look for the checkbox
+   itself - this only aligns the row alongside its sibling label+input fields in the same
+   .card-grid (which sit below their own label, so a bare checkbox needs align-items:flex-end to
+   match their baseline). */
 .checkbox-row {
     flex-direction: row;
     align-items: flex-end;
@@ -283,62 +244,16 @@ async function save() {
     padding-bottom: 0.5rem;
 }
 
-.checkbox-row label {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    cursor: pointer;
-}
-
-.checkbox-with-hint {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-}
-
-.checkbox-label {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    cursor: pointer;
-    color: var(--text-secondary, #aaa);
-    font-size: 0.85rem;
-}
-
 .master-power-section {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
 }
 
-.full-width {
-    grid-column: span 2;
-}
-
-.hint {
-    font-size: 0.8rem;
-    color: var(--text-muted, #666);
-    display: block;
-}
-
 .divider {
     border: none;
     border-top: 1px solid rgba(255, 255, 255, 0.1);
     margin: 0.5rem 0;
-}
-
-.full-width-btn {
-    margin-top: 1rem;
-    width: 100%;
-}
-
-@media (max-width: 600px) {
-    .card-grid, .master-power-row, .split-row {
-        grid-template-columns: 1fr;
-    }
-    .full-width {
-        grid-column: span 1;
-    }
 }
 </style>
 
