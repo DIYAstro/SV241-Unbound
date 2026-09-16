@@ -2,7 +2,7 @@
 
 [← Back to main readme](../readme.md)
 
-The project also includes the standalone SV241 Alpaca Proxy, written in Go. This application connects to the SV241 device via its serial port and exposes it to the ASCOM ecosystem as standard `Switch` and `ObservingConditions` devices.
+The project also includes the standalone SV241 Alpaca Proxy, written in Go. This application connects to the SV241 device via its serial port and exposes it to the ASCOM ecosystem as standard `Switch`, `ObservingConditions`, and (optionally) `SafetyMonitor` devices.
 
 > [!NOTE]
 > The proxy is written in Go with cross-platform support in mind, and includes build scripts and an installer for Linux. That said, the maintainer doesn't use Linux day-to-day, so it isn't actively tested there - it should work, but it hasn't seen the same real-world mileage as the Windows build. Pull requests improving Linux support are very welcome; just note that the maintainer won't be able to actively chase down Linux-specific issues, since testing them isn't realistically possible on this end.
@@ -41,6 +41,7 @@ The project also includes the standalone SV241 Alpaca Proxy, written in Go. This
 *   Auto-detection of the SV241 serial port.
 *   Exposes all power outputs as a single ASCOM `Switch` device.
 *   Exposes environmental sensors as an ASCOM `ObservingConditions` device.
+*   **Safety Monitor:** Optional ASCOM `SafetyMonitor` device that reports "unsafe" once the input voltage drops to or below a configurable threshold - lets a sequencer (e.g. N.I.N.A.) abort a running sequence in an orderly way, useful when running off a battery in the field. Independently, a UI warning indicator and desktop notification can be enabled for the same threshold.
 *   **Modern Web Interface:** A responsive, dark-themed dashboard with glassmorphism effects.
 *   **Telemetry History:** Automatic CSV logging of all sensor data with an interactive historical chart visualization.
 *   **Hide Unused Outputs:** Individual power switches and dew heaters can be disabled in the firmware configuration. Disabled outputs are automatically hidden from both the Web UI and the ASCOM device list, keeping your interface clean.

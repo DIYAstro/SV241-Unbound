@@ -46,8 +46,6 @@ async function save() {
     // Ensure numeric types
     localConfig.value.networkPort = parseInt(localConfig.value.networkPort);
     localConfig.value.historyRetentionNights = parseInt(localConfig.value.historyRetentionNights);
-    localConfig.value.voltageWarningThreshold = parseFloat(localConfig.value.voltageWarningThreshold) || 0;
-    localConfig.value.voltageCriticalThreshold = parseFloat(localConfig.value.voltageCriticalThreshold) || 0;
 
     try {
         await store.saveProxyConfig(localConfig.value);
@@ -148,26 +146,6 @@ async function save() {
                    <label>Min. Telemetry Retention (Nights)</label>
                    <input type="number" v-model.number="localConfig.historyRetentionNights" @input="onChange" min="0">
                    <small class="hint">Keeps at least this many recorded nights. Set to 0 for unlimited.</small>
-              </div>
-          </div>
-      </div>
-
-      <!-- Voltage Monitoring Card - proxy-side warning thresholds, separate from the firmware's
-           own current-limit heater protection (Dew Heaters tab). Notifications/indicator only -
-           doesn't control anything, so it needs no firmware involvement or reflash. -->
-      <div class="settings-card glass-panel">
-          <h4>Voltage Monitoring</h4>
-          <div class="card-grid">
-              <div class="form-group">
-                  <label>Low Voltage Warning (V)</label>
-                  <input type="number" step="0.1" min="0" v-model.number="localConfig.voltageWarningThreshold" @input="onChange" placeholder="0 = disabled">
-              </div>
-              <div class="form-group">
-                  <label>Critical Voltage (V)</label>
-                  <input type="number" step="0.1" min="0" v-model.number="localConfig.voltageCriticalThreshold" @input="onChange" placeholder="0 = disabled">
-              </div>
-              <div class="form-group full-width">
-                  <small class="hint">Shows a warning/critical indicator in Live Telemetry and sends a notification when input voltage crosses these thresholds. Set either to 0 to disable it.</small>
               </div>
           </div>
       </div>

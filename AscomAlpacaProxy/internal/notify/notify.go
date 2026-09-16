@@ -16,6 +16,12 @@ import "sync"
 type Notification struct {
 	Title   string
 	Message string
+
+	// Severity is an optional hint for channels that can act on urgency differently (e.g. a
+	// future Pushover channel mapping this to its own priority levels) - "critical", "warning",
+	// or "info". "" (the zero value) means "no particular severity" and is exactly what every
+	// existing call site already produces, so adding this field changes no current behavior.
+	Severity string
 }
 
 var (

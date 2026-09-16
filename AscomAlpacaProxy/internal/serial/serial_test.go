@@ -4,8 +4,19 @@ import (
 	"bytes"
 	"log"
 	"strings"
+	"sv241pro-alpaca-proxy/internal/config"
 	"testing"
 )
+
+// withSafetyThreshold sets config.Get().SafetyMonitorVoltageThreshold for the duration of a test
+// and restores the previous value afterward, so these tests don't leak config state into others.
+func withSafetyThreshold(t *testing.T, threshold float64) {
+	t.Helper()
+	conf := config.Get()
+	orig := conf.SafetyMonitorVoltageThreshold
+	conf.SafetyMonitorVoltageThreshold = threshold
+	t.Cleanup(func() { conf.SafetyMonitorVoltageThreshold = orig })
+}
 
 // resetStatus clears the package-level Status cache before a test and restores whatever was
 // there beforehand once the test finishes, so these tests don't leak state into each other.
@@ -90,5 +101,36 @@ func TestUpdateStatusCacheFromJSON_MissingStatus(t *testing.T) {
 	}
 	if !strings.Contains(out, "missing 'status' object") {
 		t.Errorf("expected the missing-status warning when 'status' is genuinely absent, got log: %s", out)
+	}
+}
+
+func TestComputeSafetyUnsafe(t *testing.T) {
+	cases := []struct {
+		name      string
+		threshold float64
+		voltage   interface{}
+		want      bool
+	}{
+		{"disabled threshold never unsafe", 0, 10.0, false},
+		{"negative threshold never unsafe", -1, 10.0, false},
+		{"voltage above threshold is safe", 11.0, 12.0, false},
+		{"voltage at threshold is unsafe", 11.0, 11.0, true},
+		{"voltage below threshold is unsafe", 11.0, 10.5, true},
+		{"missing voltage reading is safe", 11.0, nil, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			withSafetyThreshold(t, tc.threshold)
+
+			conditionsData := map[string]interface{}{}
+			if tc.voltage != nil {
+				conditionsData["v"] = tc.voltage
+			}
+
+			if got := computeSafetyUnsafe(conditionsData); got != tc.want {
+				t.Errorf("computeSafetyUnsafe(threshold=%.1f, v=%v) = %v, want %v", tc.threshold, tc.voltage, got, tc.want)
+			}
+		})
 	}
 }

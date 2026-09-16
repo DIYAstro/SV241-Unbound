@@ -850,13 +850,16 @@ func updateConditionsCacheFromJSON(conditionsJSON string) {
 		newActive, _ := conditionsData["cl"].(bool)
 		wasActive, _ := Conditions.Data["cl"].(bool) // nil map / missing key both read as false
 
-		// Voltage warning: computed proxy-side (not by the firmware) from the same reading, and
+		// Safety Monitor: computed proxy-side (not by the firmware) from the same reading, and
 		// injected into this same map - it flows straight through to /api/v1/status alongside
-		// "cl" with no new endpoint needed. See computeVoltageWarningLevel's doc comment for why
-		// this lives here rather than in the firmware.
-		newVoltageLevel := computeVoltageWarningLevel(conditionsData)
-		wasVoltageLevel, _ := Conditions.Data["vw"].(int)
-		conditionsData["vw"] = newVoltageLevel
+		// "cl" with no new endpoint needed. Always computed regardless of either config toggle
+		// (SafetyMonitorUIWarningEnabled/SafetyMonitorAlpacaEnabled) - cheap, and each consumer
+		// (the notification below, the Alpaca IsSafe handler, the frontend's warning dot) decides
+		// independently whether to act on it. See computeSafetyUnsafe's doc comment for why this
+		// lives here rather than in the firmware.
+		newUnsafe := computeSafetyUnsafe(conditionsData)
+		wasUnsafe, _ := Conditions.Data["unsafe"].(bool)
+		conditionsData["unsafe"] = newUnsafe
 
 		Conditions.Data = conditionsData
 		Conditions.LastUpdate = time.Now()
@@ -877,8 +880,10 @@ func updateConditionsCacheFromJSON(conditionsJSON string) {
 				})
 			}
 		}
-		if newVoltageLevel != wasVoltageLevel {
-			notifyVoltageLevelChange(newVoltageLevel)
+		// Notification is opt-in and independent of the Alpaca exposure toggle - a user can expose
+		// IsSafe to N.I.N.A. without wanting a desktop toast, or vice versa.
+		if newUnsafe != wasUnsafe && config.Get().SafetyMonitorUIWarningEnabled {
+			notifySafetyStatusChange(newUnsafe)
 		}
 
 		logMemoryStatus(conditionsData)
@@ -888,49 +893,41 @@ func updateConditionsCacheFromJSON(conditionsJSON string) {
 	}
 }
 
-// computeVoltageWarningLevel returns 0 (ok), 1 (warning) or 2 (critical) based on the just-
-// received voltage reading ("v" in conditionsData, from the firmware's {"get":"sensors"}
-// response) and the configured thresholds. 0 if voltage is missing/unparseable, or if the
-// feature is disabled (VoltageWarningThreshold <= 0 - same "<=0 means off" convention as
-// current_limit_amps). Computed here rather than in firmware: the only consumers (desktop
-// notification, UI indicator, telemetry) are proxy/UI-side already, and the proxy already
-// receives "v" on every poll - no firmware change or reflash needed for a pure alerting
-// feature that doesn't need to survive the proxy itself being gone.
-func computeVoltageWarningLevel(conditionsData map[string]interface{}) int {
-	threshold := config.Get().VoltageWarningThreshold
-	critical := config.Get().VoltageCriticalThreshold
+// computeSafetyUnsafe reports whether the just-received voltage reading ("v" in conditionsData,
+// from the firmware's {"get":"sensors"} response) is at or below the configured safety
+// threshold. False if voltage is missing/unparseable, or if the feature is disabled
+// (SafetyMonitorVoltageThreshold <= 0 - same "<=0 means off" convention as current_limit_amps).
+// Computed here rather than in firmware: every consumer (desktop notification, UI indicator, the
+// Alpaca SafetyMonitor device) is proxy/UI-side already, and the proxy already receives "v" on
+// every poll - no firmware change or reflash needed for a pure alerting feature that doesn't
+// need to survive the proxy itself being gone.
+//
+// v1 scope is voltage-only; a future second condition (e.g. current-limit-active) would be its
+// own compute*Unsafe function, OR'd into the cached "unsafe" value alongside this one.
+func computeSafetyUnsafe(conditionsData map[string]interface{}) bool {
+	threshold := config.Get().SafetyMonitorVoltageThreshold
 	if threshold <= 0 {
-		return 0
+		return false
 	}
 	v, ok := conditionsData["v"].(float64)
 	if !ok {
-		return 0
+		return false
 	}
-	if v <= critical {
-		return 2
-	}
-	if v <= threshold {
-		return 1
-	}
-	return 0
+	return v <= threshold
 }
 
-func notifyVoltageLevelChange(level int) {
-	switch level {
-	case 2:
+func notifySafetyStatusChange(unsafe bool) {
+	if unsafe {
 		notify.Dispatch(notify.Notification{
-			Title:   "SV241 Critical Voltage",
-			Message: fmt.Sprintf("Input voltage dropped to or below the critical threshold (%.1fV).", config.Get().VoltageCriticalThreshold),
+			Title:    "SV241 Unsafe",
+			Message:  fmt.Sprintf("Input voltage dropped to or below the safety threshold (%.1fV).", config.Get().SafetyMonitorVoltageThreshold),
+			Severity: "critical",
 		})
-	case 1:
+	} else {
 		notify.Dispatch(notify.Notification{
-			Title:   "SV241 Low Voltage",
-			Message: fmt.Sprintf("Input voltage dropped to or below the warning threshold (%.1fV).", config.Get().VoltageWarningThreshold),
-		})
-	case 0:
-		notify.Dispatch(notify.Notification{
-			Title:   "SV241 Voltage Restored",
-			Message: "Input voltage is back above the configured thresholds.",
+			Title:    "SV241 Safe",
+			Message:  "Input voltage is back above the configured safety threshold.",
+			Severity: "info",
 		})
 	}
 }

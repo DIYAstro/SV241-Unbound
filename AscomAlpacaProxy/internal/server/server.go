@@ -147,6 +147,7 @@ func setupAlpacaDeviceRoutes(api *alpaca.API) {
 	// Redirects for ASCOM client setup requests
 	http.HandleFunc("/setup/v1/switch/0/setup", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/setup", http.StatusFound) })
 	http.HandleFunc("/setup/v1/observingconditions/0/setup", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/setup", http.StatusFound) })
+	http.HandleFunc("/setup/v1/safetymonitor/0/setup", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/setup", http.StatusFound) })
 
 	// Common handlers
 	commonHandlers := map[string]http.HandlerFunc{
@@ -209,6 +210,17 @@ func setupAlpacaDeviceRoutes(api *alpaca.API) {
 		obsCondHandlers[k] = v
 	}
 	http.HandleFunc("/api/v1/observingconditions/0/", alpaca.Handler(deviceMux(obsCondHandlers, api)))
+
+	// SafetyMonitor device
+	safetyMonitorHandlers := map[string]http.HandlerFunc{
+		"issafe":           api.HandleSafetyMonitorIsSafe,
+		"name":             api.HandleDeviceName("SV241 Safety Monitor"),
+		"supportedactions": api.HandleSupportedActions,
+	}
+	for k, v := range commonHandlers {
+		safetyMonitorHandlers[k] = v
+	}
+	http.HandleFunc("/api/v1/safetymonitor/0/", alpaca.Handler(deviceMux(safetyMonitorHandlers, api)))
 }
 
 // deviceMux creates a handler that routes to sub-handlers based on the final URL path segment.

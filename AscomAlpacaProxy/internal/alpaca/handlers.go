@@ -76,6 +76,17 @@ func HandleManagementConfiguredDevices(w http.ResponseWriter, r *http.Request) {
 			UniqueID:     "b8g6b69d-g6e4-58g6-b69d-g6e458g6b69d", // Static GUID
 		},
 	}
+	// Exposing the SafetyMonitor is an explicit opt-in (SafetyMonitorAlpacaEnabled) - discovery
+	// hides it entirely rather than listing a device that's permanently forced "safe" whenever
+	// the feature is off, which would be misleading to a client like N.I.N.A.
+	if config.Get().SafetyMonitorAlpacaEnabled {
+		devices = append(devices, AlpacaConfiguredDevice{
+			DeviceName:   "SV241 Safety Monitor",
+			DeviceType:   "SafetyMonitor",
+			DeviceNumber: 0,
+			UniqueID:     "c9a1d3e5-1234-4a5b-9c8d-7e6f5a4b3c2d", // Static GUID
+		})
+	}
 	ManagementValueResponse(w, r, devices)
 }
 
@@ -150,6 +161,19 @@ func (a *API) HandleDeviceName(name string) http.HandlerFunc {
 
 func (a *API) HandleSupportedActions(w http.ResponseWriter, r *http.Request) {
 	StringListResponse(w, r, []string{"getlenstemperature"})
+}
+
+// --- SafetyMonitor Handlers ---
+
+func (a *API) HandleSafetyMonitorIsSafe(w http.ResponseWriter, r *http.Request) {
+	if !config.Get().SafetyMonitorAlpacaEnabled {
+		BoolResponse(w, r, true) // Feature off -> never block, even if queried directly
+		return
+	}
+	serial.Conditions.RLock()
+	unsafe, _ := serial.Conditions.Data["unsafe"].(bool)
+	serial.Conditions.RUnlock()
+	BoolResponse(w, r, !unsafe)
 }
 
 func (a *API) HandleObsCondAction(w http.ResponseWriter, r *http.Request) {

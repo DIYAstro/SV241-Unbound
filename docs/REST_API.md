@@ -193,6 +193,37 @@ Invoke-WebRequest -Uri "http://localhost:32241/api/v1/switch/0/setswitchvalue" -
 Invoke-RestMethod -Uri "http://localhost:32241/api/v1/switch/0/getswitchvalue?Id=10"
 ```
 
+## Safety Monitor
+
+When enabled (Configuration → Safety Monitor tab, "Expose ASCOM Alpaca SafetyMonitor device"),
+the proxy exposes a standard ASCOM `SafetyMonitor` device that reports "unsafe" once the input
+voltage drops to or below the configured threshold - useful for a battery-powered rig in the
+field, so a sequencer (e.g. N.I.N.A.) can abort a running sequence in an orderly way. If the
+feature is disabled, `IsSafe` always returns `true` and the device doesn't appear in
+`management/v1/configureddevices` at all.
+
+**Endpoint:** `GET /api/v1/safetymonitor/0/issafe`
+
+```bash
+curl "http://localhost:32241/api/v1/safetymonitor/0/issafe?ClientID=1&ClientTransactionID=1"
+```
+
+**Windows PowerShell:**
+```powershell
+Invoke-RestMethod -Uri "http://localhost:32241/api/v1/safetymonitor/0/issafe?ClientID=1&ClientTransactionID=1"
+```
+
+**Example response:**
+```json
+{
+  "Value": false,
+  "ClientTransactionID": 1,
+  "ServerTransactionID": 42,
+  "ErrorNumber": 0,
+  "ErrorMessage": ""
+}
+```
+
 ## Configuration Profiles
 
 Named, manually-saved snapshots of one box's configuration (firmware config + that box's own

@@ -123,8 +123,9 @@ func HandlePostSettings(w http.ResponseWriter, r *http.Request) {
 	conf.FirstRunComplete = newConfig.FirstRunComplete
 	conf.EnableAutoBackup = newConfig.EnableAutoBackup
 	conf.AutoBackupRetentionCount = newConfig.AutoBackupRetentionCount
-	conf.VoltageWarningThreshold = newConfig.VoltageWarningThreshold
-	conf.VoltageCriticalThreshold = newConfig.VoltageCriticalThreshold
+	conf.SafetyMonitorVoltageThreshold = newConfig.SafetyMonitorVoltageThreshold
+	conf.SafetyMonitorUIWarningEnabled = newConfig.SafetyMonitorUIWarningEnabled
+	conf.SafetyMonitorAlpacaEnabled = newConfig.SafetyMonitorAlpacaEnabled
 
 	// Update Weather Service Settings
 	conf.EnableWeatherService = newConfig.EnableWeatherService
