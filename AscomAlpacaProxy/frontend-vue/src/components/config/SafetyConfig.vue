@@ -5,7 +5,7 @@ import { storeToRefs } from 'pinia'
 import { ref, watch, computed } from 'vue'
 import {
     METRICS, OPERATORS, EVENT_METRIC_LABELS, isEventMetric, SAFETY_MONITOR_ELIGIBLE_EVENTS,
-    metricInfo, operatorLabel, formatValue, useSafetyConditionStatuses
+    metricInfo, operatorLabel, formatValue, categoryForMetric, useSafetyConditionStatuses
 } from '../../composables/useSafetyMonitor'
 
 const store = useDeviceStore()
@@ -71,7 +71,43 @@ function addCondition() {
 }
 
 function removeCondition(index) {
+    // Splicing shifts every index after this one, which would leave editingIndex pointing at the
+    // wrong condition if a row is mid-edit - close it outright rather than try to re-map the index.
+    closeEdit()
     conditions.value.splice(index, 1)
+    onChange()
+}
+
+// Edit-display toggle for an existing row: purely which row shows dropdowns/input instead of
+// plain text. There is no staged draft - changes made while editing mutate the condition in
+// conditions.value directly, exactly like the Notify/Include checkboxes already do. The row's own
+// "Save" button (see template) reuses the exact same save() the page-level "Save Settings" button
+// calls, so it doesn't matter which one is clicked - either persists everything at once.
+const editingIndex = ref(-1)
+
+function startEdit(idx) {
+    editingIndex.value = idx
+}
+
+function closeEdit() {
+    editingIndex.value = -1
+}
+
+function onCategoryChange(cond, categoryId) {
+    const category = METRICS.find(m => m.id === categoryId)
+    const metricId = category.kind === 'numeric' ? category.id : category.events[0].id
+    const eligible = category.kind === 'numeric' || SAFETY_MONITOR_ELIGIBLE_EVENTS.includes(metricId)
+    cond.metric = metricId
+    cond.operator = category.kind === 'numeric' ? (cond.operator || OPERATORS[0].id) : ''
+    cond.threshold = category.kind === 'numeric' ? cond.threshold : 0
+    if (!eligible) cond.includeInSafetyMonitor = false
+    onChange()
+}
+
+function onEventChange(cond, eventId) {
+    const eligible = SAFETY_MONITOR_ELIGIBLE_EVENTS.includes(eventId)
+    cond.metric = eventId
+    if (!eligible) cond.includeInSafetyMonitor = false
     onChange()
 }
 
@@ -103,23 +139,49 @@ async function save() {
           </p>
 
           <div v-if="conditions.length" class="condition-list">
-              <div v-for="(cond, idx) in conditions" :key="idx" class="condition-row" :class="{ triggered: conditionStatuses[idx]?.triggered }">
-                  <span class="condition-text">
-                      <template v-if="isEventMetric(cond.metric)">
-                          {{ EVENT_METRIC_LABELS[cond.metric] }}
-                      </template>
-                      <template v-else>
-                          {{ metricInfo(cond.metric).label }} {{ operatorLabel(cond.operator) }} {{ cond.threshold }} {{ metricInfo(cond.metric).unit }}
-                          <small v-if="isConnected" class="condition-current">(currently {{ formatValue(conditionStatuses[idx]?.currentValue, metricInfo(cond.metric).unit) }})</small>
-                      </template>
-                  </span>
-                  <div class="condition-channels">
-                      <label class="checkbox-label"><input type="checkbox" v-model="cond.notify" @change="onChange"> Notify</label>
-                      <label class="checkbox-label" v-if="!isEventMetric(cond.metric) || SAFETY_MONITOR_ELIGIBLE_EVENTS.includes(cond.metric)">
-                          <input type="checkbox" v-model="cond.includeInSafetyMonitor" @change="onChange"> Include in Safety Monitor
-                      </label>
-                  </div>
-                  <button @click="removeCondition(idx)" class="btn-danger">Remove</button>
+              <div v-for="(cond, idx) in conditions" :key="idx" class="condition-row" :class="{ triggered: conditionStatuses[idx]?.triggered, editing: idx === editingIndex }">
+                  <template v-if="idx === editingIndex">
+                      <span class="condition-text">
+                          <select :value="categoryForMetric(cond.metric)?.id" @change="onCategoryChange(cond, $event.target.value)">
+                              <option v-for="m in METRICS" :key="m.id" :value="m.id">{{ m.label }}</option>
+                          </select>
+                          <template v-if="!isEventMetric(cond.metric)">
+                              <select v-model="cond.operator" @change="onChange">
+                                  <option v-for="o in OPERATORS" :key="o.id" :value="o.id">{{ o.label }}</option>
+                              </select>
+                              <input type="number" step="0.1" v-model.number="cond.threshold" @input="onChange" :placeholder="metricInfo(cond.metric).unit">
+                          </template>
+                          <select v-else :value="cond.metric" @change="onEventChange(cond, $event.target.value)">
+                              <option v-for="e in categoryForMetric(cond.metric)?.events" :key="e.id" :value="e.id">{{ e.label }}</option>
+                          </select>
+                      </span>
+                      <div class="condition-channels">
+                          <label class="checkbox-label"><input type="checkbox" v-model="cond.notify" @change="onChange"> Notify</label>
+                          <label class="checkbox-label" v-if="!isEventMetric(cond.metric) || SAFETY_MONITOR_ELIGIBLE_EVENTS.includes(cond.metric)">
+                              <input type="checkbox" v-model="cond.includeInSafetyMonitor" @change="onChange"> Include in Safety Monitor
+                          </label>
+                      </div>
+                      <button @click="save().then(closeEdit)" class="btn-secondary">Save</button>
+                  </template>
+                  <template v-else>
+                      <span class="condition-text">
+                          <template v-if="isEventMetric(cond.metric)">
+                              {{ EVENT_METRIC_LABELS[cond.metric] }}
+                          </template>
+                          <template v-else>
+                              {{ metricInfo(cond.metric).label }} {{ operatorLabel(cond.operator) }} {{ cond.threshold }} {{ metricInfo(cond.metric).unit }}
+                              <small v-if="isConnected" class="condition-current">(currently {{ formatValue(conditionStatuses[idx]?.currentValue, metricInfo(cond.metric).unit) }})</small>
+                          </template>
+                      </span>
+                      <div class="condition-channels">
+                          <label class="checkbox-label"><input type="checkbox" v-model="cond.notify" @change="onChange"> Notify</label>
+                          <label class="checkbox-label" v-if="!isEventMetric(cond.metric) || SAFETY_MONITOR_ELIGIBLE_EVENTS.includes(cond.metric)">
+                              <input type="checkbox" v-model="cond.includeInSafetyMonitor" @change="onChange"> Include in Safety Monitor
+                          </label>
+                      </div>
+                      <button @click="startEdit(idx)" class="btn-secondary">Edit</button>
+                      <button @click="removeCondition(idx)" class="btn-danger">Remove</button>
+                  </template>
               </div>
           </div>
           <p v-else class="card-description">No conditions configured - IsSafe always reports true.</p>
@@ -189,6 +251,21 @@ async function save() {
     font-family: inherit;
     color: var(--text-muted);
     margin-left: 0.35rem;
+}
+
+/* While a row is being edited, .condition-text holds selects/an input instead of plain text -
+   lay them out like .add-condition-row's controls rather than the plain-text flex sizing above. */
+.condition-row.editing .condition-text {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.condition-row.editing .condition-text > select,
+.condition-row.editing .condition-text > input {
+    flex: 1;
+    min-width: 100px;
 }
 
 .condition-row button {

@@ -53,6 +53,13 @@ export function operatorLabel(id) {
     return OPERATORS.find(o => o.id === id)?.label || id
 }
 
+// Maps a stored leaf metric (numeric category id, or an event's leaf id) back to its parent
+// category - needed to pre-select the right top-level dropdown when editing an existing
+// condition, since the "Add" row only ever builds the leaf forward from category -> leaf.
+export function categoryForMetric(metric) {
+    return METRICS.find(m => m.id === metric || (m.kind === 'event' && m.events.some(e => e.id === metric)))
+}
+
 // Mirrors internal/serial's safetyMetricExtractors - must stay in sync with that map.
 export function extractMetricValue(metric, status) {
     switch (metric) {
