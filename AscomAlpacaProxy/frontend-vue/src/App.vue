@@ -10,6 +10,7 @@ import Configuration from './components/Configuration.vue'
 import LiveLog from './components/LiveLog.vue'
 import AppModal from './components/AppModal.vue'
 import FirmwareFlasher from './components/FirmwareFlasher.vue'
+import Footer from './components/Footer.vue'
 import { useDeviceStore } from './stores/device'
 import { useThemeStore } from './stores/theme'
 
@@ -54,6 +55,8 @@ onMounted(() => {
         <LiveLog />
       </div>
     </main>
+
+    <Footer />
   </div>
 </template>
 
