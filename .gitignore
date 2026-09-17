@@ -1,7 +1,7 @@
 .pio
 compile_commands.json
 .vscode/
-.claude/settings.local.json
+.claude/
 media/
 AscomAlpacaProxy/resource.syso
 AscomAlpacaProxy/build
