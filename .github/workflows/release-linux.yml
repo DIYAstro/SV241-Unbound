@@ -5,6 +5,12 @@ name: Build & Publish Linux Release Assets
 # toolchain needed - see build_linux.sh, which this reuses as-is) and attaches them, plus
 # install_linux.sh, to a GitHub release. Firmware itself comes from release-firmware.yml's
 # firmware.zip, not built here - see build_linux.sh's SKIP_FIRMWARE_BUILD support.
+#
+# Each matrix leg (amd64/arm64) builds and uploads its own binary directly - no separate
+# publish job or upload-artifact/download-artifact hand-off, same as release-windows.yml and
+# release-firmware.yml. install_linux.sh is arch-independent, so only the amd64 leg uploads
+# it, to avoid two parallel jobs racing `gh release upload --clobber` against the same asset
+# name.
 on:
   workflow_dispatch:
     inputs:
@@ -60,11 +66,11 @@ jobs:
       - name: Install cgo build dependencies (libusb-1.0)
         run: sudo apt-get update && sudo apt-get install -y gcc libusb-1.0-0-dev
 
-      # Pulls the exact same firmware release-firmware.yml already built and published - this
-      # workflow never compiles firmware itself (see the SKIP_FIRMWARE_BUILD env var on the Build
-      # step below). Each matrix leg resolves the tag itself (this step is cheap and per-arch, no
-      # need for a separate job just to share one `gh release view` call).
-      - name: Download and extract firmware.zip
+      # Each matrix leg resolves the tag itself (this step is cheap and per-arch, no need for a
+      # separate job just to share one `gh release view` call) - used below both to pull the
+      # right firmware.zip and to upload this leg's binary to the right release.
+      - name: Resolve target release tag
+        id: tag
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -72,8 +78,17 @@ jobs:
           if [ -z "$TAG" ]; then
             TAG=$(gh release view --json tagName -q .tagName)
           fi
-          echo "Firmware source release: $TAG"
-          gh release download "$TAG" -p firmware.zip -O firmware.zip
+          echo "Target release: $TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      # Pulls the exact same firmware release-firmware.yml already built and published - this
+      # workflow never compiles firmware itself (see the SKIP_FIRMWARE_BUILD env var on the Build
+      # step below).
+      - name: Download and extract firmware.zip
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${{ steps.tag.outputs.tag }}" -p firmware.zip -O firmware.zip
           mkdir -p AscomAlpacaProxy/frontend-vue/public/flasher/firmware
           unzip -o firmware.zip -d AscomAlpacaProxy/frontend-vue/public/flasher/firmware
 
@@ -90,63 +105,36 @@ jobs:
         # this works regardless of it.
         run: bash AscomAlpacaProxy/build_scripts/build_linux.sh
 
-      # retention-days: 1 - this is purely a hand-off to the publish job below within the
-      # same run, which immediately re-uploads it to the GitHub Release. It's never needed
-      # again after that, so there's no reason to eat into the account's Actions storage
-      # quota at GitHub's 90-day artifact default.
-      - uses: actions/upload-artifact@v7.0.1
-        with:
-          name: binary-${{ matrix.arch }}
-          path: AscomAlpacaProxy/build/AscomAlpacaProxy-linux-${{ matrix.arch }}
-          retention-days: 1
-
-  publish:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      # Same ref: reasoning as the build job above - needed so the install_linux.sh sanity-check
-      # and upload below operate on the tagged commit, not whatever triggered this run.
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.release_tag }}
-
-      - uses: actions/download-artifact@v8.0.1
-        with:
-          pattern: binary-*
-          merge-multiple: true
-          path: release-assets
-
       # Guards against the exact bug that made it onto the live release before this workflow
       # existed: a Windows working-tree copy with CRLF line endings was uploaded by hand and
       # crashed immediately when piped into bash on the target Linux system. .gitattributes
       # (*.sh text eol=lf) should already prevent this in the working tree this checkout produces
       # - this is a cheap, explicit belt-and-suspenders check right before it goes out the door.
+      # Only the amd64 leg uploads install_linux.sh (see below), so only it needs to check it.
       - name: Sanity-check install_linux.sh has no CRLF line endings
+        if: matrix.arch == 'amd64'
         run: |
           if grep -qU $'\r' AscomAlpacaProxy/build_scripts/install_linux.sh; then
             echo "::error::install_linux.sh has CRLF line endings - refusing to upload"
             exit 1
           fi
 
-      - name: Resolve target release tag
-        id: tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          TAG="${{ inputs.release_tag }}"
-          if [ -z "$TAG" ]; then
-            TAG=$(gh release view --json tagName -q .tagName)
-          fi
-          echo "Target release: $TAG"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-
-      # --clobber intentionally overwrites any existing same-named assets on the release.
-      - name: Upload assets to release
+      # --clobber intentionally overwrites any existing same-named asset on the release.
+      - name: Upload binary to release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload "${{ steps.tag.outputs.tag }}" \
-            release-assets/AscomAlpacaProxy-linux-amd64 \
-            release-assets/AscomAlpacaProxy-linux-arm64 \
+            AscomAlpacaProxy/build/AscomAlpacaProxy-linux-${{ matrix.arch }} \
+            --clobber
+
+      # install_linux.sh is arch-independent - uploaded once by the amd64 leg only, so the two
+      # matrix legs never race `gh release upload --clobber` against the same asset name.
+      - name: Upload install_linux.sh to release
+        if: matrix.arch == 'amd64'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ steps.tag.outputs.tag }}" \
             AscomAlpacaProxy/build_scripts/install_linux.sh \
             --clobber
