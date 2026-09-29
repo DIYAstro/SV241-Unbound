@@ -90,10 +90,15 @@ jobs:
         # this works regardless of it.
         run: bash AscomAlpacaProxy/build_scripts/build_linux.sh
 
+      # retention-days: 1 - this is purely a hand-off to the publish job below within the
+      # same run, which immediately re-uploads it to the GitHub Release. It's never needed
+      # again after that, so there's no reason to eat into the account's Actions storage
+      # quota at GitHub's 90-day artifact default.
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: binary-${{ matrix.arch }}
           path: AscomAlpacaProxy/build/AscomAlpacaProxy-linux-${{ matrix.arch }}
+          retention-days: 1
 
   publish:
     needs: build
