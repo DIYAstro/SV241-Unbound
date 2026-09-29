@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   cleanup:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Delete workflow runs older than 14 days
         env:

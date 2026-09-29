@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       # ref explicit: without it, checkout defaults to whatever commit triggered *this* run,
       # which is wrong when called as a reusable workflow with a release_tag pointing elsewhere
