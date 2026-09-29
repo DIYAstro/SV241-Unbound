@@ -53,8 +53,11 @@ jobs:
       proxy_changed: ${{ steps.diff.outputs.proxy_changed }}
       prev_sha: ${{ steps.prev.outputs.sha }}
     steps:
+      # ref explicit: a schedule/workflow_dispatch trigger otherwise checks out the repo's
+      # default branch (main), not necessarily where ongoing development happens.
       - uses: actions/checkout@v5
         with:
+          ref: dev
           fetch-depth: 0
           fetch-tags: true
 
@@ -62,7 +65,7 @@ jobs:
       # at a synthetic version-bump commit (release_version.json etc. patched to that day's
       # version), which never matches HEAD's clean values in those same files even when nothing
       # real changed - diffing against it would make the change-check below fire every single
-      # day. The parent is the actual last real main commit that bump was built from.
+      # day. The parent is the actual last real dev commit that bump was built from.
       - name: Resolve the previous daily build's commit
         id: prev
         run: |
@@ -113,8 +116,10 @@ jobs:
     if: needs.check.outputs.changed == 'true'
     runs-on: ubuntu-24.04
     steps:
+      # ref explicit - same reasoning as the check job above.
       - uses: actions/checkout@v5
         with:
+          ref: dev
           fetch-depth: 0
 
       # Hash of the last commit that actually touched each component's own path, not today's
