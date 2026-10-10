@@ -41,6 +41,14 @@ const chartRef = ref(null) // Chart reference for reset zoom
 const chartContainerRef = ref(null) // Container ref for ResizeObserver
 let resizeObserver = null
 
+// Bumped on every successful fetchData() and bound as the <Line>'s :key - chartjs-plugin-zoom
+// stores a zoomed/panned axis min/max directly on the Chart.js instance, and vue-chartjs updates
+// that same instance in place when `data` changes rather than recreating it, so a previous zoom
+// silently carries over onto a newly loaded time range otherwise (confirmed: zoom in, pick a
+// different range, only the old zoomed-in window's worth of time shows). Changing :key forces Vue
+// to destroy and recreate the chart component - same effect as closing/reopening the explorer.
+const chartKey = ref(0)
+
 // One entry per box this install has ever seen (see config.DeviceProfiles), for the device filter
 // dropdown - labeled by rig name where set, otherwise the raw serial.
 const deviceOptions = computed(() => {
@@ -196,6 +204,7 @@ async function fetchData() {
             let data = await res.json();
             if(!data) data = [];
             graphData.value = data;
+            chartKey.value++;
         }
     } catch (e) {
         console.error(e);
@@ -407,7 +416,7 @@ const chartOptions = {
             <div class="chart-toolbar">
                 <button class="reset-btn" @click="resetZoom" title="Reset to full view"><i class="ri-refresh-line"></i> Reset View</button>
             </div>
-            <Line ref="chartRef" :data="chartData" :options="chartOptions" />
+            <Line ref="chartRef" :key="chartKey" :data="chartData" :options="chartOptions" />
         </section>
     </div>
   </div>
