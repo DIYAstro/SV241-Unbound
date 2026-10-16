@@ -4,6 +4,7 @@ import { useModalStore } from '../../stores/modal'
 import { useThemeStore } from '../../stores/theme'
 import { storeToRefs } from 'pinia'
 import { ref, watch, computed } from 'vue'
+import HelpTip from '../HelpTip.vue'
 
 const store = useDeviceStore()
 const modal = useModalStore()
@@ -66,7 +67,7 @@ async function save() {
           <h4>Appearance</h4>
           <div class="card-grid">
               <div class="form-group">
-                  <label>Theme</label>
+                  <label>Theme<HelpTip text="Visual style of this Web UI. A browser-only preference, stored on this device - applies instantly, no Save needed." /></label>
                   <select :value="currentTheme" @change="handleThemeChange">
                       <option :value="THEMES.DARK">Material Dark</option>
                       <option :value="THEMES.DEFAULT">Deep Space</option>
@@ -81,8 +82,8 @@ async function save() {
           <h4>Connection Settings</h4>
           <div class="card-grid">
               <div class="form-group">
-                  <label>Serial Port</label>
-                  <input type="text" v-model="localConfig.serialPortName" @input="onChange" 
+                  <label>Serial Port<HelpTip text="Which COM port the SV241 is connected on. Ignored while Auto-Detect Port is enabled." /></label>
+                  <input type="text" v-model="localConfig.serialPortName" @input="onChange"
                          :disabled="localConfig.autoDetectPort"
                          :placeholder="localConfig.autoDetectPort ? 'Auto-detecting...' : 'e.g. COM3'">
               </div>
@@ -90,21 +91,22 @@ async function save() {
                   <label class="checkbox-label">
                       <input type="checkbox" v-model="localConfig.autoDetectPort" @change="onChange">
                       Auto-Detect Port
+                      <HelpTip text="Automatically find and connect to the SV241 instead of using a fixed COM port - recommended unless you have a specific reason to pin it." />
                   </label>
               </div>
               <div class="form-group">
-                  <label>Listen Address</label>
+                  <label>Listen Address<HelpTip text="Which network interface this proxy's web server/Alpaca API binds to. Use 0.0.0.0 to accept connections on every network interface, or pick a specific IP to restrict it to one network." /></label>
                   <select v-model="localConfig.listenAddress" @change="onChange">
                       <option v-for="ip in availableIps" :key="ip" :value="ip">{{ ip }}</option>
                   </select>
               </div>
               <div class="card-grid">
                   <div class="form-group">
-                      <label>Network Port</label>
+                      <label>Network Port<HelpTip text="TCP port the web server and ASCOM Alpaca API listen on. Change this if 32241 conflicts with something else on your network." /></label>
                       <input type="number" v-model.number="localConfig.networkPort" @input="onChange" placeholder="32241">
                   </div>
                   <div class="form-group">
-                      <label>Discovery Service</label>
+                      <label>Discovery Service<HelpTip text="Respond to ASCOM Alpaca UDP discovery broadcasts, so clients like N.I.N.A. can find this proxy automatically instead of needing its address entered manually." /></label>
                       <select v-model="localConfig.enableAlpacaDiscovery" @change="onChange">
                           <option :value="true">Enabled</option>
                           <option :value="false">Disabled</option>
@@ -119,7 +121,7 @@ async function save() {
           <h4>Logging & Telemetry</h4>
           <div class="card-grid">
               <div class="form-group">
-                  <label>Log Level</label>
+                  <label>Log Level<HelpTip text="How much detail the proxy writes to its log file. DEBUG is the most verbose (useful when troubleshooting), ERROR the quietest (only actual failures)." /></label>
                   <select v-model="localConfig.logLevel" @change="onChange">
                       <option value="DEBUG">DEBUG</option>
                       <option value="INFO">INFO</option>
@@ -128,7 +130,7 @@ async function save() {
                   </select>
               </div>
               <div class="form-group">
-                   <label>Telemetry Interval</label>
+                   <label>Telemetry Interval<HelpTip text="How often a telemetry row is written to the local database, powering the Data Explorer and CSV export. Disabled turns off history logging entirely." /></label>
                    <select v-model.number="localConfig.telemetryInterval" @change="onChange">
                        <option :value="0">Disabled</option>
                        <option :value="1">1 second</option>
@@ -170,9 +172,9 @@ async function save() {
                            <small class="hint">Always show sensor reading, even if PID/MinTemp is disabled.</small>
                       </div>
                       <div class="form-group">
-                          <label>Custom Lens Temperature Sensor Name</label>
-                          <input type="text" 
-                                 v-model="localConfig.lensTempName" 
+                          <label>Custom Lens Temperature Sensor Name<HelpTip text="Friendly name for the DS18B20 lens sensor, shown wherever its reading appears in the Web UI and ASCOM clients." /></label>
+                          <input type="text"
+                                 v-model="localConfig.lensTempName"
                                  @input="onChange"
                                  placeholder="Lens Temperature">
                       </div>

@@ -4,6 +4,7 @@ import { useDeviceStore } from '../../stores/device'
 import { useFlasherStore } from '../../stores/flasher'
 import { storeToRefs } from 'pinia'
 import { ref, watch } from 'vue'
+import HelpTip from '../HelpTip.vue'
 
 const modal = useModalStore()
 const store = useDeviceStore()
@@ -356,6 +357,7 @@ function openFlasher() {
           </p>
           <div class="button-row">
               <input type="text" v-model="rigNameEdit" placeholder="e.g. Imaging Rig" style="flex: 2;">
+              <HelpTip text="Only affects display labels (this name, switch names, etc.) - never anything written to the box itself." />
               <button @click="saveRigName" class="btn-secondary">Save</button>
           </div>
           <small class="hint" :title="activeDeviceSerial">
@@ -385,6 +387,7 @@ function openFlasher() {
                   Keep last
                   <input type="number" v-model.number="autoBackupRetentionCount" @input="autoBackupHasChanges = true" min="0" style="width: 70px;">
                   (0 = unlimited)
+                  <HelpTip text="Oldest automatic backups beyond this count are deleted. Manual backups (Download Backup below) and Profiles are never affected." />
               </label>
               <button @click="saveAutoBackupSettings" class="btn-secondary">Save</button>
           </div>

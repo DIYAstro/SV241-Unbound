@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, watch, nextTick } from 'vue'
 import { useModalStore } from '../../stores/modal'
+import HelpTip from '../HelpTip.vue'
 
 const modal = useModalStore()
 const config = ref({
@@ -135,7 +136,7 @@ onMounted(loadSettings)
 
       <div class="settings-grid" :class="{ disabled: !config.enableWeatherService }">
         <div class="setting-item">
-          <label>Position (Latitude / Longitude)</label>
+          <label>Position (Latitude / Longitude)<HelpTip text="Your observing location, used to fetch weather for the right spot." /></label>
           <div class="coord-inputs">
             <input type="number" v-model.number="config.weatherLatitude" step="0.000001" placeholder="Latitude">
             <input type="number" v-model.number="config.weatherLongitude" step="0.000001" placeholder="Longitude">
@@ -152,7 +153,7 @@ onMounted(loadSettings)
         </div>
 
         <div class="setting-item">
-          <label>Prediction Model</label>
+          <label>Prediction Model<HelpTip text="Which weather model Open-Meteo sources its forecast from. Best Match picks whichever model is most accurate for your region automatically." /></label>
           <select v-model="config.weatherModel">
             <option v-for="m in models" :key="m.id" :value="m.id">{{ m.label }}</option>
           </select>
@@ -160,7 +161,7 @@ onMounted(loadSettings)
         </div>
 
         <div class="setting-item">
-          <label>API Poll Interval (Minutes)</label>
+          <label>API Poll Interval (Minutes)<HelpTip text="How often to fetch fresh data from Open-Meteo. Lower values track changing conditions more closely but call the (free, rate-limited) API more often." /></label>
           <div class="interval-input">
              <input type="number" v-model.number="config.weatherInterval" min="1" max="60">
              <span class="unit">min</span>
@@ -180,7 +181,12 @@ onMounted(loadSettings)
       <div class="priority-matrix glass-panel">
         <div class="matrix-row header">
           <div class="metric-col">Metric</div>
-          <div class="source-col">Source Strategy</div>
+          <div class="source-col">
+              Source Strategy
+              <HelpTip text="Hybrid: prefer the physical sensor, fall back to Open-Meteo if it's unavailable.
+Hardware: always use the physical sensor, never Open-Meteo.
+Internet: always use Open-Meteo, ignore the physical sensor." />
+          </div>
         </div>
         <div v-for="m in metrics" :key="m.id" class="matrix-row">
           <div class="metric-col">{{ m.label }}</div>

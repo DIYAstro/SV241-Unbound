@@ -3,6 +3,7 @@ import { useDeviceStore } from '../../stores/device'
 import { useModalStore } from '../../stores/modal'
 import { storeToRefs } from 'pinia'
 import { ref, computed } from 'vue'
+import HelpTip from '../HelpTip.vue'
 
 const store = useDeviceStore()
 const modal = useModalStore()
@@ -283,11 +284,11 @@ async function save() {
               <thead>
                   <tr>
                       <th class="th-name">Switch Name</th>
-                      <th class="th-state">State (Startup)</th>
-                      <th class="th-custom">Custom Name</th>
-                      <th class="th-delay-on" title="Wait this many seconds after an on/off command before actually switching - e.g. to let a computer's own OS shutdown finish before cutting its power. Runs in the firmware itself, so it still completes even if the proxy/host is gone by then. 0 = immediate (unchanged behavior). Does not apply to Master Power.">Delay On (s)</th>
-                      <th class="th-delay-off" title="Same as Delay On, for the off direction.">Delay Off (s)</th>
-                      <th class="th-volt">Voltage</th>
+                      <th class="th-state">State (Startup) <HelpTip text="What this output does when the box boots. Disabled hides it entirely from the Web UI and ASCOM Switch, same as turning it off and removing it from the list." /></th>
+                      <th class="th-custom">Custom Name <HelpTip text="Friendly name shown in the Web UI and as the ASCOM Switch display name. Leave blank to use the default name." /></th>
+                      <th class="th-delay-on">Delay On (s) <HelpTip text="Wait this many seconds after an on/off command before actually switching - e.g. to let a computer's own OS shutdown finish before cutting its power. Runs in the firmware itself, so it still completes even if the proxy/host is gone by then. 0 = immediate (unchanged behavior). Does not apply to Master Power." /></th>
+                      <th class="th-delay-off">Delay Off (s) <HelpTip text="Same as Delay On, for the off direction." /></th>
+                      <th class="th-volt">Voltage <HelpTip text="Preset output voltage for the adjustable (ADJ_CONV) port. Has no effect on any other switch." /></th>
                   </tr>
               </thead>
               <tbody>
@@ -322,8 +323,9 @@ async function save() {
       </div>
 
       <div class="form-group" style="margin-top: 1rem;">
-          <label title="Delay between switching on individual outputs, both during boot (using the startup states above) and when using Master Power On / the 'all' switch. 0 = disabled (all at once, as before). Helps avoid simultaneous inrush current spikes from multiple devices powering on together.">
+          <label>
               Power-On Stagger Delay (ms)
+              <HelpTip text="Delay between switching on individual outputs, both during boot (using the startup states above) and when using Master Power On / the 'all' switch. 0 = disabled (all at once, as before). Helps avoid simultaneous inrush current spikes from multiple devices powering on together." />
           </label>
           <input type="number" :value="psdDisplayValue" @input="e => onPsdChange(e.target.value)" min="0" max="5000" style="width: 120px;">
           <small class="hint">
