@@ -10,7 +10,8 @@ const config = ref({
     weatherLongitude: 0,
     weatherModel: 'best_match',
     weatherInterval: 5,
-    weatherSourcePriority: {}
+    weatherSourcePriority: {},
+    logWeatherToTelemetry: false
 })
 
 // Every field in this tab writes directly into `config` (no per-field edit buffer like the other
@@ -167,6 +168,14 @@ onMounted(loadSettings)
              <span class="unit">min</span>
           </div>
           <span class="hint">Recommended: 2 - 10 minutes.</span>
+        </div>
+
+        <div class="setting-item">
+          <label class="checkbox-label">
+              <input type="checkbox" v-model="config.logWeatherToTelemetry">
+              Record weather data in telemetry history
+              <HelpTip text="Stamps every telemetry row with the currently cached Open-Meteo reading alongside the SV241's own sensors, so they can be compared over days in the Data Explorer/CSV export - e.g. to sanity-check the ambient sensor against an independent (if imperfect) reference. Off by default." />
+          </label>
         </div>
       </div>
     </div>

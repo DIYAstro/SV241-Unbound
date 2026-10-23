@@ -9,6 +9,7 @@ import (
 	"sv241pro-alpaca-proxy/internal/database"
 	"sv241pro-alpaca-proxy/internal/logger"
 	"sv241pro-alpaca-proxy/internal/serial"
+	"sv241pro-alpaca-proxy/internal/weather"
 )
 
 // Init initializes the database logging system.
@@ -156,6 +157,23 @@ func logTelemetry() {
 		PWM1:               getInt("pwm1"),
 		PWM2:               getInt("pwm2"),
 		CurrentLimitActive: currentLimitActive,
+	}
+
+	// Opt-in (see config.LogWeatherToTelemetry's doc comment) - stamps the currently cached
+	// Open-Meteo reading onto this row alongside the SV241's own sensors, so they can be compared
+	// over days in the Data Explorer/CSV export. Local copies rather than taking the address of
+	// wd's own fields directly, so this doesn't depend on WeatherService never mutating a
+	// previously-published *WeatherData in place.
+	if config.Get().LogWeatherToTelemetry {
+		if wd := weather.GetService().GetData(); wd != nil {
+			temp, hum, dew, pres := wd.Temperature, wd.Humidity, wd.DewPoint, wd.Pressure
+			wspd, wdir, wgust, cloud, precip := wd.WindSpeed, wd.WindDir, wd.WindGust, wd.CloudCover, wd.Precipitation
+			record.WeatherTemp, record.WeatherHumidity = &temp, &hum
+			record.WeatherDewPoint, record.WeatherPressure = &dew, &pres
+			record.WeatherWindSpeed, record.WeatherWindDirection = &wspd, &wdir
+			record.WeatherWindGust, record.WeatherCloudCover = &wgust, &cloud
+			record.WeatherPrecipitation = &precip
+		}
 	}
 
 	// Add switch states

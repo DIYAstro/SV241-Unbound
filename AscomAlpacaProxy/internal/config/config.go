@@ -89,6 +89,11 @@ type ProxyConfig struct {
 	WeatherModel          string            `json:"weatherModel"`          // best_match, icon_seamless, etc.
 	WeatherInterval       int               `json:"weatherInterval"`       // Minutes
 	WeatherSourcePriority map[string]string `json:"weatherSourcePriority"` // metric -> hardware|internet|hybrid
+	// LogWeatherToTelemetry: opt-in, off by default. Stamps every telemetry_log row with the
+	// currently cached Open-Meteo reading (see internal/weather) alongside the SV241's own sensors,
+	// so the two can be compared over days in the Data Explorer/CSV export - e.g. to sanity-check a
+	// suspected SHT40 drift against an independent (if imperfect) reference.
+	LogWeatherToTelemetry bool `json:"logWeatherToTelemetry"`
 
 	// Safety Monitor (see internal/serial's computeSafetyStatus): a list of conditions, both
 	// numeric-threshold ones (voltage, temperature, etc.) and discrete events (connection

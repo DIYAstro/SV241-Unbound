@@ -138,7 +138,26 @@ const availableSensors = computed(() => {
             });
         }
     }
-    
+
+    // Open-Meteo reference data (see Weather Service tab's "Record weather data in telemetry
+    // history") - only offered once something was actually recorded, not just because the weather
+    // service itself is on, so these never appear as a selectable-but-empty option. "weather" id
+    // prefix + isWeather flag (see chartData below) keep them visually distinct (dashed line) from
+    // the SV241's own sensors, regardless of how close two colors happen to land.
+    if (proxyConfig.value?.logWeatherToTelemetry) {
+        sensors.push(
+            { id: 'weather_temp', label: 'Weather Temp (°C)', color: '#e74c3c', axis: 'y_left', isWeather: true },
+            { id: 'weather_humidity', label: 'Weather Humidity (%)', color: '#2980b9', axis: 'y_left', isWeather: true },
+            { id: 'weather_dew_point', label: 'Weather Dew Point (°C)', color: '#8e44ad', axis: 'y_left', isWeather: true },
+            { id: 'weather_cloud_cover', label: 'Weather Cloud Cover (%)', color: '#7f8c8d', axis: 'y_left', isWeather: true },
+            { id: 'weather_pressure', label: 'Weather Pressure (hPa)', color: '#16a085', axis: 'y_right', isWeather: true },
+            { id: 'weather_wind_speed', label: 'Weather Wind Speed (km/h)', color: '#27ae60', axis: 'y_right', isWeather: true },
+            { id: 'weather_wind_gust', label: 'Weather Wind Gust (km/h)', color: '#d35400', axis: 'y_right', isWeather: true },
+            { id: 'weather_wind_direction', label: 'Weather Wind Direction (°)', color: '#f39c12', axis: 'y_right', isWeather: true },
+            { id: 'weather_precipitation', label: 'Weather Precipitation (mm)', color: '#2c3e50', axis: 'y_right', isWeather: true },
+        );
+    }
+
     return sensors;
 });
 
@@ -281,6 +300,18 @@ const chartData = computed(() => {
                     case 'usb345': return d.usb345;
                     case 'adj_conv': return d.adj_conv;
                     case 'current_limit': return d.cl;
+                    // Open-Meteo reference fields - omitted entirely from the API response (not
+                    // just 0) on rows where recording was off, so coerce undefined to null here -
+                    // Chart.js renders a null point as a gap in the line rather than plotting it.
+                    case 'weather_temp': return d.weather_temp ?? null;
+                    case 'weather_humidity': return d.weather_humidity ?? null;
+                    case 'weather_dew_point': return d.weather_dew_point ?? null;
+                    case 'weather_pressure': return d.weather_pressure ?? null;
+                    case 'weather_wind_speed': return d.weather_wind_speed ?? null;
+                    case 'weather_wind_direction': return d.weather_wind_direction ?? null;
+                    case 'weather_wind_gust': return d.weather_wind_gust ?? null;
+                    case 'weather_cloud_cover': return d.weather_cloud_cover ?? null;
+                    case 'weather_precipitation': return d.weather_precipitation ?? null;
                     default: return 0;
                 }
             }),
@@ -288,6 +319,10 @@ const chartData = computed(() => {
             backgroundColor: def && def.isBool ? hexToRgba(def.color, 0.4) : (def ? def.color : '#fff'),
             tension: def && def.isBool ? 0 : 0.3,
             borderWidth: def && def.isBool ? 2 : 2,
+            // Dashed, not just a different color - an external reference reading (Open-Meteo)
+            // should read as visually distinct from the box's own measured sensors at a glance,
+            // regardless of how close two line colors happen to land.
+            borderDash: def?.isWeather ? [6, 4] : undefined,
             pointRadius: 0,
             pointHitRadius: 10,
             stepped: def && def.isBool ? true : false,

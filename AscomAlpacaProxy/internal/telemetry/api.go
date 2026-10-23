@@ -39,6 +39,18 @@ type DataPoint struct {
 	// Device is the MAC of the box that recorded this point, or "" for rows logged before the
 	// per-box naming feature existed (or before any device had connected).
 	Device string `json:"device"`
+	// Weather* fields mirror internal/weather.WeatherData, present only when
+	// config.LogWeatherToTelemetry was on at logging time - omitempty so installs/rows without it
+	// enabled don't carry nine empty keys on every single point.
+	WeatherTemp          *float64 `json:"weather_temp,omitempty"`
+	WeatherHumidity      *float64 `json:"weather_humidity,omitempty"`
+	WeatherDewPoint      *float64 `json:"weather_dew_point,omitempty"`
+	WeatherPressure      *float64 `json:"weather_pressure,omitempty"`
+	WeatherWindSpeed     *float64 `json:"weather_wind_speed,omitempty"`
+	WeatherWindDirection *float64 `json:"weather_wind_direction,omitempty"`
+	WeatherWindGust      *float64 `json:"weather_wind_gust,omitempty"`
+	WeatherCloudCover    *float64 `json:"weather_cloud_cover,omitempty"`
+	WeatherPrecipitation *float64 `json:"weather_precipitation,omitempty"`
 }
 
 // HandleGetHistory reads from the DB and returns JSON data.
@@ -127,6 +139,16 @@ func HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 			AdjConv:            r.AdjConv,
 			CurrentLimitActive: r.CurrentLimitActive,
 			Device:             r.DeviceSerial,
+
+			WeatherTemp:          r.WeatherTemp,
+			WeatherHumidity:      r.WeatherHumidity,
+			WeatherDewPoint:      r.WeatherDewPoint,
+			WeatherPressure:      r.WeatherPressure,
+			WeatherWindSpeed:     r.WeatherWindSpeed,
+			WeatherWindDirection: r.WeatherWindDirection,
+			WeatherWindGust:      r.WeatherWindGust,
+			WeatherCloudCover:    r.WeatherCloudCover,
+			WeatherPrecipitation: r.WeatherPrecipitation,
 		})
 	}
 
@@ -163,6 +185,16 @@ func deviceLabel(serial string) string {
 		return rigName
 	}
 	return serial
+}
+
+// formatNullableFloat renders a possibly-nil weather field as empty (not "0") when the Open-Meteo
+// recording feature was off or hadn't fetched anything yet for that row - 0 is itself a plausible
+// real reading for several of these fields, so it must not stand in for "no data".
+func formatNullableFloat(v *float64) string {
+	if v == nil {
+		return ""
+	}
+	return fmt.Sprintf("%v", *v)
 }
 
 // HandleDownloadCSV generates a CSV from DB for the request date or range.
@@ -219,6 +251,9 @@ func HandleDownloadCSV(w http.ResponseWriter, r *http.Request) {
 		"dc1": true, "dc2": true, "dc3": true, "dc4": true, "dc5": true,
 		"usbc12": true, "usb345": true, "adj_conv": true,
 		"cl": true,
+		"weather_temp": true, "weather_humidity": true, "weather_dew_point": true,
+		"weather_pressure": true, "weather_wind_speed": true, "weather_wind_direction": true,
+		"weather_wind_gust": true, "weather_cloud_cover": true, "weather_precipitation": true,
 	}
 
 	var selectedCols []string
@@ -241,6 +276,9 @@ func HandleDownloadCSV(w http.ResponseWriter, r *http.Request) {
 		selectedCols = []string{
 			"voltage", "current", "power", "t_amb", "h_amb", "dew_point", "t_lens", "pwm1", "pwm2",
 			"dc1", "dc2", "dc3", "dc4", "dc5", "usbc12", "usb345", "adj_conv", "cl",
+			"weather_temp", "weather_humidity", "weather_dew_point", "weather_pressure",
+			"weather_wind_speed", "weather_wind_direction", "weather_wind_gust",
+			"weather_cloud_cover", "weather_precipitation",
 		}
 	}
 
@@ -307,6 +345,24 @@ func HandleDownloadCSV(w http.ResponseWriter, r *http.Request) {
 				val = fmt.Sprintf("%.1f", r.AdjConv)
 			case "cl":
 				val = fmt.Sprintf("%d", r.CurrentLimitActive)
+			case "weather_temp":
+				val = formatNullableFloat(r.WeatherTemp)
+			case "weather_humidity":
+				val = formatNullableFloat(r.WeatherHumidity)
+			case "weather_dew_point":
+				val = formatNullableFloat(r.WeatherDewPoint)
+			case "weather_pressure":
+				val = formatNullableFloat(r.WeatherPressure)
+			case "weather_wind_speed":
+				val = formatNullableFloat(r.WeatherWindSpeed)
+			case "weather_wind_direction":
+				val = formatNullableFloat(r.WeatherWindDirection)
+			case "weather_wind_gust":
+				val = formatNullableFloat(r.WeatherWindGust)
+			case "weather_cloud_cover":
+				val = formatNullableFloat(r.WeatherCloudCover)
+			case "weather_precipitation":
+				val = formatNullableFloat(r.WeatherPrecipitation)
 			}
 			row = append(row, val)
 		}
