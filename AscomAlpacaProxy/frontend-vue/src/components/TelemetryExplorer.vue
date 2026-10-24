@@ -203,14 +203,14 @@ function toggleLive() {
     if (isLive.value) {
         setPreset(activePreset.value)
         const refreshMs = Math.max(10, proxyConfig.value?.telemetryInterval || 10) * 1000
-        liveIntervalId = setInterval(() => setPreset(activePreset.value), refreshMs)
+        liveIntervalId = setInterval(() => setPreset(activePreset.value, false), refreshMs)
     } else if (liveIntervalId) {
         clearInterval(liveIntervalId)
         liveIntervalId = null
     }
 }
 
-function setPreset(preset) {
+function setPreset(preset, resetZoom = true) {
     activePreset.value = preset;
     const end = new Date();
     let start = new Date();
@@ -232,10 +232,15 @@ function setPreset(preset) {
     
     startDate.value = toLocal(start);
     endDate.value = toLocal(end);
-    fetchData();
+    fetchData(resetZoom);
 }
 
-async function fetchData() {
+// resetZoom=false is for Live mode's recurring ticks: skips the chartKey bump, so vue-chartjs
+// patches the existing Chart.js instance in place instead of tearing it down and rebuilding it
+// (no re-entry animation every tick) - and any zoom/pan the user set mid-Live-session survives
+// across ticks instead of getting wiped out every few seconds. A genuine range change (preset
+// click, manual Load Data) still defaults to true and gets the full, deliberate rebuild.
+async function fetchData(resetZoom = true) {
     if (!startDate.value || !endDate.value) return;
 
     const startTs = new Date(startDate.value).getTime() / 1000;
@@ -249,7 +254,7 @@ async function fetchData() {
             let data = await res.json();
             if(!data) data = [];
             graphData.value = data;
-            chartKey.value++;
+            if (resetZoom) chartKey.value++;
         }
     } catch (e) {
         console.error(e);
