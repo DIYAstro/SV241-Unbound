@@ -49,6 +49,12 @@ let resizeObserver = null
 // to destroy and recreate the chart component - same effect as closing/reopening the explorer.
 const chartKey = ref(0)
 
+// "Live" mode (see toggleLive()) - re-runs setPreset(activePreset) on an interval, so the window
+// keeps sliding to "now" instead of freezing at whatever it was when turned on.
+const activePreset = ref('4h')
+const isLive = ref(false)
+let liveIntervalId = null
+
 // One entry per box this install has ever seen (see config.DeviceProfiles), for the device filter
 // dropdown - labeled by rig name where set, otherwise the raw serial.
 const deviceOptions = computed(() => {
@@ -178,14 +184,34 @@ onMounted(() => {
     }
 })
 
-// Cleanup ResizeObserver on unmount
+// Cleanup ResizeObserver and any running Live interval on unmount - the explorer is v-if'd away
+// entirely when closed, so without this the interval would keep firing invisibly in the background.
 onUnmounted(() => {
     if (resizeObserver) {
         resizeObserver.disconnect()
     }
+    if (liveIntervalId) {
+        clearInterval(liveIntervalId)
+    }
 })
 
+// Re-runs setPreset(activePreset) on an interval so the window keeps sliding to "now" instead of
+// freezing - never faster than 10s regardless of telemetryInterval (avoids hammering the API for
+// a long range/many points), but no faster than new rows can actually appear either.
+function toggleLive() {
+    isLive.value = !isLive.value
+    if (isLive.value) {
+        setPreset(activePreset.value)
+        const refreshMs = Math.max(10, proxyConfig.value?.telemetryInterval || 10) * 1000
+        liveIntervalId = setInterval(() => setPreset(activePreset.value), refreshMs)
+    } else if (liveIntervalId) {
+        clearInterval(liveIntervalId)
+        liveIntervalId = null
+    }
+}
+
 function setPreset(preset) {
+    activePreset.value = preset;
     const end = new Date();
     let start = new Date();
     
@@ -415,15 +441,19 @@ const chartOptions = {
             <div class="control-group">
                 <label>Time Range</label>
                 <div class="presets">
-                    <button @click="setPreset('1h')">1h</button>
-                    <button @click="setPreset('4h')">4h</button>
-                    <button @click="setPreset('12h')">12h</button>
-                    <button @click="setPreset('24h')">24h</button>
-                    <button @click="setPreset('7d')">7d</button>
+                    <button :class="{ active: activePreset === '1h' }" @click="setPreset('1h')">1h</button>
+                    <button :class="{ active: activePreset === '4h' }" @click="setPreset('4h')">4h</button>
+                    <button :class="{ active: activePreset === '12h' }" @click="setPreset('12h')">12h</button>
+                    <button :class="{ active: activePreset === '24h' }" @click="setPreset('24h')">24h</button>
+                    <button :class="{ active: activePreset === '7d' }" @click="setPreset('7d')">7d</button>
                 </div>
-                <input type="datetime-local" v-model="startDate">
-                <input type="datetime-local" v-model="endDate">
-                <button class="apply-btn" @click="fetchData">Load Data</button>
+                <button class="live-toggle-btn" :class="{ active: isLive }" @click="toggleLive" :title="isLive ? 'Stop auto-refresh' : 'Auto-refresh based on the selected preset'">
+                    <span v-if="isLive" class="live-dot"></span>
+                    {{ isLive ? 'Live' : 'Go Live' }}
+                </button>
+                <input type="datetime-local" v-model="startDate" :disabled="isLive">
+                <input type="datetime-local" v-model="endDate" :disabled="isLive">
+                <button class="apply-btn" @click="fetchData" :disabled="isLive">Load Data</button>
             </div>
 
             <div class="control-group" v-if="deviceOptions.length > 1">
@@ -523,6 +553,54 @@ const chartOptions = {
     border-radius: var(--radius-sm);
 }
 .presets button:hover { background: var(--surface-hover); }
+.presets button.active {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: var(--bg-color-start);
+    font-weight: 600;
+}
+.live-toggle-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 0.4rem;
+    margin-bottom: 0.5rem;
+    font-size: 0.85rem;
+    background: var(--surface-color);
+    border: 1px solid var(--surface-border);
+    color: var(--text-primary);
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+}
+.live-toggle-btn:hover { background: var(--surface-hover); }
+.live-toggle-btn.active {
+    background: rgba(224, 64, 64, 0.15);
+    border-color: var(--danger-color, #e04040);
+    color: var(--danger-color, #e04040);
+    font-weight: 600;
+}
+.live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--danger-color, #e04040);
+    /* Local, not the global @keyframes pulse (style.css) - that one hardcodes
+       var(--warning-color)/orange into its box-shadow, which would clash with this red dot. */
+    animation: live-pulse 1s infinite alternate;
+}
+@keyframes live-pulse {
+    from { opacity: 0.5; box-shadow: 0 0 4px var(--danger-color, #e04040); }
+    to { opacity: 1; box-shadow: 0 0 10px var(--danger-color, #e04040); }
+}
+input[type="datetime-local"]:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.apply-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
 .apply-btn {
     margin-top: 0.5rem;
     padding: 0.5rem;
