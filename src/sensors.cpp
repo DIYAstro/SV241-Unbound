@@ -461,6 +461,14 @@ void get_sensor_values_json(JsonDocument& doc) {
   // and (via serial.Conditions.Data in the proxy) the "cl" key logTelemetry() picks up.
   doc["cl"] = is_current_limit_active();
 
+  // Whether an Auto-Dry cycle (SHT40 internal heater) is currently running or in its post-heat
+  // cooldown - see dry_sht40_sensor()/is_sht40_drying above. Reported here for the same reason
+  // "cl" is: so it lands in telemetry history and can be correlated against ambient temp/humidity
+  // readings (see GitHub issue #9). Plain 0/1, matching the established convention for simple
+  // status flags (see power_control.cpp's get_power_status_json() "Standard On/Off" branch) -
+  // deliberately not a JSON bool like "cl" (that field is the inconsistent one here).
+  doc["sd"] = (int)is_sht40_drying;
+
   // Add memory statistics to the JSON response
   doc["hf"] = values.heap_free;
   doc["hmf"] = values.heap_min_free;

@@ -65,6 +65,10 @@ func Init(dbPath string) error {
 		return fmt.Errorf("failed to migrate telemetry_log schema: %w", err)
 	}
 
+	if err := migrateAddSensorDryingColumn(); err != nil {
+		return fmt.Errorf("failed to migrate telemetry_log schema: %w", err)
+	}
+
 	return nil
 }
 
@@ -139,6 +143,43 @@ func migrateAddCurrentLimitActiveColumn() error {
 	}
 
 	_, err = db.Exec("ALTER TABLE telemetry_log ADD COLUMN current_limit_active INTEGER")
+	return err
+}
+
+// migrateAddSensorDryingColumn adds telemetry_log.sensor_drying_active for installs whose database
+// predates the "sd" field (SHT40 Auto-Dry status, see GitHub issue #9's drift investigation) - same
+// PRAGMA table_info check as the other migrateAdd* functions. Existing rows get NULL (0 via
+// COALESCE on read, see GetHistory) - correctly reads as "not drying", since the field doesn't
+// exist yet on rows recorded before this column did.
+func migrateAddSensorDryingColumn() error {
+	rows, err := db.Query("PRAGMA table_info(telemetry_log)")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	hasColumn := false
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull, pk int
+		var dfltValue sql.NullString
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &dfltValue, &pk); err != nil {
+			return err
+		}
+		if name == "sensor_drying_active" {
+			hasColumn = true
+			break
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if hasColumn {
+		return nil
+	}
+
+	_, err = db.Exec("ALTER TABLE telemetry_log ADD COLUMN sensor_drying_active INTEGER")
 	return err
 }
 
@@ -253,6 +294,11 @@ type TelemetryRecord struct {
 	WeatherWindGust      *float64
 	WeatherCloudCover    *float64
 	WeatherPrecipitation *float64
+	// SensorDryingActive: 1 if an SHT40 Auto-Dry cycle (heater pulse or its post-heat cooldown) was
+	// in progress at the moment this row was recorded, 0 otherwise - including on rows recorded
+	// before this feature/column existed (see migrateAddSensorDryingColumn). Added for GitHub issue
+	// #9's drift investigation, to let a correlation between drift and drying events be checked.
+	SensorDryingActive int
 }
 
 // InsertTelemetry writes a record to the DB.
@@ -263,15 +309,15 @@ func InsertTelemetry(r TelemetryRecord) error {
 		dc1, dc2, dc3, dc4, dc5, usbc12, usb345, adj_conv, current_limit_active, device_serial,
 		weather_temp, weather_humidity, weather_dew_point, weather_pressure,
 		weather_wind_speed, weather_wind_direction, weather_wind_gust,
-		weather_cloud_cover, weather_precipitation
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		weather_cloud_cover, weather_precipitation, sensor_drying_active
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	_, err := db.Exec(query,
 		r.Timestamp, r.Voltage, r.Current, r.Power, r.TempAmb, r.HumAmb, r.DewPoint, r.TempLens, r.PWM1, r.PWM2,
 		r.DC1, r.DC2, r.DC3, r.DC4, r.DC5, r.USBC12, r.USB345, r.AdjConv, r.CurrentLimitActive, nullIfEmpty(r.DeviceSerial),
 		r.WeatherTemp, r.WeatherHumidity, r.WeatherDewPoint, r.WeatherPressure,
 		r.WeatherWindSpeed, r.WeatherWindDirection, r.WeatherWindGust,
-		r.WeatherCloudCover, r.WeatherPrecipitation,
+		r.WeatherCloudCover, r.WeatherPrecipitation, r.SensorDryingActive,
 	)
 	return err
 }
@@ -297,7 +343,7 @@ func GetHistory(start, end int64, deviceSerial string) ([]TelemetryRecord, error
 	                 COALESCE(current_limit_active, 0), COALESCE(device_serial, ''),
 	                 weather_temp, weather_humidity, weather_dew_point, weather_pressure,
 	                 weather_wind_speed, weather_wind_direction, weather_wind_gust,
-	                 weather_cloud_cover, weather_precipitation
+	                 weather_cloud_cover, weather_precipitation, COALESCE(sensor_drying_active, 0)
 	          FROM telemetry_log
 	          WHERE timestamp BETWEEN ? AND ?`
 	args := []interface{}{start, end}
@@ -321,7 +367,7 @@ func GetHistory(start, end int64, deviceSerial string) ([]TelemetryRecord, error
 			&r.DC1, &r.DC2, &r.DC3, &r.DC4, &r.DC5, &r.USBC12, &r.USB345, &r.AdjConv, &r.CurrentLimitActive, &r.DeviceSerial,
 			&r.WeatherTemp, &r.WeatherHumidity, &r.WeatherDewPoint, &r.WeatherPressure,
 			&r.WeatherWindSpeed, &r.WeatherWindDirection, &r.WeatherWindGust,
-			&r.WeatherCloudCover, &r.WeatherPrecipitation,
+			&r.WeatherCloudCover, &r.WeatherPrecipitation, &r.SensorDryingActive,
 		); err != nil {
 			return nil, err
 		}

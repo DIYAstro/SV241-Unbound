@@ -51,6 +51,10 @@ type DataPoint struct {
 	WeatherWindGust      *float64 `json:"weather_wind_gust,omitempty"`
 	WeatherCloudCover    *float64 `json:"weather_cloud_cover,omitempty"`
 	WeatherPrecipitation *float64 `json:"weather_precipitation,omitempty"`
+	// SensorDryingActive: 1 if an SHT40 Auto-Dry cycle was in progress at the moment this point was
+	// recorded, 0 otherwise (including rows predating the feature) - added for GitHub issue #9's
+	// drift investigation, same always-present treatment as "cl" (not omitempty/optional).
+	SensorDryingActive int `json:"sd"`
 }
 
 // HandleGetHistory reads from the DB and returns JSON data.
@@ -149,6 +153,7 @@ func HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 			WeatherWindGust:      r.WeatherWindGust,
 			WeatherCloudCover:    r.WeatherCloudCover,
 			WeatherPrecipitation: r.WeatherPrecipitation,
+			SensorDryingActive:   r.SensorDryingActive,
 		})
 	}
 
@@ -250,7 +255,7 @@ func HandleDownloadCSV(w http.ResponseWriter, r *http.Request) {
 		"pwm1": true, "pwm2": true,
 		"dc1": true, "dc2": true, "dc3": true, "dc4": true, "dc5": true,
 		"usbc12": true, "usb345": true, "adj_conv": true,
-		"cl": true,
+		"cl": true, "sd": true,
 		"weather_temp": true, "weather_humidity": true, "weather_dew_point": true,
 		"weather_pressure": true, "weather_wind_speed": true, "weather_wind_direction": true,
 		"weather_wind_gust": true, "weather_cloud_cover": true, "weather_precipitation": true,
@@ -275,7 +280,7 @@ func HandleDownloadCSV(w http.ResponseWriter, r *http.Request) {
 	if len(selectedCols) == 0 {
 		selectedCols = []string{
 			"voltage", "current", "power", "t_amb", "h_amb", "dew_point", "t_lens", "pwm1", "pwm2",
-			"dc1", "dc2", "dc3", "dc4", "dc5", "usbc12", "usb345", "adj_conv", "cl",
+			"dc1", "dc2", "dc3", "dc4", "dc5", "usbc12", "usb345", "adj_conv", "cl", "sd",
 			"weather_temp", "weather_humidity", "weather_dew_point", "weather_pressure",
 			"weather_wind_speed", "weather_wind_direction", "weather_wind_gust",
 			"weather_cloud_cover", "weather_precipitation",
@@ -345,6 +350,8 @@ func HandleDownloadCSV(w http.ResponseWriter, r *http.Request) {
 				val = fmt.Sprintf("%.1f", r.AdjConv)
 			case "cl":
 				val = fmt.Sprintf("%d", r.CurrentLimitActive)
+			case "sd":
+				val = fmt.Sprintf("%d", r.SensorDryingActive)
 			case "weather_temp":
 				val = formatNullableFloat(r.WeatherTemp)
 			case "weather_humidity":

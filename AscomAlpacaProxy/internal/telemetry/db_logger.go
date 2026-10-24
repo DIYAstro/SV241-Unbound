@@ -144,6 +144,13 @@ func logTelemetry() {
 		currentLimitActive = 1
 	}
 
+	// "sd" (SHT40 Auto-Dry active, see GitHub issue #9's drift investigation) comes as a JSON
+	// number (0/1), not a bool like "cl" - see sensors.cpp's doc comment on why those two differ.
+	sensorDryingActive := 0
+	if v, ok := data["sd"].(float64); ok && v >= 1 {
+		sensorDryingActive = 1
+	}
+
 	record := database.TelemetryRecord{
 		Timestamp:          time.Now().Unix(),
 		DeviceSerial:       config.GetActiveDeviceSerial(),
@@ -157,6 +164,7 @@ func logTelemetry() {
 		PWM1:               getInt("pwm1"),
 		PWM2:               getInt("pwm2"),
 		CurrentLimitActive: currentLimitActive,
+		SensorDryingActive: sensorDryingActive,
 	}
 
 	// Opt-in (see config.LogWeatherToTelemetry's doc comment) - stamps the currently cached

@@ -119,6 +119,7 @@ const availableSensors = computed(() => {
         // Box-wide (not per-heater) - not tied to a switch/heater-disable state, so it doesn't
         // go through the isSwitchDisabled-filtered switchSensors list below.
         { id: 'current_limit', label: 'Current Limit Active', color: '#ff0000', isBool: true }, // Red
+        { id: 'sensor_drying', label: 'Sensor Drying Active', color: '#f1c40f', isBool: true }, // Yellow
     ];
     
     // Switches/Heaters - only add if not disabled - distinct colors
@@ -269,6 +270,7 @@ function downloadCSV() {
     const exportCols = selectedSensors.value.map(col => {
         if (col === 'current_a') return 'current'; // current_a is computed from current
         if (col === 'current_limit') return 'cl'; // frontend id differs from the backend column name
+        if (col === 'sensor_drying') return 'sd'; // frontend id differs from the backend column name
         return col;
     });
     // Remove duplicates
@@ -331,6 +333,7 @@ const chartData = computed(() => {
                     case 'usb345': return d.usb345;
                     case 'adj_conv': return d.adj_conv;
                     case 'current_limit': return d.cl;
+                    case 'sensor_drying': return d.sd;
                     // Open-Meteo reference fields - omitted entirely from the API response (not
                     // just 0) on rows where recording was off, so coerce undefined to null here -
                     // Chart.js renders a null point as a gap in the line rather than plotting it.
