@@ -854,8 +854,12 @@ func updateConditionsCacheFromJSON(conditionsJSON string) {
 	var conditionsData map[string]interface{}
 	if err := json.Unmarshal([]byte(conditionsJSON), &conditionsData); err == nil {
 		Conditions.Lock()
-		newActive, _ := conditionsData["cl"].(bool)
-		wasActive, _ := Conditions.Data["cl"].(bool) // nil map / missing key both read as false
+		// "cl" is a plain 0/1 (see sensors.cpp), not a JSON bool - decodes as float64 into Go's
+		// generic map. Missing key/nil map both read as 0, same "not active" default as before.
+		newActiveRaw, _ := conditionsData["cl"].(float64)
+		wasActiveRaw, _ := Conditions.Data["cl"].(float64)
+		newActive := newActiveRaw >= 1
+		wasActive := wasActiveRaw >= 1
 
 		// Safety Monitor: computed proxy-side (not by the firmware) from the same reading, and
 		// injected into this same map - it flows straight through to /api/v1/status alongside
@@ -928,7 +932,8 @@ var safetyMetricLabels = map[string]struct{ Name, Unit string }{
 // updateConditionsCacheFromJSON's heater block), so each fires its own specific, edge-triggered
 // message instead of a generic aggregated one.
 var booleanSafetyMetrics = map[string]func(map[string]interface{}) (bool, bool){
-	"heaterLimitEngaged": func(d map[string]interface{}) (bool, bool) { v, ok := d["cl"].(bool); return v, ok },
+	// "cl" is a plain 0/1 (see sensors.cpp), not a JSON bool - decodes as float64.
+	"heaterLimitEngaged": func(d map[string]interface{}) (bool, bool) { v, ok := d["cl"].(float64); return v >= 1, ok },
 }
 
 func evaluateOperator(op string, value, threshold float64) bool {

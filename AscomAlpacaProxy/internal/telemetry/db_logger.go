@@ -138,14 +138,15 @@ func logTelemetry() {
 
 	// "cl" comes from the same get:sensors response as pwm1/pwm2 above (Conditions.Data, not
 	// Status.Data - that's only switch on/off state, see the switch-mapping block below), so it
-	// reads via the same `data` map, not `statusData`.
+	// reads via the same `data` map, not `statusData`. Plain 0/1 (see sensors.cpp), decodes as
+	// float64 into Go's generic map, not bool.
 	currentLimitActive := 0
-	if v, ok := data["cl"].(bool); ok && v {
+	if v, ok := data["cl"].(float64); ok && v >= 1 {
 		currentLimitActive = 1
 	}
 
-	// "sd" (SHT40 Auto-Dry active, see GitHub issue #9's drift investigation) comes as a JSON
-	// number (0/1), not a bool like "cl" - see sensors.cpp's doc comment on why those two differ.
+	// "sd" (SHT40 Auto-Dry active, see GitHub issue #9's drift investigation) - same 0/1 convention
+	// as "cl" above.
 	sensorDryingActive := 0
 	if v, ok := data["sd"].(float64); ok && v >= 1 {
 		sensorDryingActive = 1
