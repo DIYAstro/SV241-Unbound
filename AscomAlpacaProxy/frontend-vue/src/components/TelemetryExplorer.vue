@@ -165,8 +165,28 @@ const availableSensors = computed(() => {
         );
     }
 
+    // Absolute humidity (g/m³) - computed at render time from already-stored temp+RH pairs, not
+    // its own DB column (see absoluteHumidity() below). Unlike %RH, it's directly comparable
+    // across sources regardless of their own temperature reading - see the SV241-vs-Open-Meteo
+    // dew point/absolute-humidity comparison from the issue #9 investigation.
+    sensors.push({ id: 'abs_humidity_sv241', label: 'Absolute Humidity SV241 (g/m³)', color: '#4a90d9', axis: 'y_left' });
+    if (proxyConfig.value?.logWeatherToTelemetry) {
+        sensors.push({ id: 'abs_humidity_weather', label: 'Absolute Humidity Weather (g/m³)', color: '#884ea0', axis: 'y_left', isWeather: true });
+    }
+
     return sensors;
 });
+
+// Converts temperature (°C) + relative humidity (%) to absolute humidity (g/m³) via the Magnus
+// saturation-vapor-pressure formula + the ideal gas law for water vapor. Returns null (not
+// NaN/0) for missing inputs, same convention as the weather_* fields, so Chart.js renders a gap
+// instead of a misleading value.
+function absoluteHumidity(tempC, rh) {
+    if (tempC == null || rh == null) return null
+    const eSat = 6.112 * Math.exp((17.62 * tempC) / (243.12 + tempC)) // saturation vapor pressure, hPa
+    const e = (rh / 100) * eSat // actual vapor pressure, hPa
+    return (216.7 * e) / (tempC + 273.15) // g/m³
+}
 
 const graphData = ref([])
 
@@ -346,6 +366,8 @@ const chartData = computed(() => {
                     case 'weather_wind_gust': return d.weather_wind_gust ?? null;
                     case 'weather_cloud_cover': return d.weather_cloud_cover ?? null;
                     case 'weather_precipitation': return d.weather_precipitation ?? null;
+                    case 'abs_humidity_sv241': return absoluteHumidity(d.temp, d.hum);
+                    case 'abs_humidity_weather': return absoluteHumidity(d.weather_temp, d.weather_humidity);
                     default: return 0;
                 }
             }),
