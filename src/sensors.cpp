@@ -344,7 +344,15 @@ void update_sensor_cache() {
               } else {
                   if (current_millis - high_humidity_start_time >= auto_dry_config.trigger_duration_ms) {
                       dry_sht40_sensor();
-                      high_humidity_start_time = 0;
+                      // high_humidity_start_time is deliberately NOT reset here: it stays at the
+                      // original moment humidity first went high, so the very next reading after
+                      // this cycle's 45s cooldown immediately re-triggers another cycle if
+                      // humidity is still above the threshold - no fresh full
+                      // trigger_duration_ms wait. Sensirion's SHT4x datasheet allows up to a
+                      // 5-10% heater duty cycle; even back-to-back cycles at the ~46s period (1s
+                      // heat + 45s cooldown) this produces land around 2.2%, well under that.
+                      // Only a genuine drop back below the threshold (the else branch below)
+                      // still resets the timer.
                   }
               }
           } else {

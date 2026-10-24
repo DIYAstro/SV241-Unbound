@@ -168,7 +168,7 @@ async function triggerDry() {
               <label class="checkbox-label">
                   <input type="checkbox" v-model="autoDryConfig.en" @change="onAutoDryChange">
                   Enable Auto-Drying
-                  <HelpTip text="Automatically runs the sensor heater for Trigger Duration whenever humidity stays above the threshold, to clear condensation off the SHT40 sensor itself." />
+                  <HelpTip text="Automatically pulses the sensor's internal heater (~1s) to clear condensation off the SHT40 itself, once humidity has stayed above the threshold continuously for the Trigger Duration below." />
               </label>
           </div>
 
@@ -178,7 +178,7 @@ async function triggerDry() {
                   <input type="number" v-model.number="autoDryConfig.ht" min="0" max="100" @input="onAutoDryChange">
               </div>
               <div class="form-group">
-                  <label>Trigger Duration (s)<HelpTip text="How long the sensor heater stays on each time Auto-Drying triggers." /></label>
+                  <label>Trigger Duration (s)<HelpTip text="How long humidity must stay continuously above the threshold before the first drying cycle fires. If it's still above the threshold afterward, the next cycle fires right away instead of waiting again." /></label>
                   <input type="number" v-model.number="autoDryConfig.td" min="0" max="600" @input="onAutoDryChange">
               </div>
           </div>

@@ -77,7 +77,12 @@ struct SwitchTimingConfig {
 struct Sht40AutoDryConfig {
     bool enabled;                           // Enables or disables the automatic drying feature
     float humidity_threshold;               // Humidity threshold (in %) to trigger the timer
-    unsigned long trigger_duration_ms;      // Duration (in ms) the threshold must be exceeded to start drying
+    // Duration (in ms) the humidity threshold must be exceeded continuously before the *first*
+    // drying cycle is triggered. Once that first cycle has fired, if humidity is still above the
+    // threshold on the next reading (right after that cycle's 45s cooldown), the next cycle fires
+    // immediately rather than waiting another full trigger_duration_ms - see sensors.cpp's
+    // Auto-Dry logic doc comment.
+    unsigned long trigger_duration_ms;
 };
 
 
