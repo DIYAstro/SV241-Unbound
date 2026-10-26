@@ -57,4 +57,11 @@ void schedule_delayed_action(PowerOutput output, bool turn_on, unsigned long del
 // ~100ms) from a background task - same cadence as service_power_stagger_queue(). Non-blocking.
 void service_delayed_action_queue();
 
+// Advances any in-progress DC1-5 soft-start ramps (see SwitchTimingConfig's soft_start_ms in
+// config_manager.h) by one PWM duty step each, for outputs where it's due. Call frequently (e.g.
+// every ~20ms, for a reasonably smooth ramp) from a background task. Non-blocking - this is what
+// keeps soft-start from stalling the serial command task for the ramp's full duration (see
+// apply_dc_soft_start()'s doc comment in power_control.cpp for why that matters).
+void service_dc_soft_start_ramps();
+
 #endif // POWER_CONTROL_H

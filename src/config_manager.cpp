@@ -261,10 +261,10 @@ void updateConfig(const JsonObject& doc) {
                 if (!entry["on"].isNull()) config.switch_timing[i].delay_on_s = entry["on"];
                 if (!entry["off"].isNull()) config.switch_timing[i].delay_off_s = entry["off"];
                 if (!entry["ss"].isNull()) {
-                    // Defensive clamp (0-5000ms) in case a caller bypasses the web UI's own
-                    // min/max - see SwitchTimingConfig's doc comment for why 5s is the sane cap.
+                    // Defensive clamp (0-2000ms) in case a caller bypasses the web UI's own
+                    // min/max - see SwitchTimingConfig's doc comment for why 2s is the sane cap.
                     long ss = entry["ss"];
-                    config.switch_timing[i].soft_start_ms = (unsigned long)constrain(ss, 0, 5000);
+                    config.switch_timing[i].soft_start_ms = (unsigned long)constrain(ss, 0, 2000);
                 }
             }
         }

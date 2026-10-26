@@ -41,7 +41,12 @@ void power_stagger_task(void *pvParameters) {
   for (;;) {
     service_power_stagger_queue();
     service_delayed_action_queue();
-    vTaskDelay(pdMS_TO_TICKS(100));
+    service_dc_soft_start_ramps();
+    service_adj_soft_start_ramp();
+    // 20ms (was 100ms) - the soft-start ramps need a finer tick to look/behave smoothly; the
+    // stagger queue and delayed-action queue above are unaffected by ticking more often, they
+    // just check "is it due yet" each time.
+    vTaskDelay(pdMS_TO_TICKS(20));
     esp_task_wdt_reset(); // Feed the watchdog
   }
 }

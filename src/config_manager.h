@@ -71,7 +71,7 @@ struct DewHeaterConfig {
 struct SwitchTimingConfig {
     unsigned long delay_on_s;
     unsigned long delay_off_s;
-    // Soft-start ramp duration in ms for the *on* direction, via PWM (0-5000, 0 = instant/today's
+    // Soft-start ramp duration in ms for the *on* direction, via PWM (0-2000, 0 = instant/today's
     // behavior - the default). Unlike delay_on_s/delay_off_s above, this DOES apply to Master
     // Power/"all" and to boot startup, not just ordinary on/off commands - see
     // set_power_output()/set_adjustable_converter_state()'s doc comments. Only meaningful for
