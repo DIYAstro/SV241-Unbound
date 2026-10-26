@@ -5,9 +5,14 @@
 #include "dew_control.h" // Include the new dew control header
 
 // PWM frequency used for DC1-5's soft-start ramp (see set_power_output()'s doc comment). Not
-// user-configurable - verified empirically on real hardware (SV241's DC-output switch ICs respond
-// to this as a clean, proportional voltage ramp, not a logic-level on/off threshold).
-#define DC_SOFT_START_PWM_FREQUENCY 1000
+// user-configurable - chosen empirically on real hardware via a live frequency sweep (1kHz, 2kHz,
+// 20kHz all tested): 1kHz ramped cleanly but was audible as a "coil whine" from the switch
+// IC/inductor; 20kHz was inaudible but the downstream hardware no longer ramped at all - the
+// output jumped to full almost immediately despite the firmware's duty cycle climbing smoothly
+// (confirmed via debug Serial output), most likely because some filtering/capacitance on the
+// board responds very differently once the PWM period gets much shorter than its own time
+// constant. 2kHz is the sweet spot found: inaudible and still ramps cleanly.
+#define DC_SOFT_START_PWM_FREQUENCY 2000
 #define DC_SOFT_START_PWM_RESOLUTION 8 // 0-255 duty steps
 
 // Array to hold the pin number for each power output
