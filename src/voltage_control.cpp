@@ -76,15 +76,19 @@ static float ram_voltage_target = -1.0f;
 // Same non-blocking reasoning as DcSoftStartRamp in power_control.cpp - a blocking delay() loop
 // here would stall the serial command task for the ramp's full duration, which can exceed the Go
 // proxy's ~3s default command timeout and cause a duplicate ramp via its retry logic. See that
-// struct's doc comment for the full story (found via real hardware testing).
+// struct's doc comment for the full story (found via real hardware testing). Duty is likewise
+// computed from elapsed time (start_ms/duration_ms), not a fixed per-tick increment - see
+// DcSoftStartRamp's doc comment for why a per-tick counter can't actually honor a short configured
+// duration once the tick interval (power_stagger_task, ~20ms) exceeds the per-step delay it
+// implies (also found via real hardware testing - every ramp took ~5.1s regardless of
+// soft_start_ms).
 struct AdjSoftStartRamp {
   bool active;
-  uint32_t current_duty;
   uint32_t target_duty;
-  unsigned long due_at_ms;
-  unsigned long step_delay_ms;
+  unsigned long start_ms;
+  unsigned long duration_ms;
 };
-static AdjSoftStartRamp adj_ramp = {false, 0, 0, 0, 0};
+static AdjSoftStartRamp adj_ramp = {false, 0, 0, 0};
 static SemaphoreHandle_t adj_ramp_mutex = NULL;
 
 void setup_voltage_control() {
@@ -160,12 +164,8 @@ void set_adjustable_converter_state(bool on) {
     }
 
     if (soft_start_ms > 0 && duty_cycle > 0) {
-      // Always 256 steps regardless of the target duty, each scaled down from it - keeps timing
-      // consistent across different preset voltages instead of the step count shrinking (and the
-      // per-step delay growing) for low-voltage presets with a small duty_cycle.
-      unsigned long step_delay_ms = (soft_start_ms / 255 > 0) ? (soft_start_ms / 255) : 1;
       xSemaphoreTake(adj_ramp_mutex, portMAX_DELAY);
-      adj_ramp = {true, 0, duty_cycle, millis() + step_delay_ms, step_delay_ms};
+      adj_ramp = {true, duty_cycle, millis(), soft_start_ms};
       xSemaphoreGive(adj_ramp_mutex);
       ledcWrite(ADJUSTABLE_CONVERTER_PIN, 0); // service_adj_soft_start_ramp() takes it from here
     } else {
@@ -197,14 +197,14 @@ void service_adj_soft_start_ramp() {
   unsigned long now = millis();
 
   xSemaphoreTake(adj_ramp_mutex, portMAX_DELAY);
-  if (adj_ramp.active && now >= adj_ramp.due_at_ms) {
-    adj_ramp.current_duty++;
-    duty = (uint32_t)(((float)adj_ramp.current_duty / 255.0f) * adj_ramp.target_duty);
+  if (adj_ramp.active) {
+    unsigned long elapsed = now - adj_ramp.start_ms;
     do_write = true;
-    if (adj_ramp.current_duty >= 255) {
+    if (elapsed >= adj_ramp.duration_ms) {
+      duty = adj_ramp.target_duty;
       adj_ramp.active = false; // ramp complete
     } else {
-      adj_ramp.due_at_ms = now + adj_ramp.step_delay_ms;
+      duty = (uint32_t)(((float)elapsed / (float)adj_ramp.duration_ms) * adj_ramp.target_duty);
     }
   }
   xSemaphoreGive(adj_ramp_mutex);

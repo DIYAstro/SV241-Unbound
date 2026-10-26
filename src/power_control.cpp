@@ -194,12 +194,24 @@ static void send_disabled_output_error(PowerOutput output) {
 // after - visibly ramping twice in a row. Ticking the ramp asynchronously instead (same pattern as
 // stagger_queue/delayed_action_queue above, for the same reason) keeps the command response
 // immediate regardless of ramp duration.
+//
+// Duty is computed from elapsed time (start_ms/duration_ms), not stepped by a fixed per-tick
+// increment - an earlier version incremented current_duty by exactly 1 each time
+// service_dc_soft_start_ramps() ran and was "due", but that function is only ticked every ~20ms
+// (power_stagger_task's loop interval), while a short soft_start_ms (e.g. 500ms / 255 steps ~ 2ms
+// per step) implied a per-step delay far shorter than that tick interval - so the ramp could never
+// advance faster than 1 step per 20ms tick regardless of configuration, making every ramp take
+// ~255 * 20ms = ~5.1s no matter what soft_start_ms was set to. Found via real hardware testing
+// (reported by user, audible from the driver's switching noise). Computing duty from elapsed time
+// instead means each tick jumps straight to the duty the configured duration actually calls for at
+// that moment, so the ramp completes in soft_start_ms regardless of tick granularity (at the cost
+// of coarser resolution for very short durations - acceptable, still far smoother than an instant
+// switch).
 struct DcSoftStartRamp {
   bool active;
   int pin;
-  int current_duty;
-  unsigned long due_at_ms;
-  unsigned long step_delay_ms;
+  unsigned long start_ms;
+  unsigned long duration_ms;
 };
 static DcSoftStartRamp dc_ramps[POWER_DC5 + 1]; // one slot per DC1-5, indexed by PowerOutput
 static SemaphoreHandle_t dc_ramp_mutex = NULL;
@@ -238,9 +250,8 @@ static void apply_dc_soft_start(PowerOutput output, bool on) {
     return;
   }
 
-  unsigned long step_delay_ms = (soft_start_ms / 255 > 0) ? (soft_start_ms / 255) : 1;
   xSemaphoreTake(dc_ramp_mutex, portMAX_DELAY);
-  dc_ramps[output] = { true, pin, 0, millis() + step_delay_ms, step_delay_ms };
+  dc_ramps[output] = { true, pin, millis(), soft_start_ms };
   xSemaphoreGive(dc_ramp_mutex);
   ledcWrite(pin, 0); // start at 0 immediately - service_dc_soft_start_ramps() takes it from here
 }
@@ -249,26 +260,26 @@ void service_dc_soft_start_ramps() {
   if (dc_ramp_mutex == NULL) return; // nothing ever started a ramp yet
   unsigned long now = millis();
   for (int i = 0; i <= POWER_DC5; i++) {
-    bool do_step = false;
+    bool do_write = false;
     int pin = 0, duty = 0;
 
     xSemaphoreTake(dc_ramp_mutex, portMAX_DELAY);
-    if (dc_ramps[i].active && now >= dc_ramps[i].due_at_ms) {
-      dc_ramps[i].current_duty++;
+    if (dc_ramps[i].active) {
+      unsigned long elapsed = now - dc_ramps[i].start_ms;
       pin = dc_ramps[i].pin;
-      duty = dc_ramps[i].current_duty;
-      do_step = true;
-      if (duty >= 255) {
-        dc_ramps[i].active = false; // ramp complete, nothing further to do - duty is already at 255
+      do_write = true;
+      if (elapsed >= dc_ramps[i].duration_ms) {
+        duty = 255;
+        dc_ramps[i].active = false; // ramp complete
       } else {
-        dc_ramps[i].due_at_ms = now + dc_ramps[i].step_delay_ms;
+        duty = (int)(((float)elapsed / (float)dc_ramps[i].duration_ms) * 255.0f);
       }
     }
     xSemaphoreGive(dc_ramp_mutex);
 
     // ledcWrite() outside the mutex, same reasoning as set_power_output() calling things outside
     // stagger_mutex elsewhere in this file - no need to hold the lock while driving the pin.
-    if (do_step) {
+    if (do_write) {
       ledcWrite(pin, duty);
     }
   }
