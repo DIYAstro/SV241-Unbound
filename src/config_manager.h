@@ -71,6 +71,15 @@ struct DewHeaterConfig {
 struct SwitchTimingConfig {
     unsigned long delay_on_s;
     unsigned long delay_off_s;
+    // Soft-start ramp duration in ms for the *on* direction, via PWM (0-5000, 0 = instant/today's
+    // behavior - the default). Unlike delay_on_s/delay_off_s above, this DOES apply to Master
+    // Power/"all" and to boot startup, not just ordinary on/off commands - see
+    // set_power_output()/set_adjustable_converter_state()'s doc comments. Only meaningful for
+    // DC1-5 and ADJ_CONV (set_power_output() ramps DC1-5 directly; ADJ_CONV ramps in
+    // set_adjustable_converter_state() instead, up to its configured target voltage rather than
+    // always to full scale). USBC12/USB345 ignore this field - USB hosts/devices expect a fast,
+    // clean power-up. Never ramped on the *off* direction, in either case.
+    unsigned long soft_start_ms;
 };
 
 // Configuration for the SHT40 automatic drying feature

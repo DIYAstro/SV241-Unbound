@@ -129,8 +129,29 @@ void set_adjustable_converter_state(bool on) {
     // We use the corrected voltage to get the actual desired output
     uint32_t max_duty = (1 << LEDC_RESOLUTION) - 1; // 255 for 8-bit
     uint32_t duty_cycle = (corrected_voltage / ADJUSTABLE_CONVERTER_MAX_VOLTAGE) * max_duty;
-    
-    ledcWrite(ADJUSTABLE_CONVERTER_PIN, duty_cycle);
+
+    // Soft-start (see SwitchTimingConfig's doc comment): ramp 0 up to the computed target duty
+    // over soft_start_ms, instead of jumping straight there. 0 = instant (the default, unchanged
+    // behavior). Deliberately ramps to duty_cycle, not always to max_duty - a low preset voltage
+    // (e.g. 5V) should ramp to its own, correspondingly lower target duty.
+    unsigned long soft_start_ms;
+    xSemaphoreTake(config_mutex, portMAX_DELAY);
+    soft_start_ms = config.switch_timing[POWER_ADJ_CONV].soft_start_ms;
+    xSemaphoreGive(config_mutex);
+
+    if (soft_start_ms > 0 && duty_cycle > 0) {
+      // Always 256 steps regardless of the target duty, each scaled down from it - keeps timing
+      // consistent across different preset voltages instead of the step count shrinking (and the
+      // per-step delay growing) for low-voltage presets with a small duty_cycle.
+      unsigned long step_delay_ms = (soft_start_ms / 255 > 0) ? (soft_start_ms / 255) : 1;
+      for (int i = 0; i <= 255; i++) {
+        uint32_t duty = (uint32_t)(((float)i / 255.0f) * duty_cycle);
+        ledcWrite(ADJUSTABLE_CONVERTER_PIN, duty);
+        delay(step_delay_ms);
+      }
+    } else {
+      ledcWrite(ADJUSTABLE_CONVERTER_PIN, duty_cycle);
+    }
   } else {
     // Set duty cycle to 0 to turn the output off
     ledcWrite(ADJUSTABLE_CONVERTER_PIN, 0);

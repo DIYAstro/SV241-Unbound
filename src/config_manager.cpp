@@ -32,7 +32,7 @@ void populateDefaultConfig() {
     config.current_limit_enabled = false;
     config.current_limit_amps = 8.0f;
     for (int i = 0; i < POWER_OUTPUT_COUNT; i++) {
-        config.switch_timing[i] = {0, 0};
+        config.switch_timing[i] = {0, 0, 0};
     }
 
     // Default settings for SHT40 auto-dry feature
@@ -197,6 +197,7 @@ void serializeConfig(JsonDocument& doc) {
         JsonObject entry = switch_timing[get_power_output_name((PowerOutput)i)].to<JsonObject>();
         entry["on"] = config.switch_timing[i].delay_on_s;
         entry["off"] = config.switch_timing[i].delay_off_s;
+        entry["ss"] = config.switch_timing[i].soft_start_ms;
     }
 
     JsonObject auto_dry_obj = doc["ad"].to<JsonObject>();
@@ -259,6 +260,12 @@ void updateConfig(const JsonObject& doc) {
                 JsonObjectConst entry = switch_timing[key];
                 if (!entry["on"].isNull()) config.switch_timing[i].delay_on_s = entry["on"];
                 if (!entry["off"].isNull()) config.switch_timing[i].delay_off_s = entry["off"];
+                if (!entry["ss"].isNull()) {
+                    // Defensive clamp (0-5000ms) in case a caller bypasses the web UI's own
+                    // min/max - see SwitchTimingConfig's doc comment for why 5s is the sane cap.
+                    long ss = entry["ss"];
+                    config.switch_timing[i].soft_start_ms = (unsigned long)constrain(ss, 0, 5000);
+                }
             }
         }
     }

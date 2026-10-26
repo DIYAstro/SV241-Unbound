@@ -4,6 +4,12 @@
 #include "voltage_control.h"
 #include "dew_control.h" // Include the new dew control header
 
+// PWM frequency used for DC1-5's soft-start ramp (see set_power_output()'s doc comment). Not
+// user-configurable - verified empirically on real hardware (SV241's DC-output switch ICs respond
+// to this as a clean, proportional voltage ramp, not a logic-level on/off threshold).
+#define DC_SOFT_START_PWM_FREQUENCY 1000
+#define DC_SOFT_START_PWM_RESOLUTION 8 // 0-255 duty steps
+
 // Array to hold the pin number for each power output
 // Note: Pins managed by other modules (adj_conv, pwm1) use -1 as a placeholder.
 const int power_output_pins[POWER_OUTPUT_COUNT] = {
@@ -107,7 +113,16 @@ void setup_power_outputs() {
         continue;
     }
 
-    pinMode(power_output_pins[i], OUTPUT);
+    // DC1-5 are permanently LEDC-attached (not plain digitalWrite) so set_power_output() can ramp
+    // them for soft-start - see that function's doc comment. At duty 0/255 this is electrically
+    // identical to digitalWrite(LOW/HIGH), so outputs with soft-start left at 0 (the default) see
+    // no behavior change. USBC12/USB345 are excluded (see SwitchTimingConfig's doc comment) and
+    // stay on plain digitalWrite.
+    if ((PowerOutput)i <= POWER_DC5) {
+      ledcAttach(power_output_pins[i], DC_SOFT_START_PWM_FREQUENCY, DC_SOFT_START_PWM_RESOLUTION);
+    } else {
+      pinMode(power_output_pins[i], OUTPUT);
+    }
 
     // Logic: 0 -> Off, 1 -> On, 2 -> Disabled (Off)
     bool physical_state = (startup_states[i] == 1);
@@ -170,6 +185,36 @@ static void send_disabled_output_error(PowerOutput output) {
   xSemaphoreGive(serial_mutex);
 }
 
+// Drives a DC1-5 output via its permanently-attached LEDC channel (see setup_power_outputs()'s
+// doc comment) - either instantly (soft_start_ms == 0, the default - today's unchanged behavior)
+// or ramped over soft_start_ms via PWM duty cycle, verified on real hardware to produce a clean,
+// proportional voltage ramp on this box's DC-output switch ICs. Turning off is always instant,
+// never ramped - no inrush concern in that direction, same reasoning as every other delay/stagger
+// feature in this file.
+static void apply_dc_soft_start(PowerOutput output, bool on) {
+  int pin = power_output_pins[output];
+  if (!on) {
+    ledcWrite(pin, 0);
+    return;
+  }
+
+  unsigned long soft_start_ms;
+  xSemaphoreTake(config_mutex, portMAX_DELAY);
+  soft_start_ms = config.switch_timing[output].soft_start_ms;
+  xSemaphoreGive(config_mutex);
+
+  if (soft_start_ms == 0) {
+    ledcWrite(pin, 255);
+    return;
+  }
+
+  unsigned long step_delay_ms = (soft_start_ms / 255 > 0) ? (soft_start_ms / 255) : 1;
+  for (int duty = 0; duty <= 255; duty++) {
+    ledcWrite(pin, duty);
+    delay(step_delay_ms);
+  }
+}
+
 bool set_power_output(PowerOutput output, bool on) {
   if (output < 0 || output >= POWER_OUTPUT_COUNT) return true;
 
@@ -186,6 +231,8 @@ bool set_power_output(PowerOutput output, bool on) {
     set_dew_heater_state(0, on); // 0 is the index for PWM1
   } else if (output == POWER_PWM2) {
     set_dew_heater_state(1, on); // 1 is the index for PWM2
+  } else if (output <= POWER_DC5) {
+    apply_dc_soft_start(output, on);
   } else {
     digitalWrite(power_output_pins[output], on ? HIGH : LOW);
   }

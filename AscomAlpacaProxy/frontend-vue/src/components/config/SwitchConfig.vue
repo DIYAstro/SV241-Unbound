@@ -97,6 +97,9 @@ const displayRows = computed(() => {
         const storeDelayEntry = config.value.dl ? config.value.dl[shortKey] : undefined;
         const storeDelayOn = storeDelayEntry?.on ?? 0;
         const storeDelayOff = storeDelayEntry?.off ?? 0;
+        // Soft-Start (config.dl[shortKey].ss, ms) - only DC1-5 and adj_conv actually ramp on this
+        // (see SwitchTimingConfig's doc comment in config_manager.h); usbc12/usb345 ignore it.
+        const storeSoftStartMs = storeDelayEntry?.ss ?? 0;
 
         // 2. Override with Edits if present
         const edit = edits.value[key] || {};
@@ -106,6 +109,7 @@ const displayRows = computed(() => {
         const rawValue = (edit.rawValue !== undefined) ? edit.rawValue : storeRawValue;
         const delayOn = (edit.delayOn !== undefined) ? edit.delayOn : storeDelayOn;
         const delayOff = (edit.delayOff !== undefined) ? edit.delayOff : storeDelayOff;
+        const softStartMs = (edit.softStartMs !== undefined) ? edit.softStartMs : storeSoftStartMs;
 
         // Voltage display logic using MERGED value
         let voltage = storeVoltage;
@@ -125,7 +129,11 @@ const displayRows = computed(() => {
             rawValue,
             delayOn,
             delayOff,
-            isPwm: (key === 'pwm1' || key === 'pwm2') // Flag for UI
+            softStartMs,
+            isPwm: (key === 'pwm1' || key === 'pwm2'), // Flag for UI
+            // Only DC1-5 and adj_conv actually ramp on soft-start - see soft-start's doc comment
+            // above. usbc12/usb345 and the PWM heaters never reach that code path.
+            supportsSoftStart: key.startsWith('dc') || key === 'adj_conv',
         })
     }
     return rows;
@@ -176,6 +184,16 @@ function onDelayOffChange(key, val) {
     edit.delayOff = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
 }
 
+// Same reasoning as onDelayOnChange/onPsdChange: 0 is a valid, meaningful value (soft-start
+// disabled), so invalid input falls back to 0, not whatever was there before. Also clamped to
+// 5000ms (see SwitchTimingConfig's doc comment for why 5s is the sane cap) - the firmware clamps
+// this defensively too, but matching it here avoids a save round-trip just to see it get clamped.
+function onSoftStartMsChange(key, val) {
+    const edit = getEdit(key);
+    const parsed = parseInt(val);
+    edit.softStartMs = Number.isFinite(parsed) ? Math.min(5000, Math.max(0, parsed)) : 0;
+}
+
 
 async function save() {
     let saved = false;
@@ -223,11 +241,12 @@ async function save() {
             psChanged = true;
         }
 
-        if (edit.delayOn !== undefined || edit.delayOff !== undefined) {
-            const existing = newDl[shortKey] || { on: 0, off: 0 };
+        if (edit.delayOn !== undefined || edit.delayOff !== undefined || edit.softStartMs !== undefined) {
+            const existing = newDl[shortKey] || { on: 0, off: 0, ss: 0 };
             newDl[shortKey] = {
                 on: edit.delayOn !== undefined ? edit.delayOn : existing.on,
                 off: edit.delayOff !== undefined ? edit.delayOff : existing.off,
+                ss: edit.softStartMs !== undefined ? edit.softStartMs : (existing.ss ?? 0),
             };
             dlChanged = true;
         }
@@ -288,6 +307,7 @@ async function save() {
                       <th class="th-custom">Custom Name <HelpTip text="Friendly name shown in the Web UI and as the ASCOM Switch display name. Leave blank to use the default name." /></th>
                       <th class="th-delay-on">Delay On (s) <HelpTip text="Wait this many seconds after an on/off command before actually switching - e.g. to let a computer's own OS shutdown finish before cutting its power. Runs in the firmware itself, so it still completes even if the proxy/host is gone by then. 0 = immediate (unchanged behavior). Does not apply to Master Power." /></th>
                       <th class="th-delay-off">Delay Off (s) <HelpTip text="Same as Delay On, for the off direction." /></th>
+                      <th class="th-soft-start">Soft-Start (ms) <HelpTip text="Experimental: gradually ramps the output from 0% to full power via PWM over this many milliseconds instead of switching instantly, to ease inrush current for loads with large input capacitors (e.g. some mounts). 0 = instant (unchanged behavior), max 5000ms. Unlike Delay On/Off, this DOES apply to Master Power. Only available for DC1-5 and the Adjustable Port - USB ports expect a fast, clean power-up and are excluded. Verified on one SV241 unit only so far - the exact switching hardware isn't confirmed across all units/revisions, so behavior could differ on yours." /></th>
                       <th class="th-volt">Voltage <HelpTip text="Preset output voltage for the adjustable (ADJ_CONV) port. Has no effect on any other switch." /></th>
                   </tr>
               </thead>
@@ -309,6 +329,10 @@ async function save() {
                       </td>
                       <td class="td-delay-off">
                           <input type="number" :value="row.delayOff" @input="e => onDelayOffChange(row.key, e.target.value)" min="0" style="width: 70px;">
+                      </td>
+                      <td class="td-soft-start">
+                          <input v-if="row.supportsSoftStart" type="number" :value="row.softStartMs" @input="e => onSoftStartMsChange(row.key, e.target.value)" min="0" max="5000" style="width: 80px;">
+                          <span v-else>-</span>
                       </td>
                       <td>
                           <div v-if="row.key === 'adj_conv'" style="display: flex; align-items: center; gap: 0.5rem;">
