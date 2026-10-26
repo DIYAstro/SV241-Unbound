@@ -5,14 +5,16 @@
 #include "dew_control.h" // Include the new dew control header
 
 // PWM frequency used for DC1-5's soft-start ramp (see set_power_output()'s doc comment). Not
-// user-configurable - chosen empirically on real hardware via a live frequency sweep (1kHz, 2kHz,
-// 20kHz all tested): 1kHz ramped cleanly but was audible as a "coil whine" from the switch
-// IC/inductor; 20kHz was inaudible but the downstream hardware no longer ramped at all - the
-// output jumped to full almost immediately despite the firmware's duty cycle climbing smoothly
-// (confirmed via debug Serial output), most likely because some filtering/capacitance on the
-// board responds very differently once the PWM period gets much shorter than its own time
-// constant. 2kHz is the sweet spot found: inaudible and still ramps cleanly.
-#define DC_SOFT_START_PWM_FREQUENCY 2000
+// user-configurable - chosen empirically on real hardware via a live frequency sweep
+// (1kHz/1.5kHz/2kHz/20kHz all tested). Higher frequencies make the ramp progressively less linear
+// on this board's downstream hardware (likely filtering/capacitance with its own time constant) -
+// 2kHz already showed a small but visible brightness jump right at the end of the ramp instead of
+// a smooth finish, 1.5kHz a smaller version of the same jump, and 20kHz broke the ramp entirely
+// (output jumped to full almost immediately, despite the firmware's duty cycle climbing smoothly -
+// confirmed via debug Serial output, so not a firmware bug). 1kHz is the only frequency tested
+// that ramped perfectly smoothly end to end; it's audible as a faint "coil whine" from the switch
+// IC/inductor, which was judged the lesser trade-off against a visibly uneven ramp.
+#define DC_SOFT_START_PWM_FREQUENCY 1000
 #define DC_SOFT_START_PWM_RESOLUTION 8 // 0-255 duty steps
 
 // Array to hold the pin number for each power output
