@@ -344,7 +344,15 @@ void update_sensor_cache() {
               } else {
                   if (current_millis - high_humidity_start_time >= auto_dry_config.trigger_duration_ms) {
                       dry_sht40_sensor();
-                      high_humidity_start_time = 0;
+                      // high_humidity_start_time is deliberately NOT reset here: it stays at the
+                      // original moment humidity first went high, so the very next reading after
+                      // this cycle's 45s cooldown immediately re-triggers another cycle if
+                      // humidity is still above the threshold - no fresh full
+                      // trigger_duration_ms wait. Sensirion's SHT4x datasheet allows up to a
+                      // 5-10% heater duty cycle; even back-to-back cycles at the ~46s period (1s
+                      // heat + 45s cooldown) this produces land around 2.2%, well under that.
+                      // Only a genuine drop back below the threshold (the else branch below)
+                      // still resets the timer.
                   }
               }
           } else {
@@ -458,8 +466,17 @@ void get_sensor_values_json(JsonDocument& doc) {
   doc["pwm2"] = get_heater_power(1);
   // Box-wide (not per-heater) current-limit ramp status - see dew_control.h. Reported here,
   // right alongside pwm1/pwm2, so it lands in the same JSON that already feeds the live UI
-  // and (via serial.Conditions.Data in the proxy) the "cl" key logTelemetry() picks up.
-  doc["cl"] = is_current_limit_active();
+  // and (via serial.Conditions.Data in the proxy) the "cl" key logTelemetry() picks up. Plain
+  // 0/1, matching the established convention for simple status flags (see power_control.cpp's
+  // get_power_status_json() "Standard On/Off" branch) - used to be a JSON bool, changed for
+  // consistency with every other binary status flag in this wire protocol.
+  doc["cl"] = (int)is_current_limit_active();
+
+  // Whether an Auto-Dry cycle (SHT40 internal heater) is currently running or in its post-heat
+  // cooldown - see dry_sht40_sensor()/is_sht40_drying above. Reported here for the same reason
+  // "cl" is: so it lands in telemetry history and can be correlated against ambient temp/humidity
+  // readings (see GitHub issue #9). Plain 0/1, same convention as "cl" above.
+  doc["sd"] = (int)is_sht40_drying;
 
   // Add memory statistics to the JSON response
   doc["hf"] = values.heap_free;

@@ -41,6 +41,20 @@ const chartRef = ref(null) // Chart reference for reset zoom
 const chartContainerRef = ref(null) // Container ref for ResizeObserver
 let resizeObserver = null
 
+// Bumped on every successful fetchData() and bound as the <Line>'s :key - chartjs-plugin-zoom
+// stores a zoomed/panned axis min/max directly on the Chart.js instance, and vue-chartjs updates
+// that same instance in place when `data` changes rather than recreating it, so a previous zoom
+// silently carries over onto a newly loaded time range otherwise (confirmed: zoom in, pick a
+// different range, only the old zoomed-in window's worth of time shows). Changing :key forces Vue
+// to destroy and recreate the chart component - same effect as closing/reopening the explorer.
+const chartKey = ref(0)
+
+// "Live" mode (see toggleLive()) - re-runs setPreset(activePreset) on an interval, so the window
+// keeps sliding to "now" instead of freezing at whatever it was when turned on.
+const activePreset = ref('4h')
+const isLive = ref(false)
+let liveIntervalId = null
+
 // One entry per box this install has ever seen (see config.DeviceProfiles), for the device filter
 // dropdown - labeled by rig name where set, otherwise the raw serial.
 const deviceOptions = computed(() => {
@@ -105,6 +119,7 @@ const availableSensors = computed(() => {
         // Box-wide (not per-heater) - not tied to a switch/heater-disable state, so it doesn't
         // go through the isSwitchDisabled-filtered switchSensors list below.
         { id: 'current_limit', label: 'Current Limit Active', color: '#ff0000', isBool: true }, // Red
+        { id: 'sensor_drying', label: 'Sensor Drying Active', color: '#f1c40f', isBool: true }, // Yellow
     ];
     
     // Switches/Heaters - only add if not disabled - distinct colors
@@ -130,9 +145,48 @@ const availableSensors = computed(() => {
             });
         }
     }
-    
+
+    // Open-Meteo reference data (see Weather Service tab's "Record weather data in telemetry
+    // history") - only offered once something was actually recorded, not just because the weather
+    // service itself is on, so these never appear as a selectable-but-empty option. "weather" id
+    // prefix + isWeather flag (see chartData below) keep them visually distinct (dashed line) from
+    // the SV241's own sensors, regardless of how close two colors happen to land.
+    if (proxyConfig.value?.logWeatherToTelemetry) {
+        sensors.push(
+            { id: 'weather_temp', label: 'Weather Temp (°C)', color: '#e74c3c', axis: 'y_left', isWeather: true },
+            { id: 'weather_humidity', label: 'Weather Humidity (%)', color: '#2980b9', axis: 'y_left', isWeather: true },
+            { id: 'weather_dew_point', label: 'Weather Dew Point (°C)', color: '#8e44ad', axis: 'y_left', isWeather: true },
+            { id: 'weather_cloud_cover', label: 'Weather Cloud Cover (%)', color: '#7f8c8d', axis: 'y_left', isWeather: true },
+            { id: 'weather_pressure', label: 'Weather Pressure (hPa)', color: '#16a085', axis: 'y_right', isWeather: true },
+            { id: 'weather_wind_speed', label: 'Weather Wind Speed (km/h)', color: '#27ae60', axis: 'y_right', isWeather: true },
+            { id: 'weather_wind_gust', label: 'Weather Wind Gust (km/h)', color: '#d35400', axis: 'y_right', isWeather: true },
+            { id: 'weather_wind_direction', label: 'Weather Wind Direction (°)', color: '#f39c12', axis: 'y_right', isWeather: true },
+            { id: 'weather_precipitation', label: 'Weather Precipitation (mm)', color: '#2c3e50', axis: 'y_right', isWeather: true },
+        );
+    }
+
+    // Absolute humidity (g/m³) - computed at render time from already-stored temp+RH pairs, not
+    // its own DB column (see absoluteHumidity() below). Unlike %RH, it's directly comparable
+    // across sources regardless of their own temperature reading - see the SV241-vs-Open-Meteo
+    // dew point/absolute-humidity comparison from the issue #9 investigation.
+    sensors.push({ id: 'abs_humidity_sv241', label: 'Absolute Humidity SV241 (g/m³)', color: '#4a90d9', axis: 'y_left' });
+    if (proxyConfig.value?.logWeatherToTelemetry) {
+        sensors.push({ id: 'abs_humidity_weather', label: 'Absolute Humidity Weather (g/m³)', color: '#884ea0', axis: 'y_left', isWeather: true });
+    }
+
     return sensors;
 });
+
+// Converts temperature (°C) + relative humidity (%) to absolute humidity (g/m³) via the Magnus
+// saturation-vapor-pressure formula + the ideal gas law for water vapor. Returns null (not
+// NaN/0) for missing inputs, same convention as the weather_* fields, so Chart.js renders a gap
+// instead of a misleading value.
+function absoluteHumidity(tempC, rh) {
+    if (tempC == null || rh == null) return null
+    const eSat = 6.112 * Math.exp((17.62 * tempC) / (243.12 + tempC)) // saturation vapor pressure, hPa
+    const e = (rh / 100) * eSat // actual vapor pressure, hPa
+    return (216.7 * e) / (tempC + 273.15) // g/m³
+}
 
 const graphData = ref([])
 
@@ -151,14 +205,34 @@ onMounted(() => {
     }
 })
 
-// Cleanup ResizeObserver on unmount
+// Cleanup ResizeObserver and any running Live interval on unmount - the explorer is v-if'd away
+// entirely when closed, so without this the interval would keep firing invisibly in the background.
 onUnmounted(() => {
     if (resizeObserver) {
         resizeObserver.disconnect()
     }
+    if (liveIntervalId) {
+        clearInterval(liveIntervalId)
+    }
 })
 
-function setPreset(preset) {
+// Re-runs setPreset(activePreset) on an interval so the window keeps sliding to "now" instead of
+// freezing - never faster than 10s regardless of telemetryInterval (avoids hammering the API for
+// a long range/many points), but no faster than new rows can actually appear either.
+function toggleLive() {
+    isLive.value = !isLive.value
+    if (isLive.value) {
+        setPreset(activePreset.value)
+        const refreshMs = Math.max(10, proxyConfig.value?.telemetryInterval || 10) * 1000
+        liveIntervalId = setInterval(() => setPreset(activePreset.value, false), refreshMs)
+    } else if (liveIntervalId) {
+        clearInterval(liveIntervalId)
+        liveIntervalId = null
+    }
+}
+
+function setPreset(preset, resetZoom = true) {
+    activePreset.value = preset;
     const end = new Date();
     let start = new Date();
     
@@ -179,10 +253,15 @@ function setPreset(preset) {
     
     startDate.value = toLocal(start);
     endDate.value = toLocal(end);
-    fetchData();
+    fetchData(resetZoom);
 }
 
-async function fetchData() {
+// resetZoom=false is for Live mode's recurring ticks: skips the chartKey bump, so vue-chartjs
+// patches the existing Chart.js instance in place instead of tearing it down and rebuilding it
+// (no re-entry animation every tick) - and any zoom/pan the user set mid-Live-session survives
+// across ticks instead of getting wiped out every few seconds. A genuine range change (preset
+// click, manual Load Data) still defaults to true and gets the full, deliberate rebuild.
+async function fetchData(resetZoom = true) {
     if (!startDate.value || !endDate.value) return;
 
     const startTs = new Date(startDate.value).getTime() / 1000;
@@ -196,6 +275,7 @@ async function fetchData() {
             let data = await res.json();
             if(!data) data = [];
             graphData.value = data;
+            if (resetZoom) chartKey.value++;
         }
     } catch (e) {
         console.error(e);
@@ -210,6 +290,7 @@ function downloadCSV() {
     const exportCols = selectedSensors.value.map(col => {
         if (col === 'current_a') return 'current'; // current_a is computed from current
         if (col === 'current_limit') return 'cl'; // frontend id differs from the backend column name
+        if (col === 'sensor_drying') return 'sd'; // frontend id differs from the backend column name
         return col;
     });
     // Remove duplicates
@@ -272,6 +353,21 @@ const chartData = computed(() => {
                     case 'usb345': return d.usb345;
                     case 'adj_conv': return d.adj_conv;
                     case 'current_limit': return d.cl;
+                    case 'sensor_drying': return d.sd;
+                    // Open-Meteo reference fields - omitted entirely from the API response (not
+                    // just 0) on rows where recording was off, so coerce undefined to null here -
+                    // Chart.js renders a null point as a gap in the line rather than plotting it.
+                    case 'weather_temp': return d.weather_temp ?? null;
+                    case 'weather_humidity': return d.weather_humidity ?? null;
+                    case 'weather_dew_point': return d.weather_dew_point ?? null;
+                    case 'weather_pressure': return d.weather_pressure ?? null;
+                    case 'weather_wind_speed': return d.weather_wind_speed ?? null;
+                    case 'weather_wind_direction': return d.weather_wind_direction ?? null;
+                    case 'weather_wind_gust': return d.weather_wind_gust ?? null;
+                    case 'weather_cloud_cover': return d.weather_cloud_cover ?? null;
+                    case 'weather_precipitation': return d.weather_precipitation ?? null;
+                    case 'abs_humidity_sv241': return absoluteHumidity(d.temp, d.hum);
+                    case 'abs_humidity_weather': return absoluteHumidity(d.weather_temp, d.weather_humidity);
                     default: return 0;
                 }
             }),
@@ -279,6 +375,10 @@ const chartData = computed(() => {
             backgroundColor: def && def.isBool ? hexToRgba(def.color, 0.4) : (def ? def.color : '#fff'),
             tension: def && def.isBool ? 0 : 0.3,
             borderWidth: def && def.isBool ? 2 : 2,
+            // Dashed, not just a different color - an external reference reading (Open-Meteo)
+            // should read as visually distinct from the box's own measured sensors at a glance,
+            // regardless of how close two line colors happen to land.
+            borderDash: def?.isWeather ? [6, 4] : undefined,
             pointRadius: 0,
             pointHitRadius: 10,
             stepped: def && def.isBool ? true : false,
@@ -371,15 +471,19 @@ const chartOptions = {
             <div class="control-group">
                 <label>Time Range</label>
                 <div class="presets">
-                    <button @click="setPreset('1h')">1h</button>
-                    <button @click="setPreset('4h')">4h</button>
-                    <button @click="setPreset('12h')">12h</button>
-                    <button @click="setPreset('24h')">24h</button>
-                    <button @click="setPreset('7d')">7d</button>
+                    <button :class="{ active: activePreset === '1h' }" @click="setPreset('1h')">1h</button>
+                    <button :class="{ active: activePreset === '4h' }" @click="setPreset('4h')">4h</button>
+                    <button :class="{ active: activePreset === '12h' }" @click="setPreset('12h')">12h</button>
+                    <button :class="{ active: activePreset === '24h' }" @click="setPreset('24h')">24h</button>
+                    <button :class="{ active: activePreset === '7d' }" @click="setPreset('7d')">7d</button>
                 </div>
-                <input type="datetime-local" v-model="startDate">
-                <input type="datetime-local" v-model="endDate">
-                <button class="apply-btn" @click="fetchData">Load Data</button>
+                <button class="live-toggle-btn" :class="{ active: isLive }" @click="toggleLive" :title="isLive ? 'Stop auto-refresh' : 'Auto-refresh based on the selected preset'">
+                    <span v-if="isLive" class="live-dot"></span>
+                    {{ isLive ? 'Live' : 'Go Live' }}
+                </button>
+                <input type="datetime-local" v-model="startDate" :disabled="isLive">
+                <input type="datetime-local" v-model="endDate" :disabled="isLive">
+                <button class="apply-btn" @click="fetchData" :disabled="isLive">Load Data</button>
             </div>
 
             <div class="control-group" v-if="deviceOptions.length > 1">
@@ -407,7 +511,7 @@ const chartOptions = {
             <div class="chart-toolbar">
                 <button class="reset-btn" @click="resetZoom" title="Reset to full view"><i class="ri-refresh-line"></i> Reset View</button>
             </div>
-            <Line ref="chartRef" :data="chartData" :options="chartOptions" />
+            <Line ref="chartRef" :key="chartKey" :data="chartData" :options="chartOptions" />
         </section>
     </div>
   </div>
@@ -479,6 +583,54 @@ const chartOptions = {
     border-radius: var(--radius-sm);
 }
 .presets button:hover { background: var(--surface-hover); }
+.presets button.active {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: var(--bg-color-start);
+    font-weight: 600;
+}
+.live-toggle-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 0.4rem;
+    margin-bottom: 0.5rem;
+    font-size: 0.85rem;
+    background: var(--surface-color);
+    border: 1px solid var(--surface-border);
+    color: var(--text-primary);
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+}
+.live-toggle-btn:hover { background: var(--surface-hover); }
+.live-toggle-btn.active {
+    background: rgba(224, 64, 64, 0.15);
+    border-color: var(--danger-color, #e04040);
+    color: var(--danger-color, #e04040);
+    font-weight: 600;
+}
+.live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--danger-color, #e04040);
+    /* Local, not the global @keyframes pulse (style.css) - that one hardcodes
+       var(--warning-color)/orange into its box-shadow, which would clash with this red dot. */
+    animation: live-pulse 1s infinite alternate;
+}
+@keyframes live-pulse {
+    from { opacity: 0.5; box-shadow: 0 0 4px var(--danger-color, #e04040); }
+    to { opacity: 1; box-shadow: 0 0 10px var(--danger-color, #e04040); }
+}
+input[type="datetime-local"]:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.apply-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
 .apply-btn {
     margin-top: 0.5rem;
     padding: 0.5rem;

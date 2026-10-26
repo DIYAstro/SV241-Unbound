@@ -3,6 +3,7 @@ import { useDeviceStore } from '../../stores/device'
 import { useModalStore } from '../../stores/modal'
 import { storeToRefs } from 'pinia'
 import { ref, watch, onMounted } from 'vue'
+import HelpTip from '../HelpTip.vue'
 
 const store = useDeviceStore()
 const modal = useModalStore()
@@ -203,9 +204,10 @@ async function save() {
       <div class="glass-panel settings-card current-limit-card">
           <h4>Power Protection</h4>
           <div class="form-group">
-              <label class="checkbox-label" title="When enabled, heater output is gradually reduced as the total measured input current approaches the threshold below, instead of relying only on the box's own hardware overcurrent protection. Does not affect DC/USB outputs.">
+              <label class="checkbox-label">
                   <input type="checkbox" v-model="currentLimitEnabled" @change="onChange">
                   Reduce heater power near a current limit
+                  <HelpTip text="When enabled, heater output is gradually reduced as the total measured input current approaches the threshold below, instead of relying only on the box's own hardware overcurrent protection. Does not affect DC/USB outputs." />
               </label>
           </div>
           <div class="form-group" v-if="currentLimitEnabled">
@@ -225,8 +227,8 @@ async function save() {
           
           <!-- Custom Name Input -->
           <div class="form-group">
-              <label>Custom Name (Proxy)</label>
-              <input type="text" 
+              <label>Custom Name (Proxy)<HelpTip text="Friendly name for this heater output, shown in the Web UI and (if ASCOM Switch is used) as its switch name. Doesn't change anything on the device itself." /></label>
+              <input type="text"
                      v-model="localNames[getHeaterKey(index)]" 
                      @input="onChange" 
                      :disabled="heater.m === 5"
@@ -238,21 +240,28 @@ async function save() {
             <label class="checkbox-label">
                 <input type="checkbox" v-model="heater.en" @change="onChange">
                 Enable on Startup
+                <HelpTip text="Turn this heater on automatically when the box boots, using whatever mode/settings are configured below." />
             </label>
           </div>
 
            <!-- Auto Enable Leader - only show for Mode 3 (Follower/Sync) -->
            <div class="form-group" v-if="heater.m === 3">
-            <label class="checkbox-label" title="Automatically enable the leader heater when this follower starts?">
+            <label class="checkbox-label">
                 <input type="checkbox"
                        v-model="localAutoEnable[getHeaterKey(index)]"
                        @change="onChange">
                 Auto-Enable Leader (Proxy)
+                <HelpTip text="Automatically enable the leader heater when this follower starts?" />
             </label>
           </div>
 
           <div class="form-group">
-              <label>Mode</label>
+              <label>Mode<HelpTip text="Manual: fixed power %.
+PID (Lens Sensor): PID-controls the lens sensor to stay Target Offset °C above the dew point.
+Ambient Tracking: ramps power up as ambient temperature nears the dew point, between Start Delta and End Delta.
+PID-Sync (Follower): mirrors another heater's raw PID demand, scaled by Sync Factor - needs that heater in PID or Minimum Temperature mode.
+Minimum Temperature: PID control with a hard floor temperature.
+Disabled: output off, hidden from Alpaca/WebUI switches." /></label>
               <select v-model.number="heater.m" @change="e => { onChange(); if(heater.m === 5) { heater.en = false; localNames[getHeaterKey(index)] = ''; } }">
                   <option v-for="opt in heaterModes" :key="opt.val" :value="opt.val" :disabled="isOptionDisabled(index, opt.val)">
                       {{ opt.label }}
@@ -262,8 +271,9 @@ async function save() {
 
           <!-- Max PWM Duty - hardware safety limit, applies in every mode -->
           <div class="form-group" v-if="heater.m !== 5">
-              <label title="Hard safety limit on the actual PWM duty cycle output. Applies in every mode. Useful for heater bands rated below the 12V supply voltage - start conservatively low and verify with a multimeter or by monitoring temperature.">
+              <label>
                   Max PWM Duty (%) &ndash; Hardware Safety Limit
+                  <HelpTip text="Hard safety limit on the actual PWM duty cycle output. Applies in every mode. Useful for heater bands rated below the 12V supply voltage - start conservatively low and verify with a multimeter or by monitoring temperature." />
               </label>
               <input type="number" v-model.number="heater.xd" min="0" max="100" @input="onChange">
               <small v-if="estimatedVoltage(heater.xd) !== null" class="hint">
@@ -276,47 +286,47 @@ async function save() {
 
           <!-- Mode 0: Manual -->
           <div v-if="heater.m == 0" class="mode-settings active">
-              <label>Power (%)</label>
+              <label>Power (%)<HelpTip text="Fixed PWM duty cycle, always applied regardless of temperature." /></label>
               <input type="number" v-model.number="heater.mp" min="0" max="100" @input="onChange">
           </div>
 
           <!-- Mode 1: PID -->
           <div v-if="heater.m == 1" class="mode-settings active">
-              <label>Target Offset (°C)</label>
+              <label>Target Offset (°C)<HelpTip text="How many degrees above the dew point the PID loop tries to keep the lens sensor (setpoint = dew point + this offset)." /></label>
               <input type="number" v-model.number="heater.to" step="0.1" @input="onChange">
               <div class="pid-grid">
-                  <label>Kp <input type="number" v-model.number="heater.kp" step="0.1" @input="onChange"></label>
-                  <label>Ki <input type="number" v-model.number="heater.ki" step="0.1" @input="onChange"></label>
-                  <label>Kd <input type="number" v-model.number="heater.kd" step="0.1" @input="onChange"></label>
+                  <label>Kp <HelpTip text="Proportional gain - how strongly output reacts to the current temperature error." /> <input type="number" v-model.number="heater.kp" step="0.1" @input="onChange"></label>
+                  <label>Ki <HelpTip text="Integral gain - corrects small, persistent offsets that proportional gain alone leaves behind." /> <input type="number" v-model.number="heater.ki" step="0.1" @input="onChange"></label>
+                  <label>Kd <HelpTip text="Derivative gain - dampens oscillation by reacting to how fast the temperature error is changing." /> <input type="number" v-model.number="heater.kd" step="0.1" @input="onChange"></label>
               </div>
           </div>
 
           <!-- Mode 2: Ambient -->
           <div v-if="heater.m == 2" class="mode-settings active">
                <div class="pid-grid">
-                  <label>Start Delta (°C) <input type="number" v-model.number="heater.sd" step="0.1" @input="onChange"></label>
-                  <label>End Delta (°C) <input type="number" v-model.number="heater.ed" step="0.1" @input="onChange"></label>
-                  <label>Max Power (%) <input type="number" v-model.number="heater.xp" min="0" max="100" @input="onChange"></label>
+                  <label>Start Delta (°C) <HelpTip text="Heater starts ramping up once ambient temperature comes within this many degrees of the dew point. Must be larger than End Delta." /><input type="number" v-model.number="heater.sd" step="0.1" @input="onChange"></label>
+                  <label>End Delta (°C) <HelpTip text="Heater reaches Max Power once ambient temperature comes within this many degrees of the dew point." /><input type="number" v-model.number="heater.ed" step="0.1" @input="onChange"></label>
+                  <label>Max Power (%) <HelpTip text="Power cap for this mode - the most it will ever output, reached at End Delta." /><input type="number" v-model.number="heater.xp" min="0" max="100" @input="onChange"></label>
                </div>
           </div>
 
           <!-- Mode 3: Sync -->
           <div v-if="heater.m == 3" class="mode-settings active">
-              <label>Sync Factor</label>
+              <label>Sync Factor<HelpTip text="Multiplies the leader heater's own raw PID demand (before the leader's own Max PWM Duty limit) to get this follower's output - 1.0 mirrors the leader exactly, 0.5 runs it at half." /></label>
               <input type="number" v-model.number="heater.psf" step="0.1" min="0" max="2.0" @input="onChange">
               <!-- Auto-enable leader checkbox is in Proxy config, skip for now or fetch separately -->
           </div>
 
           <!-- Mode 4: Min Temp -->
           <div v-if="heater.m == 4" class="mode-settings active">
-              <label>Min Temp (°C)</label>
+              <label>Min Temp (°C)<HelpTip text="Hard floor temperature for the lens sensor - the PID setpoint is whichever is higher: this, or dew point + Target Offset." /></label>
               <input type="number" v-model.number="heater.mt" step="0.1" @input="onChange">
-              <label>Target Offset (°C)</label>
+              <label>Target Offset (°C)<HelpTip text="How many degrees above the dew point the PID loop tries to keep the lens sensor, used whenever that's higher than Min Temp." /></label>
               <input type="number" v-model.number="heater.to" step="0.1" @input="onChange">
               <div class="pid-grid">
-                  <label>Kp <input type="number" v-model.number="heater.kp" step="0.1" @input="onChange"></label>
-                  <label>Ki <input type="number" v-model.number="heater.ki" step="0.1" @input="onChange"></label>
-                  <label>Kd <input type="number" v-model.number="heater.kd" step="0.1" @input="onChange"></label>
+                  <label>Kp <HelpTip text="Proportional gain - how strongly output reacts to the current temperature error." /> <input type="number" v-model.number="heater.kp" step="0.1" @input="onChange"></label>
+                  <label>Ki <HelpTip text="Integral gain - corrects small, persistent offsets that proportional gain alone leaves behind." /> <input type="number" v-model.number="heater.ki" step="0.1" @input="onChange"></label>
+                  <label>Kd <HelpTip text="Derivative gain - dampens oscillation by reacting to how fast the temperature error is changing." /> <input type="number" v-model.number="heater.kd" step="0.1" @input="onChange"></label>
               </div>
           </div>
 

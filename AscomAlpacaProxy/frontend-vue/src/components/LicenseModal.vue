@@ -24,9 +24,14 @@ defineEmits(['close'])
    (assets/css/style.css) already give the right backdrop/z-index/theming, same
    pattern as FirmwareFlasher.vue's .flasher-modal and SystemSettings.vue's
    .restore-picker-modal. */
+/* The LICENSE file's own text is hard-wrapped (standard GPL boilerplate formatting, max ~78
+   chars/line) - width: fit-content sizes the modal to that text's actual natural width instead of
+   a guessed pixel value, so there's no dead space when the fixed max-width used to be wider than
+   the longest line. max-width still caps it on wide viewports/if the license text ever changes to
+   something less tightly wrapped, and still shrinks on narrow ones. */
 .license-modal {
-    max-width: 700px;
-    width: 90%;
+    width: fit-content;
+    max-width: min(90vw, 700px);
 }
 
 .license-text-scroll {

@@ -657,6 +657,65 @@ input:checked+.slider:before {
     width: 100%;
 }
 
+/* Help icon + popover (HelpTip.vue) - click-based, not hover-only, so it also works on touch. The
+   popover is positioned relative to this wrapper span. */
+.help-tip {
+    position: relative;
+    display: inline-flex;
+    margin-left: 0.4rem;
+}
+
+.help-tip-btn {
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    border: 1px solid var(--surface-border);
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-secondary);
+    font-size: 0.7rem;
+    line-height: 1;
+    cursor: help;
+}
+
+.help-tip-btn:hover,
+.help-tip-btn[aria-expanded="true"] {
+    color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.help-tip-popover {
+    position: absolute;
+    z-index: 50;
+    top: 130%;
+    left: 0;
+    width: max-content;
+    max-width: 260px;
+    padding: 0.5rem 0.65rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--surface-border);
+    /* Solid, not --surface-color (3-5% opacity, meant for a .glass-panel's blurred backdrop) -
+       this popover floats directly over arbitrary page content with no blur behind it, so it
+       needs a fully opaque background to stay readable. */
+    background: var(--bg-color-mid);
+    box-shadow: var(--shadow-soft);
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 400;
+    line-height: 1.4;
+    text-transform: none;
+    letter-spacing: normal;
+    /* pre-line (not normal): still wraps normally and still overrides inherited nowrap from
+       ancestors (e.g. SwitchConfig's table <th> cells), but also respects literal \n in longer
+       explanation texts that cover multiple distinct points - those read as a dense wall of text
+       otherwise. */
+    white-space: pre-line;
+    cursor: auto;
+}
+
 label {
     display: block;
     margin-bottom: 0.5rem;

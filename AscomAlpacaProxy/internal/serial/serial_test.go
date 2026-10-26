@@ -187,25 +187,25 @@ func TestComputeSafetyStatus(t *testing.T) {
 		}
 	})
 
-	t.Run("heaterLimitEngaged with IncludeInSafetyMonitor trips AlpacaUnsafe when cl is true", func(t *testing.T) {
+	t.Run("heaterLimitEngaged with IncludeInSafetyMonitor trips AlpacaUnsafe when cl is 1", func(t *testing.T) {
 		withSafetyConditions(t, config.SafetyCondition{Metric: "heaterLimitEngaged", IncludeInSafetyMonitor: true})
-		status := computeSafetyStatus(map[string]interface{}{"cl": true})
+		status := computeSafetyStatus(map[string]interface{}{"cl": 1.0})
 		if !status.AlpacaUnsafe || status.AlpacaReason == "" {
-			t.Errorf("expected AlpacaUnsafe with a reason when cl is true, got %+v", status)
+			t.Errorf("expected AlpacaUnsafe with a reason when cl is 1, got %+v", status)
 		}
 	})
 
-	t.Run("heaterLimitEngaged does not trip AlpacaUnsafe when cl is false", func(t *testing.T) {
+	t.Run("heaterLimitEngaged does not trip AlpacaUnsafe when cl is 0", func(t *testing.T) {
 		withSafetyConditions(t, config.SafetyCondition{Metric: "heaterLimitEngaged", IncludeInSafetyMonitor: true})
-		status := computeSafetyStatus(map[string]interface{}{"cl": false})
+		status := computeSafetyStatus(map[string]interface{}{"cl": 0.0})
 		if status.AlpacaUnsafe {
-			t.Errorf("expected safe when cl is false, got %+v", status)
+			t.Errorf("expected safe when cl is 0, got %+v", status)
 		}
 	})
 
-	t.Run("heaterLimitEngaged without IncludeInSafetyMonitor never trips AlpacaUnsafe, even if cl is true", func(t *testing.T) {
+	t.Run("heaterLimitEngaged without IncludeInSafetyMonitor never trips AlpacaUnsafe, even if cl is 1", func(t *testing.T) {
 		withSafetyConditions(t, config.SafetyCondition{Metric: "heaterLimitEngaged", Notify: true})
-		status := computeSafetyStatus(map[string]interface{}{"cl": true})
+		status := computeSafetyStatus(map[string]interface{}{"cl": 1.0})
 		if status.AlpacaUnsafe {
 			t.Errorf("expected AlpacaUnsafe to stay false without IncludeInSafetyMonitor, got %+v", status)
 		}

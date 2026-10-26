@@ -9,6 +9,7 @@ import (
 	"sv241pro-alpaca-proxy/internal/database"
 	"sv241pro-alpaca-proxy/internal/logger"
 	"sv241pro-alpaca-proxy/internal/serial"
+	"sv241pro-alpaca-proxy/internal/weather"
 )
 
 // Init initializes the database logging system.
@@ -137,10 +138,18 @@ func logTelemetry() {
 
 	// "cl" comes from the same get:sensors response as pwm1/pwm2 above (Conditions.Data, not
 	// Status.Data - that's only switch on/off state, see the switch-mapping block below), so it
-	// reads via the same `data` map, not `statusData`.
+	// reads via the same `data` map, not `statusData`. Plain 0/1 (see sensors.cpp), decodes as
+	// float64 into Go's generic map, not bool.
 	currentLimitActive := 0
-	if v, ok := data["cl"].(bool); ok && v {
+	if v, ok := data["cl"].(float64); ok && v >= 1 {
 		currentLimitActive = 1
+	}
+
+	// "sd" (SHT40 Auto-Dry active, see GitHub issue #9's drift investigation) - same 0/1 convention
+	// as "cl" above.
+	sensorDryingActive := 0
+	if v, ok := data["sd"].(float64); ok && v >= 1 {
+		sensorDryingActive = 1
 	}
 
 	record := database.TelemetryRecord{
@@ -156,6 +165,24 @@ func logTelemetry() {
 		PWM1:               getInt("pwm1"),
 		PWM2:               getInt("pwm2"),
 		CurrentLimitActive: currentLimitActive,
+		SensorDryingActive: sensorDryingActive,
+	}
+
+	// Opt-in (see config.LogWeatherToTelemetry's doc comment) - stamps the currently cached
+	// Open-Meteo reading onto this row alongside the SV241's own sensors, so they can be compared
+	// over days in the Data Explorer/CSV export. Local copies rather than taking the address of
+	// wd's own fields directly, so this doesn't depend on WeatherService never mutating a
+	// previously-published *WeatherData in place.
+	if config.Get().LogWeatherToTelemetry {
+		if wd := weather.GetService().GetData(); wd != nil {
+			temp, hum, dew, pres := wd.Temperature, wd.Humidity, wd.DewPoint, wd.Pressure
+			wspd, wdir, wgust, cloud, precip := wd.WindSpeed, wd.WindDir, wd.WindGust, wd.CloudCover, wd.Precipitation
+			record.WeatherTemp, record.WeatherHumidity = &temp, &hum
+			record.WeatherDewPoint, record.WeatherPressure = &dew, &pres
+			record.WeatherWindSpeed, record.WeatherWindDirection = &wspd, &wdir
+			record.WeatherWindGust, record.WeatherCloudCover = &wgust, &cloud
+			record.WeatherPrecipitation = &precip
+		}
 	}
 
 	// Add switch states

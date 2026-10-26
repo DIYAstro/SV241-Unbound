@@ -4,6 +4,7 @@ import { useDeviceStore } from '../../stores/device'
 import { useFlasherStore } from '../../stores/flasher'
 import { storeToRefs } from 'pinia'
 import { ref, watch } from 'vue'
+import HelpTip from '../HelpTip.vue'
 
 const modal = useModalStore()
 const store = useDeviceStore()
@@ -25,11 +26,16 @@ async function saveRigName() {
 }
 
 // --- Automatic Backups ---
-// Same local-edit-buffer pattern as rigNameEdit above.
+// Local edit buffer like rigNameEdit above, but proxyConfig is an object that gets reassigned to a
+// brand-new one on every 2s settings poll (device.js's checkConnection) regardless of whether
+// anything changed - so unlike the string-valued activeRigName, the watcher fires every tick and
+// needs the hasChanges guard (same as SafetyConfig.vue), otherwise it overwrites whatever the user
+// just typed before they can hit Save.
 const autoBackupEnabled = ref(true)
 const autoBackupRetentionCount = ref(50)
+const autoBackupHasChanges = ref(false)
 watch(proxyConfig, (val) => {
-    if (!val) return
+    if (!val || autoBackupHasChanges.value) return
     autoBackupEnabled.value = val.enableAutoBackup ?? true
     autoBackupRetentionCount.value = val.autoBackupRetentionCount ?? 50
 }, { immediate: true })
@@ -41,6 +47,7 @@ async function saveAutoBackupSettings() {
             enableAutoBackup: autoBackupEnabled.value,
             autoBackupRetentionCount: parseInt(autoBackupRetentionCount.value) || 0
         })
+        autoBackupHasChanges.value = false
         modal.success('Automatic backup settings saved.')
     } catch (e) {
         modal.error('Error saving automatic backup settings: ' + e.message)
@@ -350,6 +357,7 @@ function openFlasher() {
           </p>
           <div class="button-row">
               <input type="text" v-model="rigNameEdit" placeholder="e.g. Imaging Rig" style="flex: 2;">
+              <HelpTip text="Only affects display labels (this name, switch names, etc.) - never anything written to the box itself." />
               <button @click="saveRigName" class="btn-secondary">Save</button>
           </div>
           <small class="hint" :title="activeDeviceSerial">
@@ -372,13 +380,14 @@ function openFlasher() {
           </p>
           <div class="button-row auto-backup-settings-row">
               <label class="checkbox-label">
-                  <input type="checkbox" v-model="autoBackupEnabled">
+                  <input type="checkbox" v-model="autoBackupEnabled" @change="autoBackupHasChanges = true">
                   Enabled
               </label>
               <label class="checkbox-label">
                   Keep last
-                  <input type="number" v-model.number="autoBackupRetentionCount" min="0" style="width: 70px;">
+                  <input type="number" v-model.number="autoBackupRetentionCount" @input="autoBackupHasChanges = true" min="0" style="width: 70px;">
                   (0 = unlimited)
+                  <HelpTip text="Oldest automatic backups beyond this count are deleted. Manual backups (Download Backup below) and Profiles are never affected." />
               </label>
               <button @click="saveAutoBackupSettings" class="btn-secondary">Save</button>
           </div>

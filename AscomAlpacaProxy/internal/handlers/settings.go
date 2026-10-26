@@ -133,6 +133,7 @@ func HandlePostSettings(w http.ResponseWriter, r *http.Request) {
 	if conf.WeatherInterval < 1 {
 		conf.WeatherInterval = 5
 	}
+	conf.LogWeatherToTelemetry = newConfig.LogWeatherToTelemetry
 	config.SetProxyMaps(nil, nil, newConfig.WeatherSourcePriority)
 
 	// Apply log level immediately

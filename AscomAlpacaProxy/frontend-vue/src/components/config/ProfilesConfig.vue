@@ -2,6 +2,7 @@
 import { useModalStore } from '../../stores/modal'
 import { useDeviceStore } from '../../stores/device'
 import { ref, onMounted } from 'vue'
+import HelpTip from '../HelpTip.vue'
 
 const modal = useModalStore()
 const store = useDeviceStore()
@@ -190,6 +191,7 @@ function confirmDelete(profile) {
           </p>
           <div class="button-row">
               <input type="text" v-model="newProfileName" placeholder="e.g. Widefield Setup" style="flex: 2;" @keyup.enter="saveProfile">
+              <HelpTip text="Only saves settings for the currently connected box - applying it later will refuse (or warn) if a different box is connected." />
               <button @click="saveProfile" class="btn-secondary" :disabled="saving">
                   {{ saving ? 'Saving…' : 'Save Profile' }}
               </button>

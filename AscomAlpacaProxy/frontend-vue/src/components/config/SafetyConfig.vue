@@ -3,6 +3,7 @@ import { useDeviceStore } from '../../stores/device'
 import { useModalStore } from '../../stores/modal'
 import { storeToRefs } from 'pinia'
 import { ref, watch, computed } from 'vue'
+import HelpTip from '../HelpTip.vue'
 import {
     METRICS, OPERATORS, EVENT_METRIC_LABELS, isEventMetric, SAFETY_MONITOR_ELIGIBLE_EVENTS,
     metricInfo, operatorLabel, formatValue, categoryForMetric, useSafetyConditionStatuses
@@ -199,8 +200,8 @@ async function save() {
               <select v-else v-model="newEventMetric">
                   <option v-for="e in selectedCategory?.events" :key="e.id" :value="e.id">{{ e.label }}</option>
               </select>
-              <label class="checkbox-label"><input type="checkbox" v-model="newNotify"> Notify</label>
-              <label class="checkbox-label" v-if="showIncludeCheckbox"><input type="checkbox" v-model="newIncludeInSafetyMonitor"> Include in Safety Monitor</label>
+              <label class="checkbox-label"><input type="checkbox" v-model="newNotify"> Notify<HelpTip text="Shows a desktop notification whenever this condition becomes true." /></label>
+              <label class="checkbox-label" v-if="showIncludeCheckbox"><input type="checkbox" v-model="newIncludeInSafetyMonitor"> Include in Safety Monitor<HelpTip text="Counts toward the ASCOM SafetyMonitor device's IsSafe property - e.g. so N.I.N.A. aborts a sequence while this condition is true." /></label>
               <button @click="addCondition" class="btn-secondary">Add</button>
           </div>
       </div>

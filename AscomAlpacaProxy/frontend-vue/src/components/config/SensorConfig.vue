@@ -3,6 +3,7 @@ import { useDeviceStore } from '../../stores/device'
 import { useModalStore } from '../../stores/modal'
 import { storeToRefs } from 'pinia'
 import { ref, watch } from 'vue'
+import HelpTip from '../HelpTip.vue'
 
 const store = useDeviceStore()
 const modal = useModalStore()
@@ -120,11 +121,11 @@ async function triggerDry() {
           <h4>SHT40 (Ambient)</h4>
           <div class="card-grid">
               <div class="form-group">
-                  <label>Temp Offset (°C)</label>
+                  <label>Temp Offset (°C)<HelpTip text="Added directly to the raw reading. If the sensor reads too high compared to a trusted reference thermometer, use a negative value." /></label>
                   <input type="number" v-model.number="sensorConfig.so_st" step="0.1" @input="onChange">
               </div>
               <div class="form-group">
-                  <label>Humidity Offset (%)</label>
+                  <label>Humidity Offset (%)<HelpTip text="Added directly to the raw reading. If the sensor reads too high compared to a trusted reference hygrometer, use a negative value." /></label>
                   <input type="number" v-model.number="sensorConfig.so_sh" step="0.1" @input="onChange">
               </div>
           </div>
@@ -135,7 +136,7 @@ async function triggerDry() {
           <h4>DS18B20 (Lens)</h4>
           <div class="card-grid">
               <div class="form-group">
-                  <label>Temp Offset (°C)</label>
+                  <label>Temp Offset (°C)<HelpTip text="Added directly to the raw lens-temperature reading. If the sensor reads too high compared to a trusted reference thermometer, use a negative value." /></label>
                   <input type="number" v-model.number="sensorConfig.so_dt" step="0.1" @input="onChange">
               </div>
           </div>
@@ -146,11 +147,11 @@ async function triggerDry() {
           <h4>INA219 (Power)</h4>
           <div class="card-grid">
               <div class="form-group">
-                  <label>Voltage Offset (V)</label>
+                  <label>Voltage Offset (V)<HelpTip text="Added directly to the raw voltage reading. If the sensor reads too high compared to a trusted multimeter, use a negative value." /></label>
                   <input type="number" v-model.number="sensorConfig.so_iv" step="0.01" @input="onChange">
               </div>
               <div class="form-group">
-                  <label>Current Offset (mA)</label>
+                  <label>Current Offset (mA)<HelpTip text="Added directly to the raw current reading. If the sensor reads too high compared to a trusted clamp meter, use a negative value." /></label>
                   <input type="number" v-model.number="sensorConfig.so_ic" step="0.01" @input="onChange">
               </div>
           </div>
@@ -167,16 +168,17 @@ async function triggerDry() {
               <label class="checkbox-label">
                   <input type="checkbox" v-model="autoDryConfig.en" @change="onAutoDryChange">
                   Enable Auto-Drying
+                  <HelpTip text="Automatically pulses the sensor's internal heater (~1s) to clear condensation off the SHT40 itself, once humidity has stayed above the threshold continuously for the Trigger Duration below." />
               </label>
           </div>
 
           <div class="card-grid">
               <div class="form-group">
-                  <label>Humidity Threshold (%)</label>
+                  <label>Humidity Threshold (%)<HelpTip text="Auto-Drying triggers once measured humidity reaches this level." /></label>
                   <input type="number" v-model.number="autoDryConfig.ht" min="0" max="100" @input="onAutoDryChange">
               </div>
               <div class="form-group">
-                  <label>Trigger Duration (s)</label>
+                  <label>Trigger Duration (s)<HelpTip text="How long humidity must stay continuously above the threshold before the first drying cycle fires. If it's still above the threshold afterward, the next cycle fires right away instead of waiting again." /></label>
                   <input type="number" v-model.number="autoDryConfig.td" min="0" max="600" @input="onAutoDryChange">
               </div>
           </div>
