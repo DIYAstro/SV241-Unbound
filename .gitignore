@@ -2,7 +2,6 @@
 compile_commands.json
 .vscode/
 .claude/
-media/
 AscomAlpacaProxy/resource.syso
 AscomAlpacaProxy/build
 AscomAlpacaProxy/install

@@ -34,6 +34,7 @@ This is a replacement firmware for the **Svbony SV241 Pro**.
 - 📄 [proxy_config.json Reference](./docs/CONFIGURATION_REFERENCE.md)
 - 📡 [Serial API Reference](./docs/SERIAL_API.md)
 - 🔧 [Hardware Specs](./docs/HARDWARE.md)
+- 🔬 [Sensor Accuracy Validation](./docs/SENSOR_ACCURACY_VALIDATION.md)
 
 **Contributing**
 - 🏗️ [Build From Source](./AscomAlpacaProxy/build_scripts/readme.md)
