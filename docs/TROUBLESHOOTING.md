@@ -144,7 +144,7 @@ It's not clear that "Always On" is actually immune to this - it may well have th
 This is a property of the hardware, not the firmware. DC3 is controlled by an ESP32 pin that outputs a HIGH signal on its own during the chip's boot phase, before any firmware is running. The same blip happens with the original SVBONY firmware. SV241-Unbound takes control of the pin as early as possible during startup, but the boot phase before that is outside any firmware's control.
 
 **Solution:**
-If a device can't tolerate being briefly switched on when the box powers up, connect it to a different DC output.
+The blip is a hard switch-on, so a configured Soft-Start ramp does not apply to it. Avoid DC3 for devices with a high inrush current (e.g. some mounts) or devices that can't tolerate being briefly switched on and off at power-up - connect those to a different DC output.
 
 ---
 
