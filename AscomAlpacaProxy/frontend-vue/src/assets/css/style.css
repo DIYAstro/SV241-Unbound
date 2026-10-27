@@ -687,6 +687,14 @@ input:checked+.slider:before {
     border-color: var(--primary-color);
 }
 
+.help-tip-btn--warning,
+.help-tip-btn--warning:hover,
+.help-tip-btn--warning[aria-expanded="true"] {
+    color: var(--warning-color);
+    border-color: var(--warning-color);
+    font-weight: 700;
+}
+
 .help-tip-popover {
     position: absolute;
     z-index: 50;

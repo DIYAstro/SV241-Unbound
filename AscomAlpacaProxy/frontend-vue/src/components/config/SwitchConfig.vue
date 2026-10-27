@@ -313,7 +313,7 @@ async function save() {
               </thead>
               <tbody>
                   <tr v-for="row in displayRows" :key="row.key">
-                      <td>{{ row.defaultName }}</td>
+                      <td>{{ row.defaultName }} <HelpTip v-if="row.key === 'dc3'" warning text="Hardware limitation: DC3 switches on briefly (~0.5s) whenever the box powers up, regardless of its startup state and without a Soft-Start ramp - this also happens with the original SVBONY firmware. Avoid DC3 for devices with a high inrush current (e.g. some mounts) or devices that can't tolerate being briefly switched on and off at power-up." /></td>
                       <td>
                           <select class="startup-state-select" :value="row.startupState" @change="e => onStateChange(row.key, e.target.value)">
                               <option value="0">OFF</option>

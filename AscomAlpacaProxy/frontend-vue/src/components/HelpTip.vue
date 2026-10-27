@@ -2,7 +2,8 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 
 defineProps({
-    text: { type: String, required: true }
+    text: { type: String, required: true },
+    warning: { type: Boolean, default: false }
 })
 
 const open = ref(false)
@@ -34,11 +35,12 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
         <button
             type="button"
             class="help-tip-btn"
+            :class="{ 'help-tip-btn--warning': warning }"
             @click.stop="toggle"
             :aria-expanded="open"
             :aria-label="text"
             aria-haspopup="true"
-        >?</button>
+        >{{ warning ? '!' : '?' }}</button>
         <div v-if="open" class="help-tip-popover" @click.stop>{{ text }}</div>
     </span>
 </template>
