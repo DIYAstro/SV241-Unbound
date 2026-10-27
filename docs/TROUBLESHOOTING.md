@@ -11,6 +11,9 @@
   - [Adjustable Voltage / Number Input Issues (Decimal Separators)](#adjustable-voltage--number-input-issues-decimal-separators)
   - [Adjustable Voltage Switch Timeout](#adjustable-voltage-switch-timeout)
   - [Master Power Switch Timeout](#master-power-switch-timeout)
+  - [Dew Heater Weaker Than Configured](#dew-heater-weaker-than-configured)
+- [Power Output Issues](#power-output-issues)
+  - [A Connected Device Doesn't Get Power on DC1-5, But Works on "Always On"](#a-connected-device-doesnt-get-power-on-dc1-5-but-works-on-always-on)
 - [Sensor Issues](#sensor-issues)
   - [Sensors showing 0 or "null" (No Values)](#sensors-showing-0-or-null-no-values)
 - [Firmware Issues](#firmware-issues)
@@ -104,6 +107,30 @@ If using the "Master Power" switch to turn on all devices, NINA may report a tim
 *   **Symptom:** A heater's actual output (visible in Live Telemetry or via ASCOM) is lower than what you set, in any mode, and a small red dot appears next to the PWM value in the Live Telemetry panel.
 *   **Cause:** The **Power Protection** current limit (Dew Heaters Tab) is enabled and the total measured input current is near the configured limit - the heater is being deliberately throttled to stay under it, not malfunctioning.
 *   **Solution:** This is expected behavior, not a fault. If it happens more often than you'd like, either raise the current limit (if your power supply can actually handle it) or reduce the configured power/duty of one of the heaters. Check the Telemetry Explorer's "Current Limit Active" value to see how often and when this has been happening.
+
+---
+
+## Power Output Issues
+
+### A Connected Device Doesn't Get Power on DC1-5, But Works on "Always On"
+
+**Symptoms:**
+- A device (e.g. a mount, a mini PC) doesn't power up when connected to one of the switchable DC1-5 outputs, but works fine on "Always On" or the Adjustable Port.
+- No error shown anywhere - the output's switch state reads "on", the connected device just shows no sign of life.
+- Other, lower-draw devices (e.g. a focuser motor, camera cooling) work fine on the same DC1-5 outputs.
+
+**Cause:**
+Each DC1-5 output has its own self-resetting hardware overcurrent protection. Devices with a noticeable inrush current at power-on - e.g. charging the bulk capacitors in a mount's motor controller, or a mini PC's internal power supply - can trip this protection almost instantly, before any sustained current could even be measured; the output then just stays off. Low-inrush devices aren't affected.
+
+It's not clear that "Always On" is actually immune to this - it may well have the same protection. What seems to matter more is *when* the inrush happens relative to the SV241 itself powering up: connecting a device to an already-live "Always On" port can trip the exact same kind of problem, while connecting the device first and only then powering on the SV241's own supply tends to work fine - in that case, the SV241's own incoming power supply ramping up to its target voltage appears to act as an unintentional, "free" soft-start for the whole rail, rather than "Always On" being specially protected. If you're affected, try connecting the device *before* powering on the box, regardless of which output you use.
+
+> [!WARNING]
+> As a general rule, avoid plugging or unplugging any device's power connector while it's live - whether that's a DC1-5 output, "Always On", or the Adjustable Port. Connecting into an already-powered line is itself a hard, instantaneous voltage step from the connected device's point of view (the same inrush mechanism described above), independent of which output it is. Power down the relevant output (or the whole box) before connecting or disconnecting a device's power cable.
+
+**Solution:**
+1. *Experimental:* a per-output **Soft-Start** setting (Switches Tab) ramps the output from 0% to full power via PWM over a configurable time (0-2000ms, 0 = off/instant) instead of switching instantly, to ease the inrush current that trips the protection. Only available for DC1-5 and the Adjustable Port.
+   - **Picking a starting value:** a purely capacitive inrush current follows roughly `I ≈ C × dV/dt`. For a representative 1000-2200µF of bulk capacitance (typical for a small motor-controller board), even a 100ms ramp already works out to well under 1A of charging current - so there's usually no need to reach for the 2000ms maximum. Try something in the 100-500ms range first and only increase if it doesn't help. This is a rough estimate, not a guarantee - the actual capacitance on your device and the protection circuit's exact trip behavior aren't known, so treat it as a starting point for experimentation.
+   - **Order matters:** the ramp only happens at the moment the SV241 port switches on. If your device has its own power switch, make sure the device is already switched on *before* you enable the port - if you enable the port first and only switch the device on afterward, the inrush happens at that switch instead, and the ramp provides no benefit.
 
 ---
 
