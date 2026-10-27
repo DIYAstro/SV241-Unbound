@@ -123,7 +123,9 @@ void setup_power_outputs() {
   // the next staggered wait below so the next output doesn't switch on while the previous one is
   // still mid-ramp, which would defeat the point of staggering (avoiding overlapping inrush current
   // draws) - found via real hardware testing (a ramped DC1 with a short stagger delay let DC2 snap
-  // to full power well before DC1's own ramp had finished).
+  // to full power well before DC1's own ramp had finished). Only outputs that actually switch on at
+  // boot may reset it - an Off output in between must pass it through unchanged, or a ramped DC2
+  // followed by Off DC3-5 would leave ADJ_CONV waiting only the stagger delay, not ramp + delay.
   unsigned long prev_ramp_ms = 0;
   for (int i = 0; i < POWER_OUTPUT_COUNT; i++) {
     // Dew heaters are managed by their own setup function (setup_dew_heaters()), so this loop
@@ -176,7 +178,7 @@ void setup_power_outputs() {
         }
         first_enable = false;
     }
-    prev_ramp_ms = 0;
+    if (physical_state) prev_ramp_ms = 0;
 
     if (physical_state && delay_on_s[i] > 0) {
       // Stagger sequencing above already happened regardless - only this one output's actual
