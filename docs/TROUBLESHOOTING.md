@@ -14,6 +14,7 @@
   - [Dew Heater Weaker Than Configured](#dew-heater-weaker-than-configured)
 - [Power Output Issues](#power-output-issues)
   - [A Connected Device Doesn't Get Power on DC1-5, But Works on "Always On"](#a-connected-device-doesnt-get-power-on-dc1-5-but-works-on-always-on)
+  - [DC3 Briefly Switches On When the Box Powers Up](#dc3-briefly-switches-on-when-the-box-powers-up)
 - [Sensor Issues](#sensor-issues)
   - [Sensors showing 0 or "null" (No Values)](#sensors-showing-0-or-null-no-values)
 - [Firmware Issues](#firmware-issues)
@@ -132,6 +133,18 @@ It's not clear that "Always On" is actually immune to this - it may well have th
    - **Picking a starting value:** a purely capacitive inrush current follows roughly `I ≈ C × dV/dt`. For a representative 1000-2200µF of bulk capacitance (typical for a small motor-controller board), even a 100ms ramp already works out to well under 1A of charging current - so there's usually no need to reach for the 2000ms maximum. Try something in the 100-500ms range first and only increase if it doesn't help. This is a rough estimate, not a guarantee - the actual capacitance on your device and the protection circuit's exact trip behavior aren't known, so treat it as a starting point for experimentation.
    - **Order matters:** the ramp only happens at the moment the SV241 port switches on. If your device has its own power switch, make sure the device is already switched on *before* you enable the port - if you enable the port first and only switch the device on afterward, the inrush happens at that switch instead, and the ramp provides no benefit.
    - **Watch out for devices with their own power-on logic:** a slow ramp can stop *other* devices on the same port from initializing correctly, sometimes at surprisingly short durations - one cooled astro camera failed to be detected at 50ms but worked normally at 10ms, likely because its own power-on-reset circuitry expects a reasonably fast voltage rise to produce a clean reset. If a device that previously worked fine stops being recognized after you enable Soft-Start, try a much shorter value, or 0/off for that port.
+
+### DC3 Briefly Switches On When the Box Powers Up
+
+**Symptoms:**
+- When the SV241 is powered on, DC3 switches on for a fraction of a second and then off again, before the normal startup sequence begins.
+- This happens regardless of DC3's configured startup state, even when it's set to Off.
+
+**Cause:**
+This is a property of the hardware, not the firmware. DC3 is controlled by an ESP32 pin that outputs a HIGH signal on its own during the chip's boot phase, before any firmware is running. The same blip happens with the original SVBONY firmware. SV241-Unbound takes control of the pin as early as possible during startup, but the boot phase before that is outside any firmware's control.
+
+**Solution:**
+If a device can't tolerate being briefly switched on when the box powers up, connect it to a different DC output.
 
 ---
 

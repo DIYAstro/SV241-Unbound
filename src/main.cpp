@@ -308,6 +308,8 @@ void serial_command_task(void *pvParameters) {
 }
 
 void setup() {
+  claim_dc_output_pins();
+
   Serial.begin(115200);
   while (!Serial) {
     delay(10); // wait for serial port to connect.

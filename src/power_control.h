@@ -19,6 +19,10 @@ enum PowerOutput {
   POWER_OUTPUT_COUNT // Keep this last for array sizing
 };
 
+// Attaches DC1-5 to LEDC and drives them to 0. Call as the very first thing in setup(), before
+// setup_power_outputs().
+void claim_dc_output_pins();
+
 // Initialize GPIOs and set startup states
 void setup_power_outputs();
 

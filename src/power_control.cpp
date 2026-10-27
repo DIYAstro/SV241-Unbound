@@ -68,6 +68,18 @@ static SemaphoreHandle_t stagger_mutex = NULL;
 static void clear_delayed_action_queue();
 static void clear_delayed_action_for(PowerOutput output);
 
+void claim_dc_output_pins() {
+  // DC3's pin (GPIO14) is one of the ESP32 pins that drives a HIGH/PWM signal on its own during
+  // boot, before any firmware runs - observed on real hardware as DC3 lighting up at power-on,
+  // regardless of its configured startup state, until firmware first takes the pin over. Nothing
+  // in firmware can cover the ROM-boot window before setup(), so main.cpp calls this as the very
+  // first thing in setup() to at least keep the window as short as possible.
+  for (int i = POWER_DC1; i <= POWER_DC5; i++) {
+    ledcAttach(power_output_pins[i], DC_SOFT_START_PWM_FREQUENCY, DC_SOFT_START_PWM_RESOLUTION);
+    ledcWrite(power_output_pins[i], 0);
+  }
+}
+
 void setup_power_outputs() {
   if (stagger_mutex == NULL) {
     stagger_mutex = xSemaphoreCreateMutex();
@@ -128,16 +140,13 @@ void setup_power_outputs() {
         continue;
     }
 
-    // DC1-5 are permanently LEDC-attached (not plain digitalWrite) so set_power_output() can ramp
-    // them for soft-start - see that function's doc comment. At duty 0/255 this is electrically
-    // identical to digitalWrite(LOW/HIGH), so outputs with soft-start left at 0 (the default) see
-    // no behavior change. USBC12/USB345 are excluded (see SwitchTimingConfig's doc comment) and
-    // stay on plain digitalWrite. ADJ_CONV has no plain GPIO pin of its own (power_output_pins[]
-    // holds -1 for it) - its LEDC channel is already attached by setup_voltage_control(), called
-    // just before this function, so it needs neither call here.
-    if ((PowerOutput)i <= POWER_DC5) {
-      ledcAttach(power_output_pins[i], DC_SOFT_START_PWM_FREQUENCY, DC_SOFT_START_PWM_RESOLUTION);
-    } else if ((PowerOutput)i != POWER_ADJ_CONV) {
+    // DC1-5 are already LEDC-attached and zeroed by claim_dc_output_pins() (not plain digitalWrite)
+    // so set_power_output() can ramp them for soft-start - see that function's doc comment and
+    // claim_dc_output_pins()'s for why they're claimed at the very start of setup(). USBC12/USB345
+    // are excluded (see SwitchTimingConfig's doc comment) and stay on plain digitalWrite. ADJ_CONV
+    // has no plain GPIO pin of its own (power_output_pins[] holds -1 for it) - its LEDC channel is
+    // already attached by setup_voltage_control(), called just before this function.
+    if ((PowerOutput)i > POWER_DC5 && (PowerOutput)i != POWER_ADJ_CONV) {
       pinMode(power_output_pins[i], OUTPUT);
     }
 
