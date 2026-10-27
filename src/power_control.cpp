@@ -135,7 +135,24 @@ void setup_power_outputs() {
     bool physical_state = (startup_states[i] == 1);
     if (physical_state && stagger_delay_ms > 0) {
         if (!first_enable) {
-            vTaskDelay(pdMS_TO_TICKS(stagger_delay_ms));
+            // Wait out the stagger delay in small steps instead of one long vTaskDelay, servicing
+            // any soft-start ramp started earlier in this same loop while we wait -
+            // power_stagger_task (the task that normally ticks these, every ~20ms) isn't created
+            // yet at this point in setup() - see xTaskCreatePinnedToCore() calls further down in
+            // main.cpp, all of which run after setup_power_outputs() returns. Without this, a ramp
+            // started on an earlier output in this loop would sit idle for the full stagger delay
+            // and then jump straight to full duty the moment it's finally ticked, instead of
+            // visibly ramping - found via real hardware testing (worked fine on a live manual
+            // toggle, where power_stagger_task is already running, but not at boot with multiple
+            // staggered outputs configured).
+            unsigned long waited_ms = 0;
+            while (waited_ms < stagger_delay_ms) {
+                unsigned long step = min(20UL, stagger_delay_ms - waited_ms);
+                vTaskDelay(pdMS_TO_TICKS(step));
+                service_dc_soft_start_ramps();
+                service_adj_soft_start_ramp();
+                waited_ms += step;
+            }
         }
         first_enable = false;
     }
