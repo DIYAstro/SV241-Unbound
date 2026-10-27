@@ -89,12 +89,14 @@ void setup_power_outputs() {
     (uint8_t)(config.dew_heaters[1].enabled_on_startup ? 1 : 0)
   };
   unsigned long stagger_delay_ms = config.poweron_stagger_delay_ms;
-  // Configured per-switch delay-on (see SwitchTimingConfig) - copied into a local array under
-  // the same config_mutex block as startup_states[]/stagger_delay_ms above, for the same reason:
-  // this loop runs unlocked below.
+  // Configured per-switch delay-on and soft-start duration (see SwitchTimingConfig) - copied into
+  // local arrays under the same config_mutex block as startup_states[]/stagger_delay_ms above, for
+  // the same reason: this loop runs unlocked below.
   unsigned long delay_on_s[POWER_OUTPUT_COUNT];
+  unsigned long soft_start_ms_cfg[POWER_OUTPUT_COUNT];
   for (int i = 0; i < POWER_OUTPUT_COUNT; i++) {
     delay_on_s[i] = config.switch_timing[i].delay_on_s;
+    soft_start_ms_cfg[i] = config.switch_timing[i].soft_start_ms;
   }
   xSemaphoreGive(config_mutex);
 
@@ -104,18 +106,24 @@ void setup_power_outputs() {
   // async queue instead. Delay before each enable except the first one, so multiple DC/USB
   // outputs configured to power on at boot don't all inrush-current-spike simultaneously.
   bool first_enable = true;
+  // Duration of the most recently, immediately-enabled ramp-capable output's own soft-start ramp
+  // (DC1-5 or ADJ_CONV) - 0 if that output wasn't ramped (or nothing's been enabled yet). Added to
+  // the next staggered wait below so the next output doesn't switch on while the previous one is
+  // still mid-ramp, which would defeat the point of staggering (avoiding overlapping inrush current
+  // draws) - found via real hardware testing (a ramped DC1 with a short stagger delay let DC2 snap
+  // to full power well before DC1's own ramp had finished).
+  unsigned long prev_ramp_ms = 0;
   for (int i = 0; i < POWER_OUTPUT_COUNT; i++) {
-    // Outputs managed by other modules are skipped here
-    if ((PowerOutput)i == POWER_ADJ_CONV || (PowerOutput)i == POWER_PWM1 || (PowerOutput)i == POWER_PWM2) {
-        // Their physical state is applied in their own setup function (setup_voltage_control(),
-        // dew heater setup), so this loop never calls set_power_output() for them - but we still
-        // need to track the resulting state here for get_power_status_json(). For standard
-        // switches, 2 means Disabled, which physically means Off. If that other setup function
-        // deferred its own enable via schedule_delayed_action() (configured delay_on_s > 0), the
-        // output isn't physically on yet either - stay false until the delayed action actually
-        // fires (it calls set_power_output() itself, which updates this array then). Currently
-        // only reachable for ADJ_CONV: PWM1/PWM2 never get a configured delay_on_s (SwitchConfig.
-        // vue's dl only covers dc1-5/usbc12/usb345/adj_conv), so delay_on_s[i] is always 0 there.
+    // Dew heaters are managed by their own setup function (setup_dew_heaters()), so this loop
+    // never calls set_power_output() for them - but we still need to track the resulting state
+    // here for get_power_status_json(). For standard switches, 2 means Disabled, which physically
+    // means Off. If that other setup function deferred its own enable via schedule_delayed_action()
+    // (configured delay_on_s > 0), the output isn't physically on yet either - stay false until the
+    // delayed action actually fires. Currently never reached here: PWM1/PWM2 never get a configured
+    // delay_on_s (SwitchConfig.vue's dl only covers dc1-5/usbc12/usb345/adj_conv), so delay_on_s[i]
+    // is always 0 for them - kept for consistency with how every other output in this array is
+    // tracked.
+    if ((PowerOutput)i == POWER_PWM1 || (PowerOutput)i == POWER_PWM2) {
         power_output_states[i] = (startup_states[i] == 1) && delay_on_s[i] == 0;
         continue;
     }
@@ -124,10 +132,12 @@ void setup_power_outputs() {
     // them for soft-start - see that function's doc comment. At duty 0/255 this is electrically
     // identical to digitalWrite(LOW/HIGH), so outputs with soft-start left at 0 (the default) see
     // no behavior change. USBC12/USB345 are excluded (see SwitchTimingConfig's doc comment) and
-    // stay on plain digitalWrite.
+    // stay on plain digitalWrite. ADJ_CONV has no plain GPIO pin of its own (power_output_pins[]
+    // holds -1 for it) - its LEDC channel is already attached by setup_voltage_control(), called
+    // just before this function, so it needs neither call here.
     if ((PowerOutput)i <= POWER_DC5) {
       ledcAttach(power_output_pins[i], DC_SOFT_START_PWM_FREQUENCY, DC_SOFT_START_PWM_RESOLUTION);
-    } else {
+    } else if ((PowerOutput)i != POWER_ADJ_CONV) {
       pinMode(power_output_pins[i], OUTPUT);
     }
 
@@ -135,19 +145,20 @@ void setup_power_outputs() {
     bool physical_state = (startup_states[i] == 1);
     if (physical_state && stagger_delay_ms > 0) {
         if (!first_enable) {
-            // Wait out the stagger delay in small steps instead of one long vTaskDelay, servicing
-            // any soft-start ramp started earlier in this same loop while we wait -
-            // power_stagger_task (the task that normally ticks these, every ~20ms) isn't created
-            // yet at this point in setup() - see xTaskCreatePinnedToCore() calls further down in
-            // main.cpp, all of which run after setup_power_outputs() returns. Without this, a ramp
-            // started on an earlier output in this loop would sit idle for the full stagger delay
-            // and then jump straight to full duty the moment it's finally ticked, instead of
-            // visibly ramping - found via real hardware testing (worked fine on a live manual
-            // toggle, where power_stagger_task is already running, but not at boot with multiple
-            // staggered outputs configured).
+            // Wait out the stagger delay (plus any still-running ramp from the previously enabled
+            // output, see prev_ramp_ms above) in small steps instead of one long vTaskDelay,
+            // servicing any in-progress soft-start ramp while we wait - power_stagger_task (the
+            // task that normally ticks these, every ~20ms) isn't created yet at this point in
+            // setup() - see xTaskCreatePinnedToCore() calls further down in main.cpp, all of which
+            // run after setup_power_outputs() returns. Without this, a ramp started on an earlier
+            // output in this loop would sit idle for the full wait and then jump straight to full
+            // duty the moment it's finally ticked, instead of visibly ramping - found via real
+            // hardware testing (worked fine on a live manual toggle, where power_stagger_task is
+            // already running, but not at boot with multiple staggered outputs configured).
+            unsigned long wait_total_ms = prev_ramp_ms + stagger_delay_ms;
             unsigned long waited_ms = 0;
-            while (waited_ms < stagger_delay_ms) {
-                unsigned long step = min(20UL, stagger_delay_ms - waited_ms);
+            while (waited_ms < wait_total_ms) {
+                unsigned long step = min(20UL, wait_total_ms - waited_ms);
                 vTaskDelay(pdMS_TO_TICKS(step));
                 service_dc_soft_start_ramps();
                 service_adj_soft_start_ramp();
@@ -156,15 +167,21 @@ void setup_power_outputs() {
         }
         first_enable = false;
     }
+    prev_ramp_ms = 0;
 
     if (physical_state && delay_on_s[i] > 0) {
       // Stagger sequencing above already happened regardless - only this one output's actual
       // enable is pushed further out by its own configured delay, on top of its place in the
       // boot sequence. Mirrors service_power_stagger_queue()'s equivalent handling for Master
-      // Power On.
+      // Power On. Its own ramp (if any) happens independently once the delay elapses, so it
+      // doesn't feed into prev_ramp_ms either - the stagger sequence can't wait for something that
+      // hasn't started yet.
       schedule_delayed_action((PowerOutput)i, true, delay_on_s[i] * 1000UL);
     } else {
       set_power_output((PowerOutput)i, physical_state);
+      if (physical_state && ((PowerOutput)i <= POWER_DC5 || (PowerOutput)i == POWER_ADJ_CONV)) {
+        prev_ramp_ms = soft_start_ms_cfg[i];
+      }
     }
   }
 }
@@ -671,29 +688,42 @@ void service_power_stagger_queue() {
   if (stagger_queue_pos < stagger_queue_len && millis() >= stagger_due_at_ms) {
     output_to_enable = stagger_queue[stagger_queue_pos++];
     should_enable = true;
-
-    xSemaphoreTake(config_mutex, portMAX_DELAY);
-    unsigned long delay_ms = config.poweron_stagger_delay_ms;
-    xSemaphoreGive(config_mutex);
-    stagger_due_at_ms = millis() + delay_ms;
   }
   xSemaphoreGive(stagger_mutex);
 
   // Call set_power_output() outside the stagger_mutex critical section - it takes config_mutex
   // internally, and there's no need to hold stagger_mutex while that happens.
   if (should_enable) {
-    unsigned long extra_delay_s = 0;
+    unsigned long extra_delay_s = 0, soft_start_ms = 0, poweron_stagger_delay_ms = 0;
     xSemaphoreTake(config_mutex, portMAX_DELAY);
     extra_delay_s = config.switch_timing[output_to_enable].delay_on_s;
+    soft_start_ms = config.switch_timing[output_to_enable].soft_start_ms;
+    poweron_stagger_delay_ms = config.poweron_stagger_delay_ms;
     xSemaphoreGive(config_mutex);
+
+    // Next output becomes due after the configured stagger delay, plus (if this output was just
+    // immediately enabled with its own ramp) however long that ramp still takes to finish - so the
+    // next output doesn't switch on while this one is still mid-ramp. Computed after enabling
+    // (rather than the old fixed "due = now + stagger delay" set before enabling) so it can factor
+    // in this output's own ramp duration - see setup_power_outputs()'s prev_ramp_ms doc comment for
+    // the same reasoning applied to the boot path.
+    unsigned long next_due_in_ms = poweron_stagger_delay_ms;
 
     if (extra_delay_s > 0) {
       // Stagger sequencing already advanced above regardless of this - only this one output's
       // actual enable is pushed further out by its own configured delay, on top of its place in
-      // the stagger order.
+      // the stagger order. Its own ramp (if any) happens independently once the delay elapses, so
+      // it doesn't extend next_due_in_ms either - nothing to wait for yet.
       schedule_delayed_action(output_to_enable, true, extra_delay_s * 1000UL);
     } else {
       set_power_output(output_to_enable, true);
+      if (output_to_enable <= POWER_DC5 || output_to_enable == POWER_ADJ_CONV) {
+        next_due_in_ms += soft_start_ms;
+      }
     }
+
+    xSemaphoreTake(stagger_mutex, portMAX_DELAY);
+    stagger_due_at_ms = millis() + next_due_in_ms;
+    xSemaphoreGive(stagger_mutex);
   }
 }

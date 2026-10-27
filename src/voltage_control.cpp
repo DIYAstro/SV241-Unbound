@@ -1,7 +1,7 @@
 #include "voltage_control.h"
 #include "config_manager.h"
 #include "hardware_pins.h"
-#include "power_control.h" // POWER_ADJ_CONV, schedule_delayed_action() - see setup_voltage_control()
+#include "power_control.h" // POWER_ADJ_CONV
 
 // LEDC (PWM) settings
 // Note: Arduino-ESP32 core 3.x manages LEDC channel assignment internally per pin
@@ -92,31 +92,16 @@ static AdjSoftStartRamp adj_ramp = {false, 0, 0, 0};
 static SemaphoreHandle_t adj_ramp_mutex = NULL;
 
 void setup_voltage_control() {
-  // Configure the LEDC peripheral and attach it to the GPIO pin in one call (core 3.x API)
+  // Configure the LEDC peripheral and attach it to the GPIO pin in one call (core 3.x API).
+  // Applying ADJ_CONV's actual startup state (on/off, delay_on_s, soft-start ramp) happens later,
+  // uniformly with every other output, from power_control.cpp's setup_power_outputs() - it used to
+  // happen right here instead, which meant ADJ_CONV always powered up first, ahead of (and
+  // potentially overlapping with) DC1-5's own staggered boot sequence, with nothing coordinating
+  // the two. Folding it into the same staggered loop fixes that - see that function's doc comments.
   ledcAttach(ADJUSTABLE_CONVERTER_PIN, LEDC_FREQUENCY, LEDC_RESOLUTION);
 
-  xSemaphoreTake(config_mutex, portMAX_DELAY);
-  // 0=Off, 1=On, 2=Disabled - a bare uint8_t->bool conversion would treat 2 (Disabled) as On,
-  // energizing the output at boot even though the user asked to keep it off. Match the "== 1"
-  // pattern power_control.cpp's setup_power_outputs() already uses for every other output.
-  bool startup_state = (config.power_startup_states.adj_conv == 1);
-  unsigned long delay_on_s = config.switch_timing[POWER_ADJ_CONV].delay_on_s;
-  // On startup, we always respect the config preset, so ensure RAM override is cleared.
+  // On startup, we always respect the config preset, so ensure any stale RAM override is cleared.
   ram_voltage_target = -1.0f;
-  xSemaphoreGive(config_mutex);
-
-  if (startup_state && delay_on_s > 0) {
-    // Configured delay-on (see SwitchTimingConfig) - defer the actual enable the same way
-    // power_control.cpp's setup_power_outputs() does for the standard DC/USB outputs. Safe to
-    // call this early (still inside setup(), before any FreeRTOS tasks exist) - the queue is
-    // only drained once power_stagger_task starts running, further down in main.cpp's setup().
-    // power_control.cpp's setup_power_outputs() (called right after this) reads the same
-    // delay_on_s to keep power_output_states[POWER_ADJ_CONV] correctly false in the meantime.
-    schedule_delayed_action(POWER_ADJ_CONV, true, delay_on_s * 1000UL);
-  } else {
-    // Set the initial state based on config
-    set_adjustable_converter_state(startup_state);
-  }
 }
 
 void set_adjustable_converter_state(bool on) {
