@@ -259,9 +259,11 @@ static void send_disabled_output_error(PowerOutput output) {
 // testing (reported by user, audible from the driver's switching noise). Computing duty from
 // elapsed time instead means each tick jumps straight to the duty the configured duration actually
 // calls for at that moment, so the ramp completes in soft_start_ms regardless of tick granularity.
-// The tick is 1ms, but measured on real hardware the ramp advances about every 2ms (up to ~4ms):
-// power_stagger_task shares core 1 with the sensor task at the same priority, and the sensor task
-// keeps the core until the next tick boundary. A 10ms ramp took 6 steps, a 500ms ramp 251. The duty
+// The tick is 1ms, but measured on real hardware an active ramp advances about every 2ms: each
+// ledcWrite() blocks for up to ~1.7ms (the new duty only takes effect with the next 1kHz PWM
+// period), then the task sleeps until the next tick. A 10ms ramp took 6 steps, a 500ms ramp 251.
+// (An earlier guess that sharing core 1 with the sensor task was the cause was disproven: removing
+// the sensor task's busy-wait dropped core 1 from ~65 % to ~9 % without changing this.) The duty
 // itself also only has 255 levels, so a very short ramp is only coarsely stepped.
 struct DcSoftStartRamp {
   bool active;

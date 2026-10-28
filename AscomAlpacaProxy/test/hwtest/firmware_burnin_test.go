@@ -90,6 +90,15 @@ func TestBurnIn(t *testing.T) {
 		func() error { _, err := conn.sendCommand(`{"get":"config"}`, cmdTimeout); return err },
 	}
 
+	// Controller-restart and response-size guards, fed by the sensors samples below: "up" (seconds
+	// since the ESP32 booted) must only ever grow - a drop means the controller restarted during the
+	// run (crash, watchdog, brownout, power loss; "rr" says which), which also drops the outputs for a
+	// moment. The sensors line is kept compact on purpose (a design target, not a hard device limit).
+	const maxSensorsLineLen = 512
+	maxSensorsLen := 0
+	lastUp := -1.0
+	restarted := false
+
 	start := time.Now()
 	lastSample := start
 	iterations := 0
@@ -112,7 +121,17 @@ func TestBurnIn(t *testing.T) {
 		iterations++
 
 		if time.Since(lastSample) >= 5*time.Second {
-			if s, err := getSensors(conn); err == nil {
+			if raw, s, err := getSensorsRaw(conn); err == nil {
+				if len(raw) > maxSensorsLen {
+					maxSensorsLen = len(raw)
+				}
+				if up, ok := s["up"].(float64); ok {
+					if lastUp >= 0 && up < lastUp {
+						restarted = true
+						t.Logf("burn-in: controller restarted (uptime %.0fs -> %.0fs, reset reason rr=%v)", lastUp, up, s["rr"])
+					}
+					lastUp = up
+				}
 				sample := heapSample{
 					at:  time.Since(start),
 					hf:  int64(asFloat(t, s["hf"])),
@@ -134,6 +153,10 @@ func TestBurnIn(t *testing.T) {
 	assert.LessOrEqual(t, failureRate, maxFailureRate,
 		"command failure rate %.2f%% exceeded %.0f%% threshold under sustained load (%d/%d failed)",
 		failureRate*100, maxFailureRate*100, failures, iterations)
+
+	assert.False(t, restarted, "the controller restarted during the burn-in run (see the uptime/reset-reason log line above)")
+	assert.LessOrEqual(t, maxSensorsLen, maxSensorsLineLen,
+		"the sensors response grew to %d bytes - keep it compact (design target %d bytes)", maxSensorsLen, maxSensorsLineLen)
 
 	final, err := getSensors(conn)
 	require.NoError(t, err)

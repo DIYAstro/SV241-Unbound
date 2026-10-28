@@ -6,6 +6,7 @@
 #include "power_control.h"
 #include "voltage_control.h"
 #include "dew_control.h"
+#include "diagnostics.h"
 
 #define WDT_TIMEOUT 90 // 90 seconds
 
@@ -43,10 +44,12 @@ void power_stagger_task(void *pvParameters) {
     service_delayed_action_queue();
     service_dc_soft_start_ramps();
     service_adj_soft_start_ramp();
-    // 1ms (was 20ms, originally 100ms) - sets the soft-start ramps' resolution. Measured at ~2ms in
-    // practice since this task shares core 1 with the sensor task at the same priority. The stagger
-    // queue and delayed-action queue above are unaffected by ticking more often, they just check
-    // "is it due yet" each time.
+    // 1ms (was 20ms, originally 100ms) - sets the soft-start ramps' resolution. Measured on real
+    // hardware: with no ramp running the loop ticks every ~1.01ms (~40us of work per pass), but
+    // while a ramp is active it comes out at ~2ms per step, because each ledcWrite() blocks for up
+    // to ~1.7ms (the new duty only takes effect with the next 1kHz PWM period) before the task
+    // sleeps until the next tick. The stagger queue and delayed-action queue above are unaffected
+    // by ticking more often, they just check "is it due yet" each time.
     vTaskDelay(RAMP_TICK_TICKS);
     esp_task_wdt_reset(); // Feed the watchdog
   }
@@ -422,6 +425,8 @@ void setup() {
       1,                    // Priority of the task
       NULL,                 // Task handle to keep track of the task
       1);                   // Pin to core 1
+
+  diagnostics_start();
 
   xSemaphoreTake(serial_mutex, portMAX_DELAY);
   Serial.println("Setup complete. Ready for JSON commands.");

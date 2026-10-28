@@ -160,13 +160,20 @@ func restoreConfigSnapshot(s *SerialConn, snapshot string) error {
 // getSensors fetches {"get":"sensors"} and returns it parsed as a generic map, for tests that
 // need heap metrics (hf/hmf/hma/hs) or environmental readings (t_amb, h_amb, d, t_lens, v, i).
 func getSensors(s *SerialConn) (map[string]interface{}, error) {
+	_, m, err := getSensorsRaw(s)
+	return m, err
+}
+
+// getSensorsRaw returns the raw sensors response line alongside the parsed map, for checks on the
+// line itself (its length) that getSensors hides.
+func getSensorsRaw(s *SerialConn) (string, map[string]interface{}, error) {
 	resp, err := s.sendCommand(`{"get":"sensors"}`, 3*time.Second)
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
 	var m map[string]interface{}
 	if err := json.Unmarshal([]byte(resp), &m); err != nil {
-		return nil, fmt.Errorf("sensors response was not a JSON object: %w (raw: %s)", err, resp)
+		return resp, nil, fmt.Errorf("sensors response was not a JSON object: %w (raw: %s)", err, resp)
 	}
-	return m, nil
+	return resp, m, nil
 }

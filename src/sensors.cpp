@@ -11,6 +11,7 @@
 #include "hardware_pins.h"
 #include "sensors.h"
 #include "dew_control.h"
+#include "diagnostics.h"
 
 // --- INA219 Constants ---
 const float SHUNT_RESISTANCE_OHMS = 0.005; // The value of the shunt resistor (R005)
@@ -498,4 +499,5 @@ void get_sensor_values_json(JsonDocument& doc) {
   doc["hmf"] = values.heap_min_free;
   doc["hma"] = values.heap_max_alloc;
   doc["hs"] = values.heap_size;
+  diagnostics_add_to_json(doc);
 }

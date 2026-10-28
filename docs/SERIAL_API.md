@@ -34,6 +34,13 @@ The controller communicates over serial at **115200 baud**. Commands are sent as
     *   `t_amb`: Ambient Temp (°C), `h_amb`: Ambient Humidity (%), `d`: Dew Point (°C)
     *   `t_lens`: Lens Temp (°C), `pwm1`/`pwm2`: Heater Power (%)
     *   `hf`, `hmf`, `hma`, `hs`: Heap memory statistics (Bytes)
+    *   `c0`, `c1`: How busy CPU core 0 / core 1 were over the last 10-second window, in 0.1 % units (`88` = 8.8 %). Only present after the first window has been sampled.
+    *   `sk`: Smallest stack headroom ever seen across the firmware's tasks (Bytes). Only present after the first window.
+    *   `up`: Uptime in seconds since the controller booted. If it ever drops, the SV241's controller restarted (crash, watchdog, brownout, power loss, reboot command or flashing) - the outputs follow their startup states again after that.
+    *   `rr`: Reset reason of the current boot (`1` power-on, `3` software, `4` panic, `5`/`6`/`7` watchdog, `9` brownout).
+
+> [!TIP]
+> The proxy logs every sensors response at `DEBUG` log level and serves the raw values at `GET /api/v1/status`, so these diagnostics can be checked there without opening the serial port yourself.
 
 ## Get Power Status
 
