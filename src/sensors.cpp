@@ -263,6 +263,12 @@ void setup_sensors() {
   is_sht40_available = init_sht40();
 
   dallas_sensors.begin();
+  // With external power the conversion is waited for in update_sensor_cache() by sleeping and
+  // polling - the library's own wait is a yield() busy-loop that kept ~60 % of core 1 busy for
+  // nothing (found via the workload measurement; core 1 is ~9 % busy without it). With parasite
+  // power the poll isn't usable (the bus is held for the conversion), so the library keeps waiting
+  // itself - its delay()-based path for parasite mode sleeps anyway.
+  dallas_sensors.setWaitForConversion(dallas_sensors.isParasitePowerMode());
   is_ds18b20_available = (dallas_sensors.getDeviceCount() > 0);
   if (!is_ds18b20_available) {
     Serial.println("{\"error\":\"DS18B20 sensor not found\"}");
@@ -399,6 +405,15 @@ void update_sensor_cache() {
   if (is_ds18b20_available && (current_millis - last_ds18b20_update >= DS18B20_INTERVAL_MS)) {
     last_ds18b20_update = current_millis;
     dallas_sensors.requestTemperatures();
+    if (!dallas_sensors.getWaitForConversion()) {
+      // Sleep between polls instead of spinning; the read happens as soon as the sensor reports the
+      // conversion done, exactly like the library's own wait. The cap leaves room above the 750ms
+      // a 12-bit conversion needs - on a timeout the scratchpad read below behaves as it always did.
+      const unsigned long conversion_start = millis();
+      while (!dallas_sensors.isConversionComplete() && (millis() - conversion_start) < 800) {
+        vTaskDelay(pdMS_TO_TICKS(5));
+      }
+    }
     float tempC = dallas_sensors.getTempCByIndex(0);
     if(tempC != DEVICE_DISCONNECTED_C) {
       float final_ds18b20_temp = ds18b20_temp_filter.add_reading(tempC, SENSOR_MEDIAN_WINDOW);
