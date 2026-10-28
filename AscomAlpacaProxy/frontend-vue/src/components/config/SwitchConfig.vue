@@ -194,6 +194,20 @@ function onSoftStartMsChange(key, val) {
     edit.softStartMs = Number.isFinite(parsed) ? Math.min(2000, Math.max(0, parsed)) : 0;
 }
 
+// Runs on `change` (blur/Enter/spinner), not on every keystroke, so typing "15" isn't rounded to 0
+// after the first digit. Rounds to the 10ms steps of the input's spinner - the ramp only advances
+// about every 2ms anyway, so finer values mean nothing. A non-zero value never rounds down to 0,
+// which would silently turn soft-start off.
+function onSoftStartMsCommit(key, val) {
+    const edit = getEdit(key);
+    const parsed = parseInt(val);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        edit.softStartMs = 0;
+        return;
+    }
+    edit.softStartMs = Math.min(2000, Math.max(10, Math.round(parsed / 10) * 10));
+}
+
 
 async function save() {
     let saved = false;
@@ -307,7 +321,7 @@ async function save() {
                       <th class="th-custom">Custom Name <HelpTip text="Friendly name shown in the Web UI and as the ASCOM Switch display name. Leave blank to use the default name." /></th>
                       <th class="th-delay-on">Delay On (s) <HelpTip text="Wait this many seconds after an on/off command before actually switching - e.g. to let a computer's own OS shutdown finish before cutting its power. Runs in the firmware itself, so it still completes even if the proxy/host is gone by then. 0 = immediate (unchanged behavior). Does not apply to Master Power." /></th>
                       <th class="th-delay-off">Delay Off (s) <HelpTip text="Same as Delay On, for the off direction." /></th>
-                      <th class="th-soft-start">Soft-Start (ms) <HelpTip text="Experimental: gradually ramps the output from 0% to full power via PWM over this many milliseconds instead of switching instantly, to ease inrush current for loads with large input capacitors (e.g. some mounts). 0 = instant (unchanged behavior), max 2000ms. Unlike Delay On/Off, this DOES apply to Master Power. Only available for DC1-5 and the Adjustable Port - USB ports expect a fast, clean power-up and are excluded. Caution: some devices with their own power-on logic can fail to start with a ramp, and the threshold isn't consistent (one cooled astro camera on its own port was sometimes no longer detected, and a value that worked in one test failed in the next). If a device stops being recognized after enabling this, try a different value, or 0. Values below ~20ms don't work as a ramp - it is only updated every 20ms, so they effectively switch on hard. Verified on one SV241 unit only so far - the exact switching hardware isn't confirmed across all units/revisions, so behavior could differ on yours." /></th>
+                      <th class="th-soft-start">Soft-Start (ms) <HelpTip text="Experimental: gradually ramps the output from 0% to full power via PWM over this many milliseconds instead of switching instantly, to ease inrush current for loads with large input capacitors (e.g. some mounts). 0 = instant (unchanged behavior), max 2000ms. Unlike Delay On/Off, this DOES apply to Master Power. Only available for DC1-5 and the Adjustable Port - USB ports expect a fast, clean power-up and are excluded. Caution: some devices with their own power-on logic can fail to start with a ramp, and the threshold isn't consistent (one cooled astro camera on its own port was sometimes no longer detected, and a value that worked in one test failed in the next). If a device stops being recognized after enabling this, try a different value, or 0. The ramp is updated about every 2ms, so very short values (a few ms) are only coarsely stepped. Verified on one SV241 unit only so far - the exact switching hardware isn't confirmed across all units/revisions, so behavior could differ on yours." /></th>
                       <th class="th-volt">Voltage <HelpTip text="Preset output voltage for the adjustable (ADJ_CONV) port. Has no effect on any other switch." /></th>
                   </tr>
               </thead>
@@ -331,7 +345,7 @@ async function save() {
                           <input type="number" :value="row.delayOff" @input="e => onDelayOffChange(row.key, e.target.value)" min="0" style="width: 70px;">
                       </td>
                       <td class="td-soft-start">
-                          <input v-if="row.supportsSoftStart" type="number" :value="row.softStartMs" @input="e => onSoftStartMsChange(row.key, e.target.value)" min="0" max="2000" style="width: 80px;">
+                          <input v-if="row.supportsSoftStart" type="number" :value="row.softStartMs" @input="e => onSoftStartMsChange(row.key, e.target.value)" @change="e => onSoftStartMsCommit(row.key, e.target.value)" min="0" max="2000" step="10" style="width: 80px;">
                           <span v-else>-</span>
                       </td>
                       <td>

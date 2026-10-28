@@ -79,7 +79,7 @@ static float ram_voltage_target = -1.0f;
 // struct's doc comment for the full story (found via real hardware testing). Duty is likewise
 // computed from elapsed time (start_ms/duration_ms), not a fixed per-tick increment - see
 // DcSoftStartRamp's doc comment for why a per-tick counter can't actually honor a short configured
-// duration once the tick interval (power_stagger_task, ~20ms) exceeds the per-step delay it
+// duration once the tick interval (power_stagger_task, 20ms back then, now 1ms) exceeds the per-step delay it
 // implies (also found via real hardware testing - every ramp took ~5.1s regardless of
 // soft_start_ms).
 struct AdjSoftStartRamp {

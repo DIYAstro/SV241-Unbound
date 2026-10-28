@@ -43,10 +43,11 @@ void power_stagger_task(void *pvParameters) {
     service_delayed_action_queue();
     service_dc_soft_start_ramps();
     service_adj_soft_start_ramp();
-    // 20ms (was 100ms) - the soft-start ramps need a finer tick to look/behave smoothly; the
-    // stagger queue and delayed-action queue above are unaffected by ticking more often, they
-    // just check "is it due yet" each time.
-    vTaskDelay(pdMS_TO_TICKS(20));
+    // 1ms (was 20ms, originally 100ms) - sets the soft-start ramps' resolution. Measured at ~2ms in
+    // practice since this task shares core 1 with the sensor task at the same priority. The stagger
+    // queue and delayed-action queue above are unaffected by ticking more often, they just check
+    // "is it due yet" each time.
+    vTaskDelay(RAMP_TICK_TICKS);
     esp_task_wdt_reset(); // Feed the watchdog
   }
 }

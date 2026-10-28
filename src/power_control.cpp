@@ -159,21 +159,23 @@ void setup_power_outputs() {
             // Wait out the stagger delay (plus any still-running ramp from the previously enabled
             // output, see prev_ramp_ms above) in small steps instead of one long vTaskDelay,
             // servicing any in-progress soft-start ramp while we wait - power_stagger_task (the
-            // task that normally ticks these, every ~20ms) isn't created yet at this point in
+            // task that normally ticks these, every 1-2ms) isn't created yet at this point in
             // setup() - see xTaskCreatePinnedToCore() calls further down in main.cpp, all of which
             // run after setup_power_outputs() returns. Without this, a ramp started on an earlier
             // output in this loop would sit idle for the full wait and then jump straight to full
             // duty the moment it's finally ticked, instead of visibly ramping - found via real
             // hardware testing (worked fine on a live manual toggle, where power_stagger_task is
-            // already running, but not at boot with multiple staggered outputs configured).
+            // already running, but not at boot with multiple staggered outputs configured). The
+            // elapsed time is measured with millis() rather than by summing up the tick length: at a
+            // 1ms tick, any iteration that takes longer than one tick (e.g. preempted by the sensor
+            // task on the same core) would otherwise stretch the total wait well beyond what was
+            // configured.
             unsigned long wait_total_ms = prev_ramp_ms + stagger_delay_ms;
-            unsigned long waited_ms = 0;
-            while (waited_ms < wait_total_ms) {
-                unsigned long step = min(20UL, wait_total_ms - waited_ms);
-                vTaskDelay(pdMS_TO_TICKS(step));
+            unsigned long wait_start_ms = millis();
+            while (millis() - wait_start_ms < wait_total_ms) {
+                vTaskDelay(RAMP_TICK_TICKS);
                 service_dc_soft_start_ramps();
                 service_adj_soft_start_ramp();
-                waited_ms += step;
             }
         }
         first_enable = false;
@@ -249,16 +251,18 @@ static void send_disabled_output_error(PowerOutput output) {
 //
 // Duty is computed from elapsed time (start_ms/duration_ms), not stepped by a fixed per-tick
 // increment - an earlier version incremented current_duty by exactly 1 each time
-// service_dc_soft_start_ramps() ran and was "due", but that function is only ticked every ~20ms
-// (power_stagger_task's loop interval), while a short soft_start_ms (e.g. 500ms / 255 steps ~ 2ms
-// per step) implied a per-step delay far shorter than that tick interval - so the ramp could never
-// advance faster than 1 step per 20ms tick regardless of configuration, making every ramp take
-// ~255 * 20ms = ~5.1s no matter what soft_start_ms was set to. Found via real hardware testing
-// (reported by user, audible from the driver's switching noise). Computing duty from elapsed time
-// instead means each tick jumps straight to the duty the configured duration actually calls for at
-// that moment, so the ramp completes in soft_start_ms regardless of tick granularity (at the cost
-// of coarser resolution for very short durations - acceptable, still far smoother than an instant
-// switch).
+// service_dc_soft_start_ramps() ran and was "due", but that function was only ticked every 20ms
+// back then (power_stagger_task's loop interval, now 1ms), while a short soft_start_ms (e.g. 500ms
+// / 255 steps ~ 2ms per step) implied a per-step delay far shorter than that tick interval - so the
+// ramp could never advance faster than 1 step per tick regardless of configuration, making every
+// ramp take ~255 * 20ms = ~5.1s no matter what soft_start_ms was set to. Found via real hardware
+// testing (reported by user, audible from the driver's switching noise). Computing duty from
+// elapsed time instead means each tick jumps straight to the duty the configured duration actually
+// calls for at that moment, so the ramp completes in soft_start_ms regardless of tick granularity.
+// The tick is 1ms, but measured on real hardware the ramp advances about every 2ms (up to ~4ms):
+// power_stagger_task shares core 1 with the sensor task at the same priority, and the sensor task
+// keeps the core until the next tick boundary. A 10ms ramp took 6 steps, a 500ms ramp 251. The duty
+// itself also only has 255 levels, so a very short ramp is only coarsely stepped.
 struct DcSoftStartRamp {
   bool active;
   int pin;

@@ -61,9 +61,15 @@ void schedule_delayed_action(PowerOutput output, bool turn_on, unsigned long del
 // ~100ms) from a background task - same cadence as service_power_stagger_queue(). Non-blocking.
 void service_delayed_action_queue();
 
+// One millisecond expressed in FreeRTOS ticks, never 0 - pdMS_TO_TICKS(1) is 0 below a 1000Hz tick
+// rate, which would turn the loops that use this as their delay into busy loops. This is the
+// resolution of the soft-start ramps (see service_dc_soft_start_ramps() below).
+#define RAMP_TICK_TICKS (pdMS_TO_TICKS(1) > 0 ? pdMS_TO_TICKS(1) : 1)
+
 // Advances any in-progress DC1-5 soft-start ramps (see SwitchTimingConfig's soft_start_ms in
-// config_manager.h) by one PWM duty step each, for outputs where it's due. Call frequently (e.g.
-// every ~20ms, for a reasonably smooth ramp) from a background task. Non-blocking - this is what
+// config_manager.h) by one PWM duty step each, for outputs where it's due. Call frequently (every
+// RAMP_TICK_TICKS, i.e. 1ms, which in practice comes out at ~2ms - see DcSoftStartRamp in
+// power_control.cpp) from a background task. Non-blocking - this is what
 // keeps soft-start from stalling the serial command task for the ramp's full duration (see
 // apply_dc_soft_start()'s doc comment in power_control.cpp for why that matters).
 void service_dc_soft_start_ramps();
