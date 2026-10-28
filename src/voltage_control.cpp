@@ -194,6 +194,10 @@ void service_adj_soft_start_ramp() {
   }
   xSemaphoreGive(adj_ramp_mutex);
 
+  // Same known, accepted race window as service_dc_soft_start_ramps() in power_control.cpp (read
+  // `active` under the mutex, write the duty only after releasing it - an Off landing exactly in
+  // between could be overwritten by this stale write). Details and the fix, should it ever be
+  // needed, are documented there; the converter's 50 kHz PWM makes the ledcWrite() block even shorter.
   if (do_write) {
     ledcWrite(ADJUSTABLE_CONVERTER_PIN, duty);
   }

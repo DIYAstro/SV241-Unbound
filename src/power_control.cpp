@@ -337,6 +337,23 @@ void service_dc_soft_start_ramps() {
 
     // ledcWrite() outside the mutex, same reasoning as set_power_output() calling things outside
     // stagger_mutex elsewhere in this file - no need to hold the lock while driving the pin.
+    //
+    // Known, deliberately accepted race window (analysed, never observed on hardware): `active` was
+    // read under the mutex above, but the duty is only written after releasing it. If an Off command
+    // (apply_dc_soft_start(.., false), runs on the other core) lands exactly between the two AND this
+    // task is then held up for longer than that command needs to reach its own ledcWrite() (a tick
+    // interrupt plus a switch to another ready task), this stale write lands after the Off's
+    // ledcWrite(pin, 0): the pin stays at a partial (or full) duty while the state reads "off", and
+    // since the ramp is already inactive no later tick corrects it - until the next command for this
+    // output. The window is under 1 us: ledcWrite()'s ~1.7ms block is the busy-wait in the ESP-IDF's
+    // ledc_update_duty() (ledc_ll_set_duty_start(): `while (duty_start)`), which only runs after the
+    // duty register was already written. Rough estimate ~1 in 5 million "Off during a running ramp".
+    // If it ever does show up: do the ledcWrite() inside this mutex section instead (per slot, not
+    // across the whole loop), and make apply_dc_soft_start() change the ramp state AND write the pin
+    // under one lock - the mutex is a leaf lock (only the serial task and power_stagger_task take
+    // it, nothing else is taken while holding it), but every early return there then needs its Give.
+    // Not done because the cost/risk of touching the switching path outweighs that odds. Same pattern
+    // in voltage_control.cpp's service_adj_soft_start_ramp().
     if (do_write) {
       ledcWrite(pin, duty);
     }
@@ -710,6 +727,14 @@ void service_power_stagger_queue() {
 
   // Call set_power_output() outside the stagger_mutex critical section - it takes config_mutex
   // internally, and there's no need to hold stagger_mutex while that happens.
+  //
+  // Known, deliberately accepted race window (analysed, never observed): an {"all":false} that lands
+  // after the dequeue above but before this enable has run clears the queue and switches everything
+  // off, and then this one already-dequeued output still switches on right behind it - until the
+  // next command for it. The window is only the ~10-20 us up to set_power_output() (longer if another
+  // task happens to hold config_mutex). Closing it would mean holding stagger_mutex across
+  // set_power_output(), which takes config_mutex/serial_mutex - against the lock discipline of this
+  // file - so it is left as is.
   if (should_enable) {
     unsigned long extra_delay_s = 0, soft_start_ms = 0, poweron_stagger_delay_ms = 0;
     xSemaphoreTake(config_mutex, portMAX_DELAY);
