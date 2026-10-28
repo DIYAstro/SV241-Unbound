@@ -148,7 +148,25 @@ void set_adjustable_converter_state(bool on) {
       adj_ramp_mutex = xSemaphoreCreateMutex();
     }
 
-    if (soft_start_ms > 0 && duty_cycle > 0) {
+    // This runs for EVERY "on" request, not just a fresh power-up. Already on (set_power_output() only
+    // updates its state after this function returns, so this is still the previous one - false at boot
+    // and after every Off) means a live voltage change ({"set":{"adj":<V>}}, or any config save from
+    // the Web UI, which always carries "av" - see adj_voltage_changed in main.cpp) or a repeated On.
+    // Restarting the ramp from duty 0 there would drop the output toward 0 V and ramp it back up, so
+    // instead move a still-running ramp's target, or step straight to the new duty once it is done.
+    // The ledcWrite() stays inside adj_ramp_mutex so the ramp tick can't overwrite it with a stale
+    // duty (the 50 kHz PWM makes it block for microseconds only).
+    const bool already_on = get_power_output_state(POWER_ADJ_CONV);
+
+    if (soft_start_ms > 0 && duty_cycle > 0 && already_on) {
+      xSemaphoreTake(adj_ramp_mutex, portMAX_DELAY);
+      if (adj_ramp.active) {
+        adj_ramp.target_duty = duty_cycle;
+      } else {
+        ledcWrite(ADJUSTABLE_CONVERTER_PIN, duty_cycle);
+      }
+      xSemaphoreGive(adj_ramp_mutex);
+    } else if (soft_start_ms > 0 && duty_cycle > 0) {
       xSemaphoreTake(adj_ramp_mutex, portMAX_DELAY);
       adj_ramp = {true, duty_cycle, millis(), soft_start_ms};
       xSemaphoreGive(adj_ramp_mutex);

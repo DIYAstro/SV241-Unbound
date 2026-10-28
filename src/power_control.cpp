@@ -283,6 +283,13 @@ static SemaphoreHandle_t dc_ramp_mutex = NULL;
 static void apply_dc_soft_start(PowerOutput output, bool on) {
   int pin = power_output_pins[output];
 
+  // Already on: a repeated "on" - the Go proxy re-sending a command whose response it missed, or Master
+  // Power On reaching an output that is already on - must leave a running or finished ramp alone.
+  // Restarting it would drop the output to 0 and ramp it back up. Off -> On (a toggle) is unaffected,
+  // since Off clears the state first; at boot the state is still false here (set_power_output() only
+  // updates it after this returns), so the first power-up ramps as usual.
+  if (on && power_output_states[output]) return;
+
   if (dc_ramp_mutex == NULL) {
     dc_ramp_mutex = xSemaphoreCreateMutex();
   }
@@ -758,8 +765,11 @@ void service_power_stagger_queue() {
       // it doesn't extend next_due_in_ms either - nothing to wait for yet.
       schedule_delayed_action(output_to_enable, true, extra_delay_s * 1000UL);
     } else {
+      // An output that is already on isn't ramped again (see apply_dc_soft_start() and
+      // set_adjustable_converter_state()), so there is no ramp to wait out for it.
+      const bool was_on = get_power_output_state(output_to_enable);
       set_power_output(output_to_enable, true);
-      if (output_to_enable <= POWER_DC5 || output_to_enable == POWER_ADJ_CONV) {
+      if (!was_on && (output_to_enable <= POWER_DC5 || output_to_enable == POWER_ADJ_CONV)) {
         next_due_in_ms += soft_start_ms;
       }
     }
