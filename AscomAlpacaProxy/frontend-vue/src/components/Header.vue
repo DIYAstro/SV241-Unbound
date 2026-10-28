@@ -16,7 +16,8 @@ const uptimeText = computed(() => {
     const days = Math.floor(seconds / 86400)
     const hours = Math.floor((seconds % 86400) / 3600)
     const minutes = Math.floor((seconds % 3600) / 60)
-    return `${pad(days)}:${pad(hours)}:${pad(minutes)}`
+    // "3d 04:12" rather than "03:04:12" - the latter reads like hh:mm:ss.
+    return `${days}d ${pad(hours)}:${pad(minutes)}`
 })
 
 const RESET_REASONS = {
@@ -25,7 +26,7 @@ const RESET_REASONS = {
 const uptimeTitle = computed(() => {
     const reason = liveStatus.value?.rr
     const text = RESET_REASONS[reason] ?? (typeof reason === 'number' ? `other (${reason})` : null)
-    return text ? `Controller uptime (dd:hh:mm) - last start: ${text}` : 'Controller uptime (dd:hh:mm)'
+    return text ? `Controller uptime (days, hh:mm) - last start: ${text}` : 'Controller uptime (days, hh:mm)'
 })
 </script>
 
