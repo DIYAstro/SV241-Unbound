@@ -156,8 +156,10 @@ void serial_command_task(void *pvParameters) {
             // desyncing the next command's response instead.
             if (handle_set_power_command(doc["set"])) {
               // Respond with the updated power status directly to the serial port for
-              // performance. This is safe because get_power_status_json() does not take other
-              // mutexes.
+              // performance. This is safe because the only mutex get_power_status_json() takes is
+              // the delayed-action mutex, a leaf lock that no task holds while waiting for another
+              // one (see get_delayed_action_pending()) - so taking it under serial_mutex can't
+              // deadlock.
               xSemaphoreTake(serial_mutex, portMAX_DELAY);
               status_doc.clear();
               get_power_status_json(status_doc);
@@ -174,7 +176,12 @@ void serial_command_task(void *pvParameters) {
             JsonObject params = doc["delay_set"].as<JsonObject>();
             const char* port_name = params["port"];
             bool state = params["state"] | false;
-            unsigned long minutes = params["minutes"] | 0;
+            // Read signed and range-checked below: as an unsigned value a negative "minutes" wrapped
+            // to ~4.29 billion, and times 60000 that overflows 32 bit into an arbitrary delay -
+            // possibly one that is already in the past, i.e. an immediate switch. Capped at the same
+            // 24 h as the configured delays (see MAX_SWITCH_DELAY_S in config_manager.h).
+            long minutes = params["minutes"] | 0L;
+            const long max_minutes = (long)(MAX_SWITCH_DELAY_S / 60);
 
             PowerOutput target = POWER_OUTPUT_COUNT; // invalid sentinel
             for (int i = 0; i < POWER_OUTPUT_COUNT; i++) {
@@ -185,11 +192,11 @@ void serial_command_task(void *pvParameters) {
             }
 
             xSemaphoreTake(serial_mutex, portMAX_DELAY);
-            if (target == POWER_OUTPUT_COUNT || minutes == 0) {
-              Serial.println("{\"error\":\"Invalid port or minutes for delay_set\"}");
+            if (target == POWER_OUTPUT_COUNT || minutes < 1 || minutes > max_minutes) {
+              Serial.println("{\"error\":\"Invalid port or minutes (1-1440) for delay_set\"}");
             } else {
-              schedule_delayed_action(target, state, minutes * 60000UL);
-              Serial.printf("{\"ok\":true,\"port\":\"%s\",\"state\":%s,\"minutes\":%lu}\n",
+              schedule_delayed_action(target, state, (unsigned long)minutes * 60000UL);
+              Serial.printf("{\"ok\":true,\"port\":\"%s\",\"state\":%s,\"minutes\":%ld}\n",
                             port_name, state ? "true" : "false", minutes);
             }
             xSemaphoreGive(serial_mutex);

@@ -388,12 +388,21 @@ func TestDelayedAction_ExplicitDelaySet(t *testing.T) {
 		assert.Equal(t, 0, switchStatusInt(t, status, "d4"), "a rejected delay_set must not have changed d4's state")
 	})
 
+	t.Run("minutes_over_24h_rejected", func(t *testing.T) {
+		// 1441 minutes is one over the 24h cap (MAX_SWITCH_DELAY_S) - rejected rather than scheduled.
+		resp := mustSendCommand(t, conn, `{"delay_set":{"port":"d4","state":true,"minutes":1441}}`, 3*time.Second)
+		assert.Contains(t, resp, "error", "minutes beyond the 24h cap must be rejected: %s", resp)
+		status := getStatus(t, conn)
+		assert.NotContains(t, status, "pd", "a rejected delay_set must not have scheduled anything: %v", status)
+		assert.Equal(t, 0, switchStatusInt(t, status, "d4"))
+	})
 	t.Run("negative_minutes_safety", func(t *testing.T) {
 		// Whatever exact value ArduinoJson's signed->unsigned conversion produces for a negative
 		// "minutes" is not the point of this test (and not part of this feature's documented
 		// contract) - what matters is that it's handled safely: no crash/hang, and critically, not
 		// silently misinterpreted as "immediate" (0 minutes worth of delay).
-		mustSendCommand(t, conn, `{"delay_set":{"port":"d4","state":true,"minutes":-5}}`, 3*time.Second)
+		resp := mustSendCommand(t, conn, `{"delay_set":{"port":"d4","state":true,"minutes":-5}}`, 3*time.Second)
+		assert.Contains(t, resp, "error", "a negative minutes value must be rejected outright: %s", resp)
 		time.Sleep(3 * time.Second)
 		status := getStatus(t, conn)
 		assert.Equal(t, 0, switchStatusInt(t, status, "d4"), "a negative minutes value must not be misinterpreted as an immediate (or near-immediate) switch")
@@ -425,4 +434,225 @@ func TestDelayedAction_ExplicitDelaySet(t *testing.T) {
 
 		setSwitch(t, conn, "d4", false)
 	})
+}
+
+// --- "pd": delayed switching that is still counting down, reported in the status ---------------
+// See power_control.cpp's get_power_status_json()/get_delayed_action_pending(): the status gets an
+// optional "pd" object mapping each output with a pending delayed action to [direction, seconds
+// left] (direction 1 = on, 0 = off). Only affected outputs are listed and the key is missing
+// entirely when nothing is pending, so an idle status line is exactly as long as before.
+
+// pendingEntry reads one output's entry from the status's optional "pd" object. ok is false when
+// the output isn't listed - including when there is no "pd" key at all, the normal idle case.
+func pendingEntry(t *testing.T, status map[string]interface{}, key string) (turnOn bool, restS int, ok bool) {
+	t.Helper()
+	raw, present := status["pd"]
+	if !present {
+		return false, 0, false
+	}
+	pd, isMap := raw.(map[string]interface{})
+	require.True(t, isMap, "\"pd\" must be an object: %v", raw)
+	entry, listed := pd[key]
+	if !listed {
+		return false, 0, false
+	}
+	arr, isArr := entry.([]interface{})
+	require.True(t, isArr && len(arr) == 2, "pd[%q] must be [direction, seconds]: %v", key, entry)
+	dir, dirOK := arr[0].(float64)
+	rest, restOK := arr[1].(float64)
+	require.True(t, dirOK && restOK, "pd[%q] must hold two numbers: %v", key, entry)
+	return dir == 1, int(rest), true
+}
+
+// pendingKeys lists the outputs present in the status's "pd" object (nil if there is none).
+func pendingKeys(t *testing.T, status map[string]interface{}) []string {
+	t.Helper()
+	raw, present := status["pd"]
+	if !present {
+		return nil
+	}
+	pd, isMap := raw.(map[string]interface{})
+	require.True(t, isMap, "\"pd\" must be an object: %v", raw)
+	keys := make([]string, 0, len(pd))
+	for k := range pd {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// TestDelayedAction_PendingReportedInStatus covers a pending delayed OFF end to end: absent while
+// idle, listed (in the set response itself and in later status reads) with a shrinking countdown
+// while the output keeps its old state, gone again once the delay has fired.
+func TestDelayedAction_PendingReportedInStatus(t *testing.T) {
+	conn := openConnForTest(t)
+	baselineEnabledOff(t, conn)
+	baselineNoDelay(t, conn)
+	t.Cleanup(func() {
+		setDelay(t, conn, "d4", 0, 0)
+		setSwitch(t, conn, "d4", false)
+	})
+
+	status := getStatus(t, conn)
+	assert.NotContains(t, status, "pd", "an idle box must not report anything pending - the key is absent, not empty")
+
+	setDelay(t, conn, "d4", 0, 6) // only the off direction is delayed
+	resp := setSwitch(t, conn, "d4", true)
+	require.Equal(t, 1, switchStatusInt(t, resp, "d4"), "on is not delayed, d4 must be on immediately")
+	assert.NotContains(t, resp, "pd", "an immediate command must not leave anything pending")
+
+	resp = setSwitch(t, conn, "d4", false) // schedules OFF due at t+6s
+	turnOn, rest, ok := pendingEntry(t, resp, "d4")
+	require.True(t, ok, "the set response itself must already list the pending off: %v", resp)
+	assert.False(t, turnOn, "the pending action is an off")
+	assert.InDelta(t, 6, rest, 1, "the countdown must start at the configured delay")
+	assert.Equal(t, 1, switchStatusInt(t, resp, "d4"), "d4 must keep its old state (on) while the delay counts down")
+	assert.ElementsMatch(t, []string{"d4"}, pendingKeys(t, resp), "only the affected output may be listed")
+
+	time.Sleep(2 * time.Second)
+	status = getStatus(t, conn)
+	_, rest, ok = pendingEntry(t, status, "d4")
+	require.True(t, ok, "the pending off must still be listed mid-countdown: %v", status)
+	assert.InDelta(t, 4, rest, 1, "the countdown must have advanced by about 2s")
+	assert.Equal(t, 1, switchStatusInt(t, status, "d4"), "d4 must still be on mid-countdown")
+
+	time.Sleep(5 * time.Second) // ~7s in total, past the 6s delay
+	status = getStatus(t, conn)
+	assert.Equal(t, 0, switchStatusInt(t, status, "d4"), "d4 must be off once the delay has elapsed")
+	assert.NotContains(t, status, "pd", "pd must disappear once the delayed action has fired")
+}
+
+// TestDelayedAction_PendingOnCarriesDirection checks a pending delayed ON: direction 1, the output
+// stays off until the delay has elapsed.
+func TestDelayedAction_PendingOnCarriesDirection(t *testing.T) {
+	conn := openConnForTest(t)
+	baselineEnabledOff(t, conn)
+	baselineNoDelay(t, conn)
+	t.Cleanup(func() {
+		setDelay(t, conn, "d4", 0, 0)
+		setSwitch(t, conn, "d4", false)
+	})
+
+	setDelay(t, conn, "d4", 5, 0)
+	resp := setSwitch(t, conn, "d4", true)
+	turnOn, rest, ok := pendingEntry(t, resp, "d4")
+	require.True(t, ok, "the pending on must be listed: %v", resp)
+	assert.True(t, turnOn, "the pending action is an on")
+	assert.InDelta(t, 5, rest, 1)
+	assert.Equal(t, 0, switchStatusInt(t, resp, "d4"), "d4 must stay off until the delay has elapsed")
+
+	time.Sleep(6 * time.Second)
+	status := getStatus(t, conn)
+	assert.Equal(t, 1, switchStatusInt(t, status, "d4"), "d4 must be on once the delay has elapsed")
+	assert.NotContains(t, status, "pd", "pd must disappear once the delayed action has fired")
+}
+
+// TestDelayedAction_PendingOnlyListsAffectedOutputs makes sure the key stays small: with two
+// outputs pending it lists exactly those two, and drops one as soon as its action is cancelled.
+func TestDelayedAction_PendingOnlyListsAffectedOutputs(t *testing.T) {
+	conn := openConnForTest(t)
+	baselineEnabledOff(t, conn)
+	baselineNoDelay(t, conn)
+	t.Cleanup(func() {
+		setDelay(t, conn, "d4", 0, 0)
+		setDelay(t, conn, "d5", 0, 0)
+		setAllPower(t, conn, false)
+	})
+
+	setDelay(t, conn, "d4", 0, 8)
+	setDelay(t, conn, "d5", 0, 8)
+	setSwitch(t, conn, "d4", true)
+	setSwitch(t, conn, "d5", true)
+	setSwitch(t, conn, "d4", false)
+	resp := setSwitch(t, conn, "d5", false)
+	assert.ElementsMatch(t, []string{"d4", "d5"}, pendingKeys(t, resp), "exactly the two pending outputs must be listed, nothing else: %v", resp)
+
+	setDelay(t, conn, "d4", 0, 0)
+	resp = setSwitch(t, conn, "d4", true) // immediate again: cancels d4's pending off
+	assert.ElementsMatch(t, []string{"d5"}, pendingKeys(t, resp), "d4 must drop out once its pending action is cancelled: %v", resp)
+}
+
+// TestDelayedAction_PendingEndsWhenCancelledOrRestarted covers the three ways a pending action
+// stops being what the status says: an immediate command for the same output cancels it, Master
+// Power cancels everything, and repeating the delayed command restarts the countdown.
+func TestDelayedAction_PendingEndsWhenCancelledOrRestarted(t *testing.T) {
+	conn := openConnForTest(t)
+	baselineEnabledOff(t, conn)
+	baselineNoDelay(t, conn)
+	setConfig(t, conn, `{"psd":0}`)
+	t.Cleanup(func() {
+		setDelay(t, conn, "d4", 0, 0)
+		setAllPower(t, conn, false)
+	})
+
+	t.Run("immediate_command_cancels", func(t *testing.T) {
+		setAllPower(t, conn, false)
+		setDelay(t, conn, "d4", 0, 5)
+		setSwitch(t, conn, "d4", true)
+		resp := setSwitch(t, conn, "d4", false)
+		_, _, ok := pendingEntry(t, resp, "d4")
+		require.True(t, ok, "precondition: the off must be pending: %v", resp)
+
+		resp = setSwitch(t, conn, "d4", true) // on is not delayed: immediate, cancels the pending off
+		assert.NotContains(t, resp, "pd", "an immediate command for the same output must cancel the pending one: %v", resp)
+		assert.Equal(t, 1, switchStatusInt(t, resp, "d4"))
+	})
+
+	t.Run("master_power_cancels", func(t *testing.T) {
+		setAllPower(t, conn, false)
+		setDelay(t, conn, "d4", 5, 0)
+		resp := setSwitch(t, conn, "d4", true)
+		_, _, ok := pendingEntry(t, resp, "d4")
+		require.True(t, ok, "precondition: the on must be pending: %v", resp)
+
+		setAllPower(t, conn, false)
+		status := getStatus(t, conn)
+		assert.NotContains(t, status, "pd", "Master Power must clear every pending action: %v", status)
+	})
+
+	t.Run("repeated_command_restarts_countdown", func(t *testing.T) {
+		setAllPower(t, conn, false)
+		setDelay(t, conn, "d4", 0, 6)
+		setSwitch(t, conn, "d4", true)
+		resp := setSwitch(t, conn, "d4", false)
+		_, rest, ok := pendingEntry(t, resp, "d4")
+		require.True(t, ok)
+		assert.InDelta(t, 6, rest, 1)
+
+		time.Sleep(3 * time.Second)
+		resp = setSwitch(t, conn, "d4", false) // same command again: the newest request restarts the delay
+		_, rest, ok = pendingEntry(t, resp, "d4")
+		require.True(t, ok, "the repeated off must still be pending: %v", resp)
+		assert.InDelta(t, 6, rest, 1, "repeating the command must restart the countdown from the full delay")
+
+		setSwitch(t, conn, "d4", true) // cancel
+	})
+}
+
+// TestDelayedAction_DelayCappedAt24Hours covers the defensive clamp in updateConfig(): a delay
+// beyond 86400s (24h) - or one that would not even fit 32 bit milliseconds - is capped rather than
+// stored, and negative values count as 0 (no delay).
+func TestDelayedAction_DelayCappedAt24Hours(t *testing.T) {
+	conn := openConnForTest(t)
+	baselineEnabledOff(t, conn)
+	baselineNoDelay(t, conn)
+	t.Cleanup(func() { setDelay(t, conn, "d4", 0, 0) })
+
+	delaysOf := func(cfg map[string]interface{}) (on, off float64) {
+		dl, ok := cfg["dl"].(map[string]interface{})
+		require.True(t, ok, "config echo must contain dl: %v", cfg)
+		d4, ok := dl["d4"].(map[string]interface{})
+		require.True(t, ok, "dl must contain d4: %v", dl)
+		return d4["on"].(float64), d4["off"].(float64)
+	}
+
+	on, off := delaysOf(setConfig(t, conn, `{"dl":{"d4":{"on":999999999,"off":86401}}}`))
+	assert.Equal(t, float64(86400), on, "an absurd on-delay must be capped at 24h, not wrap or become 0")
+	assert.Equal(t, float64(86400), off, "one second over the cap must be capped")
+
+	on, off = delaysOf(setConfig(t, conn, `{"dl":{"d4":{"on":86400,"off":-5}}}`))
+	assert.Equal(t, float64(86400), on, "exactly the cap must be kept as is")
+	assert.Equal(t, float64(0), off, "a negative delay must count as 0 (no delay)")
+
+	on, _ = delaysOf(setConfig(t, conn, `{"dl":{"d4":{"on":5000000000,"off":0}}}`))
+	assert.Equal(t, float64(86400), on, "a value beyond 32 bit must be capped too, not converted to 0")
 }

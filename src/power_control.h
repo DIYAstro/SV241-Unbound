@@ -57,6 +57,11 @@ void service_power_stagger_queue();
 // (the newest request wins, regardless of direction).
 void schedule_delayed_action(PowerOutput output, bool turn_on, unsigned long delay_ms);
 
+// Reports whether `output` has a delayed action still pending. On true, `turn_on` is its direction
+// and `rest_s` the whole seconds left (rounded up, 0 = due on the next service pass). Takes only
+// the delayed-action mutex, which is a leaf lock - it is never held while taking another one.
+bool get_delayed_action_pending(PowerOutput output, bool& turn_on, unsigned long& rest_s);
+
 // Processes any due delayed actions (see schedule_delayed_action). Call periodically (e.g. every
 // ~100ms) from a background task - same cadence as service_power_stagger_queue(). Non-blocking.
 void service_delayed_action_queue();

@@ -68,6 +68,14 @@ struct DewHeaterConfig {
 // independently. Only DC1-5/USBC12/USB345/AdjConv are meaningful targets - PWM1/PWM2 (dew
 // heaters) never reach the code path that reads this (see power_control.cpp's "standard
 // handling" branch), since their on/off is already governed by PID/Ambient-Tracking/etc.
+//
+// Both delays are capped at MAX_SWITCH_DELAY_S. Technically: the due time is kept as a 32-bit
+// millis() value, so anything approaching 49.7 days could not be represented (the ms conversion
+// itself overflows there), and the wrap-safe comparison in service_delayed_action_queue() is only
+// valid up to half that range. Practically: a pending delay lives in RAM only (it is gone after a
+// reboot or power loss), so very long ones are unreliable anyway, and ~24 h is far beyond any
+// real use (shutting a PC down, letting a camera warm up).
+constexpr unsigned long MAX_SWITCH_DELAY_S = 86400;
 struct SwitchTimingConfig {
     unsigned long delay_on_s;
     unsigned long delay_off_s;

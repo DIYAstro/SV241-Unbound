@@ -48,13 +48,14 @@ The controller communicates over serial at **115200 baud**. Commands are sent as
 *   **Response:** A JSON object with the on/off state (`1`/`0`) of all outputs.
     *   Example: `{"status":{"d1":1,"d2":1,"d3":0,...},"dm":[0,1]}`
     *   `dm`: Dew heater modes array (0: Manual, 1: PID, 2: Ambient Tracking, 3: PID-Sync, 4: Min Temp, 5: Disabled)
+    *   `pd` (inside `status`, optional): delayed switching that is still counting down, i.e. a configured Delay On/Off. Maps each affected output to `[direction, seconds left]` with direction `0` = off, `1` = on, e.g. `"pd":{"d2":[0,873]}`. Only the outputs concerned are listed and the key is missing when nothing is pending. The output's own value in `status` keeps its old state until the delay has elapsed. Pending actions are held in RAM only (lost on reboot); a delay is capped at 86400s (24 h).
 
 ## Set Power State
 
 *   **Request:** `{"set": {"<output_name>": <state>, ...}}`
 *   **`<output_name>`:** `d1`-`d5`, `u12`, `u34`, `adj`, `pwm1`, `pwm2`, or `all`.
 *   **`<state>`:** `1` or `true` for ON, `0` or `false` for OFF.
-*   **Response:** The new power status JSON, reflecting the state after the change has been applied.
+*   **Response:** The new power status JSON, reflecting the state after the change has been applied. If the output has a Delay On/Off configured for the requested direction, the command is only scheduled: the response shows the unchanged state plus a `pd` entry (see above), and the output switches when the countdown ends.
 
 ## System Commands
 

@@ -446,6 +446,23 @@ void get_power_status_json(JsonDocument& doc) {
         status[name] = (int)power_output_states[i];
     }
   }
+
+  // Delayed switching that is still counting down (see schedule_delayed_action()): "pd" maps each
+  // affected output to [direction (0 = off, 1 = on), seconds left]. Only outputs with a pending
+  // action appear and the key is left out entirely when there is none, so the status line is
+  // exactly as long as before unless a delay is actually in use. Needed because the output's own
+  // state above deliberately keeps its old value until the delay has elapsed.
+  JsonObject pending;
+  for (int i = 0; i < POWER_OUTPUT_COUNT; i++) {
+    bool turn_on = false;
+    unsigned long rest_s = 0;
+    if (get_delayed_action_pending((PowerOutput)i, turn_on, rest_s)) {
+      if (pending.isNull()) pending = status["pd"].to<JsonObject>();
+      JsonArray entry = pending[get_power_output_name((PowerOutput)i)].to<JsonArray>();
+      entry.add(turn_on ? 1 : 0);
+      entry.add(rest_s);
+    }
+  }
 }
 
 bool handle_set_power_command(JsonVariant set_command) {
@@ -662,6 +679,23 @@ void schedule_delayed_action(PowerOutput output, bool turn_on, unsigned long del
   xSemaphoreGive(delayed_action_mutex);
 }
 
+bool get_delayed_action_pending(PowerOutput output, bool& turn_on, unsigned long& rest_s) {
+  if (delayed_action_mutex == NULL || output < 0 || output >= POWER_OUTPUT_COUNT) return false;
+  bool pending;
+  unsigned long due_at_ms;
+  xSemaphoreTake(delayed_action_mutex, portMAX_DELAY);
+  pending = delayed_action_queue[output].pending;
+  turn_on = delayed_action_queue[output].turn_on;
+  due_at_ms = delayed_action_queue[output].due_at_ms;
+  xSemaphoreGive(delayed_action_mutex);
+  if (!pending) return false;
+  // Wrap-safe, same reasoning as in service_delayed_action_queue(). Rounded up to whole seconds, 0
+  // meaning "due on the next service pass".
+  const long rest_ms = (long)(due_at_ms - millis());
+  rest_s = rest_ms > 0 ? (unsigned long)((rest_ms + 999) / 1000) : 0;
+  return true;
+}
+
 // Cancels any still-pending delayed action for a single output, regardless of direction. Call
 // this before handling any live "set" command for that same output (whether the command itself
 // ends up being immediate or newly delayed) - found via writing this feature's formal test suite:
@@ -700,7 +734,11 @@ void service_delayed_action_queue() {
   for (int i = 0; i < POWER_OUTPUT_COUNT; i++) {
     bool due = false, turn_on = false;
     xSemaphoreTake(delayed_action_mutex, portMAX_DELAY);
-    if (delayed_action_queue[i].pending && millis() >= delayed_action_queue[i].due_at_ms) {
+    // Signed difference instead of `millis() >= due_at_ms`: due_at_ms is millis() + delay and wraps
+    // together with it (every ~49.7 days of uptime), and a plain >= would then fire an action whose
+    // due time lies just behind the wrap immediately instead of after its delay. Valid because
+    // delays are capped at MAX_SWITCH_DELAY_S, far below half the 32-bit range.
+    if (delayed_action_queue[i].pending && (long)(millis() - delayed_action_queue[i].due_at_ms) >= 0) {
       delayed_action_queue[i].pending = false;
       due = true;
       turn_on = delayed_action_queue[i].turn_on;

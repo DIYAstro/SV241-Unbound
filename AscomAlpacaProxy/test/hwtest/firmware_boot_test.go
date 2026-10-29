@@ -4,6 +4,7 @@ package hwtest
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -48,6 +49,21 @@ func assertBootState(t *testing.T, status map[string]interface{}, key string, wa
 func TestSwitches_StartupStatesAppliedOnBoot(t *testing.T) {
 	port := hwtestPort()
 	states := []int{0, 1, 2}
+
+	// The boot sequence takes the stagger delay plus each enabled output's own soft-start ramp, so a
+	// box configured with those (like any real one using Soft-Start) would outlast the fixed waits
+	// below and the status read would time out - not a boot bug. Pin both to 0 for this test;
+	// TestMain restores the real config afterwards.
+	{
+		conn := openConnForTest(t)
+		setConfig(t, conn, `{"psd":0}`)
+		ssOff := make([]string, 0, len(bootableSwitchKeys))
+		for _, k := range bootableSwitchKeys {
+			ssOff = append(ssOff, fmt.Sprintf(`%q:{"ss":0}`, k))
+		}
+		setConfig(t, conn, fmt.Sprintf(`{"dl":{%s}}`, strings.Join(ssOff, ",")))
+		conn.Close()
+	}
 
 	for round := 0; round < 3; round++ {
 		round := round

@@ -226,6 +226,14 @@ void serializeConfig(JsonDocument& doc) {
     }
 }
 
+// Clamps a configured switch delay (seconds) to 0..MAX_SWITCH_DELAY_S. NaN and negatives give 0.
+static unsigned long clamp_delay_s(JsonVariantConst v) {
+    double d = v.as<double>();
+    if (!(d > 0)) return 0;
+    if (d > (double)MAX_SWITCH_DELAY_S) return MAX_SWITCH_DELAY_S;
+    return (unsigned long)d;
+}
+
 void updateConfig(const JsonObject& doc) {
     if (!doc["so"].isNull()) {
         JsonObjectConst sensor_offsets = doc["so"];
@@ -258,8 +266,12 @@ void updateConfig(const JsonObject& doc) {
             const char* key = get_power_output_name((PowerOutput)i);
             if (!switch_timing[key].isNull()) {
                 JsonObjectConst entry = switch_timing[key];
-                if (!entry["on"].isNull()) config.switch_timing[i].delay_on_s = entry["on"];
-                if (!entry["off"].isNull()) config.switch_timing[i].delay_off_s = entry["off"];
+                // Defensive clamp (0-MAX_SWITCH_DELAY_S) in case a caller bypasses the web UI's own
+                // min/max - see SwitchTimingConfig's doc comment for why there is a cap at all. Read
+                // as double so an absurdly large value clamps to the cap instead of converting to 0
+                // (= no delay), which is what an out-of-range integer conversion would give.
+                if (!entry["on"].isNull()) config.switch_timing[i].delay_on_s = clamp_delay_s(entry["on"]);
+                if (!entry["off"].isNull()) config.switch_timing[i].delay_off_s = clamp_delay_s(entry["off"]);
                 if (!entry["ss"].isNull()) {
                     // Defensive clamp (0-2000ms) in case a caller bypasses the web UI's own
                     // min/max - see SwitchTimingConfig's doc comment for why 2s is the sane cap.
