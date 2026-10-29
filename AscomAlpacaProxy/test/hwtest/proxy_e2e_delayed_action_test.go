@@ -119,6 +119,10 @@ func TestProxyE2E_DelayedAction(t *testing.T) {
 			_, r := proxy.switchAction(t, "DelayedOn", `{"switch":"dc4","minutes":-5}`)
 			assert.NotEqual(t, 0, r.ErrorNumber, "negative minutes must be rejected: %+v", r)
 		})
+		t.Run("minutes_over_24h", func(t *testing.T) {
+			_, r := proxy.switchAction(t, "DelayedOn", `{"switch":"dc4","minutes":1441}`)
+			assert.NotEqual(t, 0, r.ErrorNumber, "minutes beyond the 24h cap must be rejected: %+v", r)
+		})
 		t.Run("malformed_json", func(t *testing.T) {
 			_, r := proxy.switchAction(t, "DelayedOn", `not json`)
 			assert.NotEqual(t, 0, r.ErrorNumber, "malformed Parameters must be rejected: %+v", r)
@@ -395,4 +399,198 @@ func TestProxyE2E_DelayedAction_AdjConvVoltageControl(t *testing.T) {
 
 		proxy.post(t, fmt.Sprintf("/api/v1/switch/0/setswitchvalue?Id=%d&State=false&ClientID=1&ClientTransactionID=1", adjID()), "")
 	})
+}
+
+// TestProxyE2E_DelayedAction_PendingOffReporting covers the proxy's side of the "pd" status (see
+// firmware_delayed_action_test.go): while a delayed switch-off is pending, the Alpaca read paths
+// report the actual state (still on) by default and "off" once reportPendingOffAsOff is enabled,
+// the Web UI's /api/v1/power/status always shows the actual state, and a pending switch-ON is never
+// reported early. The off delay is long enough to leave time for the settings round trips (each
+// findSwitchIDByName pass alone takes a second or more).
+func TestProxyE2E_DelayedAction_PendingOffReporting(t *testing.T) {
+	proxy := startProxy(t, hwtestPort())
+	const offDelayS = 40
+
+	proxy.post(t, "/api/v1/config/set", `{"ps":{"d1":0,"d2":0,"d3":0,"d4":0,"d5":0,"u12":0,"u34":0,"adj":0}}`)
+	d4ID := func() int { return findSwitchIDByName(t, proxy, "dc4") }
+
+	setD4 := func(on bool) {
+		proxy.post(t, fmt.Sprintf("/api/v1/switch/0/setswitchvalue?Id=%d&State=%t&ClientID=1&ClientTransactionID=1", d4ID(), on), "")
+	}
+	setOption := func(on bool) {
+		resp, body := setProxySetting(t, proxy, "reportPendingOffAsOff", on)
+		require.Equal(t, http.StatusOK, resp.StatusCode, "raw body: %s", body)
+	}
+	// alpacaReports returns what getswitch and getswitchvalue currently tell an ASCOM client.
+	alpacaReports := func(id int) (on bool, value float64) {
+		_, b1 := proxy.get(t, fmt.Sprintf("/api/v1/switch/0/getswitch?Id=%d&ClientID=1&ClientTransactionID=1", id))
+		var sw struct {
+			Value bool `json:"Value"`
+		}
+		require.NoError(t, json.Unmarshal(b1, &sw), "raw body: %s", b1)
+		_, b2 := proxy.get(t, fmt.Sprintf("/api/v1/switch/0/getswitchvalue?Id=%d&ClientID=1&ClientTransactionID=1", id))
+		var sv struct {
+			Value float64 `json:"Value"`
+		}
+		require.NoError(t, json.Unmarshal(b2, &sv), "raw body: %s", b2)
+		return sw.Value, sv.Value
+	}
+	// pendingInCache reads d4's "pd" entry from the Web UI's status endpoint.
+	pendingInCache := func() (listed bool, turnOn bool) {
+		_, body := proxy.get(t, "/api/v1/power/status")
+		var status map[string]interface{}
+		if json.Unmarshal(body, &status) != nil {
+			return false, false
+		}
+		pd, _ := status["pd"].(map[string]interface{})
+		arr, _ := pd["d4"].([]interface{})
+		if len(arr) != 2 {
+			return false, false
+		}
+		dir, _ := arr[0].(float64)
+		return true, dir == 1
+	}
+	waitFor := func(timeout time.Duration, what string, cond func() bool) {
+		t.Helper()
+		deadline := time.Now().Add(timeout)
+		for time.Now().Before(deadline) {
+			if cond() {
+				return
+			}
+			time.Sleep(300 * time.Millisecond)
+		}
+		t.Fatalf("timed out waiting for %s", what)
+	}
+
+	t.Cleanup(func() {
+		proxy.post(t, "/api/v1/config/set", `{"dl":{"d4":{"on":0,"off":0}}}`)
+		setD4(false) // immediate now, and cancels anything still pending
+		setProxySetting(t, proxy, "reportPendingOffAsOff", false)
+	})
+
+	// Baseline: d4 on immediately, then a long delayed off.
+	proxy.post(t, "/api/v1/config/set", `{"dl":{"d4":{"on":0,"off":0}}}`)
+	setD4(true)
+	assertPowerStatusEventually(t, proxy, "d4", 1, "baseline: d4 on")
+	proxy.post(t, "/api/v1/config/set", fmt.Sprintf(`{"dl":{"d4":{"on":0,"off":%d}}}`, offDelayS))
+	setD4(false)
+	waitFor(10*time.Second, "the pending off to show up in the status cache", func() bool {
+		listed, turnOn := pendingInCache()
+		return listed && !turnOn
+	})
+
+	t.Run("DefaultReportsActualState", func(t *testing.T) {
+		on, value := alpacaReports(d4ID())
+		assert.True(t, on, "with the option off, getswitch must keep reporting the actual state (on) during the delay")
+		assert.Equal(t, 1.0, value, "with the option off, getswitchvalue must keep reporting 1 during the delay")
+	})
+
+	t.Run("OptionReportsOffButWebUiKeepsActualState", func(t *testing.T) {
+		setOption(true)
+		on, value := alpacaReports(d4ID())
+		assert.False(t, on, "with the option on, getswitch must report off while the off is pending")
+		assert.Equal(t, 0.0, value, "with the option on, getswitchvalue must report 0 while the off is pending")
+		assertPowerStatusEventually(t, proxy, "d4", 1, "the Web UI status keeps showing the actual state (still on) regardless of the option")
+	})
+
+	t.Run("OptionOffGoesBackToActualState", func(t *testing.T) {
+		setOption(false)
+		on, value := alpacaReports(d4ID())
+		assert.True(t, on, "switching the option off again must go back to reporting the actual state")
+		assert.Equal(t, 1.0, value)
+	})
+
+	t.Run("AfterTheDelayBothReportOff", func(t *testing.T) {
+		setOption(true)
+		waitFor(time.Duration(offDelayS+15)*time.Second, "the delayed off to fire and leave the status cache", func() bool {
+			listed, _ := pendingInCache()
+			_, body := proxy.get(t, "/api/v1/power/status")
+			var status map[string]interface{}
+			return json.Unmarshal(body, &status) == nil && status["d4"] == float64(0) && !listed
+		})
+		id := d4ID()
+		on, value := alpacaReports(id)
+		assert.False(t, on, "once actually off, the switch reports off (option on)")
+		assert.Equal(t, 0.0, value)
+		setOption(false)
+		on, value = alpacaReports(d4ID())
+		assert.False(t, on, "once actually off, the switch reports off (option off)")
+		assert.Equal(t, 0.0, value)
+	})
+
+	t.Run("PendingOnIsNeverReportedEarly", func(t *testing.T) {
+		setOption(true)
+		proxy.post(t, "/api/v1/config/set", `{"dl":{"d4":{"on":5,"off":0}}}`)
+		setD4(true)
+		waitFor(10*time.Second, "the pending on to show up in the status cache", func() bool {
+			listed, turnOn := pendingInCache()
+			return listed && turnOn
+		})
+		on, value := alpacaReports(d4ID())
+		assert.False(t, on, "a pending switch-on must still read off - reporting on early would let a client connect an unpowered device")
+		assert.Equal(t, 0.0, value)
+
+		assertPowerStatusEventually(t, proxy, "d4", 1, "d4 turning on once the delay elapsed")
+		on, value = alpacaReports(d4ID())
+		assert.True(t, on, "once actually on, the switch reports on")
+		assert.Equal(t, 1.0, value)
+	})
+}
+
+// TestProxyE2E_DelayedAction_CancelByOnCommand covers how the Web UI's "cancel pending switch-off"
+// button (PowerControl.vue) and an ASCOM client both cancel a pending delayed off: switching the
+// output on again via setswitchvalue. The pending entry must disappear from the status and the
+// output must still be on after the original delay would have elapsed. The firmware half (an
+// immediate command clears the pending action) is covered by
+// TestDelayedAction_PendingEndsWhenCancelledOrRestarted.
+func TestProxyE2E_DelayedAction_CancelByOnCommand(t *testing.T) {
+	proxy := startProxy(t, hwtestPort())
+	const offDelayS = 6
+
+	proxy.post(t, "/api/v1/config/set", `{"ps":{"d1":0,"d2":0,"d3":0,"d4":0,"d5":0,"u12":0,"u34":0,"adj":0}}`)
+	setD4 := func(on bool) {
+		id := findSwitchIDByName(t, proxy, "dc4")
+		proxy.post(t, fmt.Sprintf("/api/v1/switch/0/setswitchvalue?Id=%d&State=%t&ClientID=1&ClientTransactionID=1", id, on), "")
+	}
+	pending := func() bool {
+		_, body := proxy.get(t, "/api/v1/power/status")
+		var status map[string]interface{}
+		if json.Unmarshal(body, &status) != nil {
+			return false
+		}
+		pd, _ := status["pd"].(map[string]interface{})
+		_, listed := pd["d4"]
+		return listed
+	}
+	waitPending := func(want bool, what string) {
+		t.Helper()
+		deadline := time.Now().Add(10 * time.Second)
+		for time.Now().Before(deadline) {
+			if pending() == want {
+				return
+			}
+			time.Sleep(300 * time.Millisecond)
+		}
+		t.Fatalf("timed out waiting for %s", what)
+	}
+
+	t.Cleanup(func() {
+		proxy.post(t, "/api/v1/config/set", `{"dl":{"d4":{"on":0,"off":0}}}`)
+		setD4(false) // immediate now, and cancels anything still pending
+	})
+
+	proxy.post(t, "/api/v1/config/set", `{"dl":{"d4":{"on":0,"off":0}}}`)
+	setD4(true)
+	assertPowerStatusEventually(t, proxy, "d4", 1, "baseline: d4 on")
+
+	proxy.post(t, "/api/v1/config/set", fmt.Sprintf(`{"dl":{"d4":{"on":0,"off":%d}}}`, offDelayS))
+	setD4(false)
+	waitPending(true, "the pending off to show up in the status cache")
+
+	setD4(true) // what the cancel button and an ASCOM client send
+	waitPending(false, "the pending off to disappear after switching the output on again")
+
+	time.Sleep(time.Duration(offDelayS+3) * time.Second) // well past the original delay
+	assertPowerStatusEventually(t, proxy, "d4", 1, "d4 still on after the cancelled delay would have elapsed")
+	assert.False(t, pending(), "nothing may be pending after the cancel")
 }

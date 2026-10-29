@@ -112,6 +112,7 @@ func HandlePostSettings(w http.ResponseWriter, r *http.Request) {
 	conf.EnableAlpacaVoltageControl = newConfig.EnableAlpacaVoltageControl
 	conf.EnableAlpacaDiscovery = newConfig.EnableAlpacaDiscovery
 	conf.EnableMasterPower = newConfig.EnableMasterPower
+	conf.ReportPendingOffAsOff = newConfig.ReportPendingOffAsOff
 	conf.AlwaysShowLensTemp = newConfig.AlwaysShowLensTemp
 	// LensTempName is tied to the active device's profile (see config.SetLensTempName) - a direct
 	// assignment here would skip syncing the change into it.

@@ -159,6 +159,14 @@ async function save() {
                    </label>
                    <small class="hint">Allow setting adjustable voltage via ASCOM Switch interface.</small>
               </div>
+
+              <div class="checkbox-with-hint">
+                   <label class="checkbox-label">
+                       <input type="checkbox" v-model="localConfig.reportPendingOffAsOff" @change="onChange">
+                       Report a pending delayed switch-off as "Off" (ASCOM)
+                   </label>
+                   <small class="hint">While a configured Delay Off counts down, ASCOM clients are told the switch is already Off, so they don't time out waiting for it. The output itself stays powered until the delay has elapsed - don't unplug anything yet. The Web UI keeps showing the actual state with a countdown marker. Switch-ons are never reported early.</small>
+              </div>
               
               <hr class="divider">
               

@@ -172,16 +172,21 @@ function onVoltageChange(key, val) {
 // valid, meaningful value (delay disabled), and `|| 0` would coincidentally do the right thing
 // here, but only by accident - an empty/invalid input should fall back to 0 (disabled), not
 // silently keep whatever was there before.
+//
+// Also clamped to 24 h (see SwitchTimingConfig's doc comment for why there is a cap at all) - the
+// firmware clamps this defensively too, but matching it here shows the corrected value right away.
+const MAX_SWITCH_DELAY_S = 86400;
+
 function onDelayOnChange(key, val) {
     const edit = getEdit(key);
     const parsed = parseInt(val);
-    edit.delayOn = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+    edit.delayOn = Number.isFinite(parsed) ? Math.min(MAX_SWITCH_DELAY_S, Math.max(0, parsed)) : 0;
 }
 
 function onDelayOffChange(key, val) {
     const edit = getEdit(key);
     const parsed = parseInt(val);
-    edit.delayOff = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+    edit.delayOff = Number.isFinite(parsed) ? Math.min(MAX_SWITCH_DELAY_S, Math.max(0, parsed)) : 0;
 }
 
 // Same reasoning as onDelayOnChange/onPsdChange: 0 is a valid, meaningful value (soft-start
@@ -319,9 +324,9 @@ async function save() {
                       <th class="th-name">Switch Name</th>
                       <th class="th-state">State (Startup) <HelpTip text="What this output does when the box boots. Disabled hides it entirely from the Web UI and ASCOM Switch, same as turning it off and removing it from the list." /></th>
                       <th class="th-custom">Custom Name <HelpTip text="Friendly name shown in the Web UI and as the ASCOM Switch display name. Leave blank to use the default name." /></th>
-                      <th class="th-delay-on">Delay On (s) <HelpTip text="Wait this many seconds after an on/off command before actually switching - e.g. to let a computer's own OS shutdown finish before cutting its power. Runs in the firmware itself, so it still completes even if the proxy/host is gone by then. 0 = immediate (unchanged behavior). Does not apply to Master Power." /></th>
-                      <th class="th-delay-off">Delay Off (s) <HelpTip text="Same as Delay On, for the off direction." /></th>
-                      <th class="th-soft-start">Soft-Start (ms) <HelpTip text="Experimental: gradually ramps the output from 0% to full power via PWM over this many milliseconds instead of switching instantly, to ease inrush current for loads with large input capacitors (e.g. some mounts). 0 = instant (unchanged behavior), max 2000ms. Unlike Delay On/Off, this DOES apply to Master Power. Only available for DC1-5 and the Adjustable Port - USB ports expect a fast, clean power-up and are excluded. Caution: some devices with their own power-on logic can fail to start with a ramp, and the threshold isn't consistent (one cooled astro camera on its own port was sometimes no longer detected, and a value that worked in one test failed in the next). If a device stops being recognized after enabling this, try a different value, or 0. The ramp is updated about every 2ms (255 levels): full resolution from ~500ms, 100ms is ~50 steps, 10ms only ~5 coarse steps. Verified on one SV241 unit only so far - the exact switching hardware isn't confirmed across all units/revisions, so behavior could differ on yours." /></th>
+                      <th class="th-delay-on">Delay On (s) <HelpTip text="Wait this many seconds after an on/off command before actually switching - e.g. to let a computer's own OS shutdown finish before cutting its power. Runs in the firmware itself, so it still completes even if the proxy/host is gone by then. 0 = immediate (unchanged behavior), max 86400s (24h). Does not apply to Master Power. While the delay counts down, the switch keeps its old state (a clock symbol marks it in Power Control) and the ASCOM call has already returned, so a client that waits for the new state may report a timeout. Lost if the box reboots meanwhile." /></th>
+                      <th class="th-delay-off">Delay Off (s) <HelpTip text="Same as Delay On, for the off direction. The output stays on while it counts down; the switch keeps reporting On to ASCOM clients unless 'Report a pending delayed switch-off as Off' is enabled in the Proxy Settings. A pending switch-off can be cancelled with the crossed-out clock next to the switch in Power Control (or by setting the switch On from an ASCOM client)." /></th>
+                      <th class="th-soft-start">Soft-Start (ms) <HelpTip text="Experimental: gradually ramps the output from 0% to full power via PWM over this many milliseconds instead of switching instantly, to ease inrush current for loads with large input capacitors (e.g. some mounts). 0 = instant (unchanged behavior), max 2000ms. Unlike Delay On/Off, this DOES apply to Master Power. Only available for DC1-5 and the Adjustable Port - USB ports expect a fast, clean power-up and are excluded. Caution: some devices with their own power-on logic can fail to start with a ramp, and the threshold isn't consistent (one cooled astro camera on its own port was sometimes no longer detected, and a value that worked in one test failed in the next). If a device stops being recognized after enabling this, try a different value, or 0. The ramp is updated about every 2ms (255 levels): full resolution from ~500ms, 100ms is ~50 steps, 10ms only ~5 coarse steps. The ASCOM call returns right away and the switch reads On while the ramp is still running, so in a client sequence (e.g. NINA) wait at least this long before connecting the device. Verified on one SV241 unit only so far - the exact switching hardware isn't confirmed across all units/revisions, so behavior could differ on yours." /></th>
                       <th class="th-volt">Voltage <HelpTip text="Preset output voltage for the adjustable (ADJ_CONV) port. Has no effect on any other switch." /></th>
                   </tr>
               </thead>
@@ -339,10 +344,10 @@ async function save() {
                           <input type="text" :value="row.currentName" @input="e => onNameChange(row.key, e.target.value)" :placeholder="row.defaultName">
                       </td>
                       <td class="td-delay-on">
-                          <input type="number" :value="row.delayOn" @input="e => onDelayOnChange(row.key, e.target.value)" min="0" style="width: 70px;">
+                          <input type="number" :value="row.delayOn" @input="e => onDelayOnChange(row.key, e.target.value)" min="0" max="86400" style="width: 70px;">
                       </td>
                       <td class="td-delay-off">
-                          <input type="number" :value="row.delayOff" @input="e => onDelayOffChange(row.key, e.target.value)" min="0" style="width: 70px;">
+                          <input type="number" :value="row.delayOff" @input="e => onDelayOffChange(row.key, e.target.value)" min="0" max="86400" style="width: 70px;">
                       </td>
                       <td class="td-soft-start">
                           <input v-if="row.supportsSoftStart" type="number" :value="row.softStartMs" @input="e => onSoftStartMsChange(row.key, e.target.value)" @change="e => onSoftStartMsCommit(row.key, e.target.value)" min="0" max="2000" step="10" style="width: 80px;">

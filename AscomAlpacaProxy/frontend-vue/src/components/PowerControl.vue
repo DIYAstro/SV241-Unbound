@@ -4,7 +4,7 @@ import { storeToRefs } from 'pinia'
 import { computed, ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 
 const store = useDeviceStore()
-const { activeSwitches, switchNames, powerStatus, config, proxyConfig, liveStatus, isConnected } = storeToRefs(store)
+const { activeSwitches, switchNames, powerStatus, powerStatusAt, config, proxyConfig, liveStatus, isConnected } = storeToRefs(store)
 
 const masterPowerState = computed({
     get: () => {
@@ -71,9 +71,49 @@ function getDefaultName(key) {
     return map[key] || key;
 }
 
-function toggleSwitch(id, currentState) {
+async function toggleSwitch(s, event) {
     if (!isConnected.value) return;
-    store.setSwitch(id, !currentState);
+    const checkbox = event.target;
+    await store.setSwitch(s.id, !s.isOn);
+    // The click has already flipped the native checkbox, and Vue only rewrites `checked` when the
+    // bound value changes. If the switch didn't actually change (a delayed switch-off is now
+    // pending, the output is still on), the checkbox would otherwise stay on "off" - put it back to
+    // the actual state. An immediate change just ends up where the click already put it.
+    checkbox.checked = isSwitchOn(s.shortKey);
+}
+
+// A pending delayed switch-off ("pd" entry with direction 0) - the only case that gets a cancel button.
+function pendingOff(shortKey) {
+    const entry = powerStatus.value?.pd?.[shortKey];
+    return Array.isArray(entry) && entry[0] === 0;
+}
+
+// Cancels it the same way an ASCOM client would: switching the output on again replaces the pending
+// action (firmware: any new command for that output does), and for an output that is already on it
+// changes nothing else.
+async function cancelPendingOff(s) {
+    if (!isConnected.value) return;
+    await store.setSwitch(s.id, true);
+}
+
+// --- Pending delayed switching ---
+// While a configured Delay On/Off counts down, the firmware keeps the output in its old state and
+// lists it under "pd" in the status as [direction (0 = off, 1 = on), seconds left] - only for the
+// outputs concerned, the key is missing otherwise. The toggle keeps showing the actual state; this
+// just marks the switch and counts down locally between two status polls.
+const now = ref(Date.now());
+let pendingTimer = null;
+
+function pendingLabel(shortKey) {
+    const entry = powerStatus.value?.pd?.[shortKey];
+    if (!Array.isArray(entry) || entry.length < 2) return '';
+    const elapsed = Math.max(0, Math.floor((now.value - powerStatusAt.value) / 1000));
+    const left = Math.max(0, entry[1] - elapsed);
+    const pad = (n) => String(n).padStart(2, '0');
+    const h = Math.floor(left / 3600);
+    const m = Math.floor((left % 3600) / 60);
+    const time = h > 0 ? `${h}:${pad(m)}:${pad(left % 60)}` : `${pad(m)}:${pad(left % 60)}`;
+    return `Switching ${entry[0] === 1 ? 'on' : 'off'} in ${time}`;
 }
 
 // Truncation detection
@@ -119,14 +159,23 @@ onMounted(() => {
     nextTick(checkTruncation);
     window.addEventListener('resize', checkTruncation);
     document.addEventListener('click', handleClickOutside);
+    // Only ticks the clock while something is pending, so an idle page doesn't re-render every second.
+    pendingTimer = setInterval(() => {
+        if (powerStatus.value?.pd) now.value = Date.now();
+    }, 1000);
 });
 
 onUnmounted(() => {
     window.removeEventListener('resize', checkTruncation);
     document.removeEventListener('click', handleClickOutside);
+    clearInterval(pendingTimer);
 });
 
 watch(visibleSwitches, () => nextTick(checkTruncation), { deep: true });
+
+// The marker takes a little room from the name, so re-check truncation when one appears/disappears.
+const pendingKeys = computed(() => Object.keys(powerStatus.value?.pd || {}).join(','));
+watch(pendingKeys, () => nextTick(checkTruncation));
 
 // --- Manual Control Logic (PWM & Voltage) ---
 const popoverOpen = ref(null); // 'pwm1' or 'pwm2' or 'adj_conv'
@@ -241,6 +290,30 @@ function handleClickOutside(event) {
                :data-fullname="isTruncated(index) ? s.name : ''">
               <span class="name">{{ s.name }}</span>
 
+              <!-- A delayed switch-on/off is still counting down - the toggle keeps showing the actual state. -->
+              <span v-if="pendingLabel(s.shortKey)" class="pending-group">
+                  <span class="pending-marker" role="img"
+                        :title="pendingLabel(s.shortKey)" :aria-label="pendingLabel(s.shortKey)">
+                      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+                           stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <circle cx="12" cy="12" r="9"></circle>
+                          <path d="M12 7v5l3 2"></path>
+                      </svg>
+                  </span>
+                  <!-- Separate, deliberately small target (not the clock itself) so a hover over the clock
+                       can't turn into an accidental cancel. Only for a pending switch-off. -->
+                  <button v-if="pendingOff(s.shortKey)" type="button" class="pending-cancel"
+                          :disabled="!isConnected" title="Cancel the pending switch-off (stays on)"
+                          aria-label="Cancel the pending switch-off" @click="cancelPendingOff(s)">
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+                           stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <circle cx="12" cy="12" r="9"></circle>
+                          <path d="M12 7v5l3 2"></path>
+                          <path d="M4 4l16 16"></path>
+                      </svg>
+                  </button>
+              </span>
+
               <!-- Wrapper to ensure stable layout on right side -->
               <div class="control-wrapper">
                   <!-- Manual/Variable Control (Badge + Popover) -->
@@ -274,7 +347,7 @@ function handleClickOutside(event) {
 
                   <!-- Standard Toggle Switch -->
                   <label v-else class="switch-toggle" :class="{ 'disabled': !isConnected }">
-                      <input type="checkbox" :checked="s.isOn" @change="toggleSwitch(s.id, s.isOn)" :disabled="!isConnected">
+                      <input type="checkbox" :checked="s.isOn" @change="toggleSwitch(s, $event)" :disabled="!isConnected">
                       <span class="slider"></span>
                   </label>
               </div>
@@ -307,6 +380,43 @@ function handleClickOutside(event) {
     justify-content: space-between;
     gap: 0.5rem; /* Minimum gap */
     /* padding-right: 0; REMOVED to restore natural padding */
+}
+
+/* Clock shown between the name and the toggle while a delayed switch-on/off counts down. */
+.pending-group {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.7rem;
+}
+
+.pending-marker {
+    display: inline-flex;
+    align-items: center;
+    color: var(--primary-color);
+    filter: drop-shadow(0 0 3px var(--primary-glow));
+}
+
+/* Cancel button next to the clock: the same clock, crossed out. Muted until hovered. */
+.pending-cancel {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.pending-cancel:hover {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+}
+
+.pending-cancel:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 /* Text truncation for long switch names */

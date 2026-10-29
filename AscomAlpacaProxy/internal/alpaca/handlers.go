@@ -351,6 +351,10 @@ func (a *API) HandleSwitchGetSwitch(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 
+				if isOn && pendingOffReportedAsOff(key) {
+					isOn = false
+				}
+
 				if !isOn {
 					allOn = false
 					break
@@ -372,6 +376,9 @@ func (a *API) HandleSwitchGetSwitch(w http.ResponseWriter, r *http.Request) {
 			isOn = floatVal >= 1.0
 		} else if boolVal, isBool := val.(bool); isBool {
 			isOn = boolVal
+		}
+		if isOn && pendingOffReportedAsOff(shortKey) {
+			isOn = false
 		}
 		BoolResponse(w, r, isOn)
 	} else {
@@ -466,6 +473,10 @@ func (a *API) HandleSwitchGetSwitchValue(w http.ResponseWriter, r *http.Request)
 					}
 				}
 
+				if isOn && pendingOffReportedAsOff(key) {
+					isOn = false
+				}
+
 				if !isOn {
 					allOn = false
 					break
@@ -544,6 +555,9 @@ func (a *API) HandleSwitchGetSwitchValue(w http.ResponseWriter, r *http.Request)
 			} else if b, isBool := val.(bool); isBool && b {
 				switchValue = 1.0
 			}
+		}
+		if switchValue != 0 && pendingOffReportedAsOff(shortKey) {
+			switchValue = 0
 		}
 		FloatResponse(w, r, switchValue)
 	} else {
@@ -993,7 +1007,8 @@ func (a *API) HandleSwitchAction(w http.ResponseWriter, r *http.Request) {
 //
 // This is a one-shot, explicit override - distinct from the per-switch configured default delay
 // (config.SwitchTimingConfig, applied automatically to ordinary setswitch calls) - and bypasses
-// it: whatever minutes value is given here is used as-is for this one call.
+// it: whatever minutes value is given here is used for this one call, within the same 24 h cap
+// (maxDelayedActionMinutes) the firmware enforces for every delay.
 func (a *API) handleDelayedAction(w http.ResponseWriter, r *http.Request, turnOn bool) {
 	paramsRaw, _ := GetFormValueIgnoreCase(r, "Parameters")
 	var params struct {
@@ -1002,6 +1017,10 @@ func (a *API) handleDelayedAction(w http.ResponseWriter, r *http.Request, turnOn
 	}
 	if err := json.Unmarshal([]byte(paramsRaw), &params); err != nil || params.Switch == "" || params.Minutes <= 0 {
 		ErrorResponse(w, r, http.StatusOK, 0x400, `Parameters must be {"switch":"<name>","minutes":<n>}`)
+		return
+	}
+	if params.Minutes > maxDelayedActionMinutes {
+		ErrorResponse(w, r, http.StatusOK, 0x400, fmt.Sprintf("minutes must be between 1 and %d (24 hours)", maxDelayedActionMinutes))
 		return
 	}
 

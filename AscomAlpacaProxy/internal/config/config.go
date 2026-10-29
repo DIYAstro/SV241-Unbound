@@ -72,6 +72,7 @@ type ProxyConfig struct {
 	EnableAlpacaVoltageControl bool   `json:"enableAlpacaVoltageControl"` // Allow voltage control via Alpaca
 	EnableAlpacaDiscovery      bool   `json:"enableAlpacaDiscovery"`      // Respond to Alpaca UDP discovery packets
 	EnableMasterPower          bool   `json:"enableMasterPower"`          // Show Master Power switch
+	ReportPendingOffAsOff      bool   `json:"reportPendingOffAsOff"`      // Answer ASCOM clients "off" while a delayed switch-off is still counting down (default: report the actual state)
 	AlwaysShowLensTemp         bool   `json:"alwaysShowLensTemp"`         // Always expose Lens Temp switch regardless of PID mode
 	LensTempName               string `json:"lensTempName"`               // Custom name for Lens Temp sensor check
 	FirstRunComplete           bool   `json:"firstRunComplete"`           // Onboarding wizard completed

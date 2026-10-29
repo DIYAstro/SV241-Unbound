@@ -20,6 +20,9 @@ export const useDeviceStore = defineStore('device', () => {
     const activeSwitches = ref({})
     const switchNames = ref({})
     const powerStatus = ref({})
+    // When powerStatus was last refreshed (ms) - lets the countdown of a pending delayed switch
+    // ("pd" in the status, see PowerControl.vue) keep running between two polls.
+    const powerStatusAt = ref(0)
     const config = ref({})
     const proxyConfig = ref({})
     // Identifies whichever SV241 box is currently connected - "" until one has connected at
@@ -83,6 +86,7 @@ export const useDeviceStore = defineStore('device', () => {
             const response = await fetch('/api/v1/power/status');
             if (response.ok) {
                 powerStatus.value = await response.json();
+                powerStatusAt.value = Date.now();
             }
         } catch (e) {
             // console.error("Failed to fetch power status", e);
@@ -102,8 +106,10 @@ export const useDeviceStore = defineStore('device', () => {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: formData
             });
-            // Optimistic update or fetch
-            setTimeout(fetchPowerStatus, 200);
+            // Refresh shortly after, and let callers wait for it - PowerControl.vue uses that to put the
+            // toggle back to the actual state once the new status is known.
+            await new Promise(resolve => setTimeout(resolve, 200));
+            await fetchPowerStatus();
         } catch (error) {
             console.error(`Error setting switch ${id}:`, error);
         }
@@ -315,6 +321,7 @@ export const useDeviceStore = defineStore('device', () => {
         activeSwitches,
         switchNames,
         powerStatus,
+        powerStatusAt,
         config,
         proxyConfig,
         activeDeviceSerial,

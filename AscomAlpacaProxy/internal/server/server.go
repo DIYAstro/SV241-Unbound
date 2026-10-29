@@ -860,6 +860,7 @@ func applyBackupRestore(w http.ResponseWriter, backupData config.CombinedConfig,
 	conf.TelemetryInterval = backupData.ProxyConfig.TelemetryInterval
 	conf.EnableAlpacaVoltageControl = backupData.ProxyConfig.EnableAlpacaVoltageControl
 	conf.EnableMasterPower = backupData.ProxyConfig.EnableMasterPower
+	conf.ReportPendingOffAsOff = backupData.ProxyConfig.ReportPendingOffAsOff
 	conf.AutoDetectPort = backupData.ProxyConfig.AutoDetectPort
 	conf.EnableAutoBackup = backupData.ProxyConfig.EnableAutoBackup
 	conf.AutoBackupRetentionCount = backupData.ProxyConfig.AutoBackupRetentionCount
