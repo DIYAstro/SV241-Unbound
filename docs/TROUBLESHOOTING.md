@@ -14,6 +14,7 @@
   - [Dew Heater Weaker Than Configured](#dew-heater-weaker-than-configured)
 - [Power Output Issues](#power-output-issues)
   - [A Connected Device Doesn't Get Power on DC1-5, But Works on "Always On"](#a-connected-device-doesnt-get-power-on-dc1-5-but-works-on-always-on)
+  - [Switch Reports "On" Before the Output Is Actually On](#switch-reports-on-before-the-output-is-actually-on)
   - [DC3 Briefly Switches On When the Box Powers Up](#dc3-briefly-switches-on-when-the-box-powers-up)
 - [Sensor Issues](#sensor-issues)
   - [Sensors showing 0 or "null" (No Values)](#sensors-showing-0-or-null-no-values)
@@ -133,6 +134,27 @@ It's not clear that "Always On" is actually immune to this - it may well have th
    - **Picking a starting value:** a purely capacitive inrush current follows roughly `I ≈ C × dV/dt`. For a representative 1000-2200µF of bulk capacitance (typical for a small motor-controller board), even a 100ms ramp already works out to well under 1A of charging current - so there's usually no need to reach for the 2000ms maximum. Try something in the 100-500ms range first and only increase if it doesn't help. The ramp is updated about every 2ms and the PWM duty has 255 levels, so the full resolution is only reached from about 500ms: a 100ms ramp is about 50 steps (roughly 2% each), a 10ms ramp only about 5 coarse steps. This is a rough estimate, not a guarantee - the actual capacitance on your device and the protection circuit's exact trip behavior aren't known, so treat it as a starting point for experimentation.
    - **Order matters:** the ramp only happens at the moment the SV241 port switches on. If your device has its own power switch, make sure the device is already switched on *before* you enable the port - if you enable the port first and only switch the device on afterward, the inrush happens at that switch instead, and the ramp provides no benefit.
    - **Watch out for devices with their own power-on logic:** a slow ramp can also stop a device that never had an inrush problem from initializing correctly - for example, one cooled astro camera, connected alone on its port, was sometimes no longer detected with a ramp. The threshold isn't consistent, either: a value that worked in one test can fail in the next, so don't assume a value that worked once will always work. If a device that previously worked fine stops being recognized after you enable Soft-Start, try a different value (shorter or longer), or 0/off for that port.
+   - **Timing:** the ASCOM switch reads "On" as soon as the ramp starts, not when it has finished. In your client's sequence, wait at least the ramp time before connecting the device - see [Switch Reports "On" Before the Output Is Actually On](#switch-reports-on-before-the-output-is-actually-on).
+
+### Switch Reports "On" Before the Output Is Actually On
+
+**Symptoms:**
+- With a Soft-Start ramp configured, a client (e.g. NINA) sets the switch, sees it "On" right away and immediately connects the device behind it - which is then not recognized or doesn't start.
+- With a Delay Off configured, the switch keeps reading "On" for the whole delay. A client that waits for the new state reports a timeout (NINA only waits a few seconds), even though the box does switch off later.
+
+**Cause:**
+The ASCOM call returns as soon as the box has *accepted* the command, not when the output has reached its final state.
+- **Soft-Start:** the ramp runs in the background (up to 2s). The switch reads "On" from the first moment, while the output voltage is still rising.
+- **Delay On/Off:** the delay is counted down by the box's own firmware, not by the proxy, so it completes even if the PC and the proxy are gone by then - e.g. a PC that is shutting down while its port is switched off after 900s. Until the delay has elapsed, the output and its switch keep their old state. A clock symbol on the switch in the Web UI's Power Control panel marks a pending delay and shows the remaining time as a tooltip.
+  - The countdown starts when the command is accepted. Sending the same command again restarts it, any other command for that output (and Master Power) cancels it, and it is lost if the box reboots meanwhile.
+  - Delays are capped at 86400s (24 hours).
+  - To cancel a pending switch-off, click the crossed-out clock next to the switch in the Web UI's Power Control panel, or set the switch back to On from your ASCOM client. If the output also has a Delay On configured, that On starts its own countdown as well - harmless, since the output is already on and nothing changes when it ends.
+
+**Solution:**
+- **Soft-Start:** add a wait of at least the ramp duration between switching and connecting the device in your client's sequence.
+- **Delay Off:** if your client times out, enable *Report a pending delayed switch-off as "Off" (ASCOM)* under Proxy Settings > ASCOM/Alpaca Features. ASCOM clients are then told "Off" right away. The output itself stays powered until the delay has elapsed (the Web UI keeps showing the real state), so don't unplug anything before then. This is off by default.
+- **Delay On:** the switch deliberately keeps reading "Off" until the output is really on - reporting "On" early would let the client connect a device that has no power yet. A client with a short timeout may report an error for a long Delay On; use a shorter delay, or a wait in your sequence.
+- Master Power and boot startup ramp their outputs one after the other, so the total time is the sum of the ramps plus the Power-On Stagger Delays.
 
 ### DC3 Briefly Switches On When the Box Powers Up
 

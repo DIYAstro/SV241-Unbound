@@ -43,7 +43,7 @@ The top panel displays real-time sensor readings from the SV241 device:
 This panel provides quick access to power output control:
 
 *   **Master Power Toggle:** Controls all power outputs simultaneously (if enabled in Proxy settings).
-*   **Individual Switches:** Toggle each power output independently. Switches marked as "Disabled" in the firmware configuration are automatically hidden.
+*   **Individual Switches:** Toggle each power output independently. Switches marked as "Disabled" in the firmware configuration are automatically hidden. A clock symbol next to a switch means a delayed switch-on/off (Delay On/Off, Switches tab) is still counting down - hover it for the remaining time. The toggle itself keeps showing the actual state until the delay has elapsed (a switch with a pending switch-off stays on). Clicking the toggle in the meantime sends a new command, which replaces the pending one and restarts the countdown. A pending switch-off also shows a small crossed-out clock next to the clock - click it to cancel the switch-off, the output then simply stays on.
 
 ## Configuration Tabs
 
@@ -54,7 +54,8 @@ Configure power switch behavior:
 *   **State (Startup):** Set each switch to On, Off, or Disabled at device boot.
 *   **Custom Name:** Assign user-friendly names that appear in ASCOM clients.
 *   **Voltage:** Set the adjustable converter output voltage (0-15V).
-*   **Soft-Start (ms):** *Experimental.* Gradually ramps a DC1-5 or Adjustable Port output from 0% to full power via PWM over the configured time (0-2000ms) instead of switching instantly, to ease inrush current for loads with large input capacitors (e.g. some mounts). 0 = instant (the default, unchanged behavior). Applies to manual switching, Master Power On, and boot startup alike. Not available for the USB outputs. Verified on one SV241 unit only so far - the exact switching hardware isn't confirmed across all units/revisions, so behavior could differ on yours; test with a multimeter before relying on it with real equipment.
+*   **Soft-Start (ms):** *Experimental.* Gradually ramps a DC1-5 or Adjustable Port output from 0% to full power via PWM over the configured time (0-2000ms) instead of switching instantly, to ease inrush current for loads with large input capacitors (e.g. some mounts). 0 = instant (the default, unchanged behavior). Applies to manual switching, Master Power On, and boot startup alike. Not available for the USB outputs. The ASCOM switch reads On as soon as the ramp starts, so in a client sequence wait at least the ramp time before connecting the device (see [Troubleshooting](TROUBLESHOOTING.md#switch-reports-on-before-the-output-is-actually-on)). Verified on one SV241 unit only so far - the exact switching hardware isn't confirmed across all units/revisions, so behavior could differ on yours; test with a multimeter before relying on it with real equipment.
+*   **Delay On / Delay Off (s):** Waits this many seconds (0-86400, 0 = immediate) after an on/off command before actually switching - e.g. to let a PC finish shutting down before its power is cut. The countdown runs in the firmware, so it completes even if the proxy or PC is gone by then. Does not apply to Master Power. While it counts down, the switch keeps its old state and shows a clock symbol in the Power Control panel (see below); see [Troubleshooting](TROUBLESHOOTING.md#switch-reports-on-before-the-output-is-actually-on) for what that means for ASCOM clients.
 
 > [!NOTE]
 > **Names Follow the Box, Not the Computer:** Custom switch names (along with the Lens Temp label, dew heater auto-enable-leader preference, and weather source priorities) are stored per physical SV241 box, identified by its factory-set serial number - not per proxy installation. Plug a different box into the same computer and it gets its own clean set of names instead of inheriting the previous box's; plug a box you've configured before back in (even on a different computer, via a restored backup) and its names come right back. Give a box a friendly label under **System Tab > Connected Box** ("Rig Name") - it then appears in the header badge and lets you tell boxes apart at a glance instead of by raw serial number.
@@ -158,6 +159,7 @@ Configure the proxy application itself:
 *   **ASCOM Features:**
     - *Voltage Slider:* Enable/disable analog control for the adjustable output (0-15V).
     - *Master Power:* Expose a virtual switch to control all outputs at once.
+    - *Report a pending delayed switch-off as "Off":* While a Delay Off counts down, tell ASCOM clients the switch is already Off so they don't time out waiting for it. The output stays powered until the delay has elapsed, and the Web UI keeps showing the real state. Off by default; see [Troubleshooting](TROUBLESHOOTING.md#switch-reports-on-before-the-output-is-actually-on).
     - *Persistent Lens Temp:* Keep the Lens Temperature sensor exposed to ASCOM even in manual mode (handy for monitoring without PID).
 *   **Telemetry:** Configure history retention period.
 
