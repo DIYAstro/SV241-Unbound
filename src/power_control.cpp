@@ -69,11 +69,13 @@ static void clear_delayed_action_queue();
 static void clear_delayed_action_for(PowerOutput output);
 
 void claim_dc_output_pins() {
-  // DC3's pin (GPIO14) is one of the ESP32 pins that drives a HIGH/PWM signal on its own during
-  // boot, before any firmware runs - observed on real hardware as DC3 lighting up at power-on,
-  // regardless of its configured startup state, until firmware first takes the pin over. Nothing
-  // in firmware can cover the ROM-boot window before setup(), so main.cpp calls this as the very
-  // first thing in setup() to at least keep the window as short as possible.
+  // DC3 (GPIO14) has been seen lighting up for a fraction of a second at power-on, before any
+  // firmware runs and regardless of its configured startup state - also with the original SVBONY
+  // firmware, on three boxes. The cause isn't known: the ESP32 datasheet lists GPIO14 as a plain
+  // input at reset, so it may be the circuit behind the pin rather than the chip itself (only a
+  // scope on GPIO14 would tell). Nothing in firmware can cover the ROM-boot window before
+  // setup(), so main.cpp calls this as the very first thing in setup() to at least keep the window
+  // as short as possible.
   for (int i = POWER_DC1; i <= POWER_DC5; i++) {
     ledcAttach(power_output_pins[i], DC_SOFT_START_PWM_FREQUENCY, DC_SOFT_START_PWM_RESOLUTION);
     ledcWrite(power_output_pins[i], 0);
