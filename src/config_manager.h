@@ -5,7 +5,7 @@
 #include "ArduinoJson.h"
 #include "power_control.h" // for POWER_OUTPUT_COUNT (SwitchTimingConfig array sizing below)
 
-#define FIRMWARE_VERSION "0.9.91"
+#define FIRMWARE_VERSION "0.9.91-daily.79e91db"
 
 // Maximum number of supported dew heaters
 // Maximum number of supported dew heaters
