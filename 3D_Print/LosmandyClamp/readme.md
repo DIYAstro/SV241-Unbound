@@ -10,6 +10,7 @@ This folder contains 3D printable mounting parts for attaching the SV241 control
 | `losmandy_clamp_a.FCStd` | FreeCAD source file for losmandy_clamp_a |
 | `losmandy_clamp_b.3mf` | Second clamp part (ready-to-print) |
 | `losmandy_clamp_b.FCStd` | FreeCAD source file for losmandy_clamp_b |
+| `losmandy_clamp.sc` | SolidCraft source file with both parts (A and B) as separate bodies, side by side as for printing |
 
 ## Required Hardware
 
@@ -27,3 +28,5 @@ Both parts (A and B) are needed for a complete clamp assembly.
 ## Editing
 
 The `.FCStd` files can be opened and modified in [FreeCAD](https://www.freecad.org/) (free and open-source).
+
+The `.sc` file can be opened and modified in SolidCraft. It holds both parts as the bodies `Klemme_A` and `Klemme_B`, fully parametric: the parameters of part A start with `A_` (for example `A_Laenge`), those of part B with `B_` (for example `B_Hoehe`). Part B is placed `B_Abstand` (10 mm) next to part A. The `.sc` file was rebuilt from the FreeCAD files and matches their volumes to within 0.3 mm³; the `.3mf` files were not regenerated from it.
