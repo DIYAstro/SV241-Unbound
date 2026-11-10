@@ -33,3 +33,11 @@ On first startup, the proxy will display a **First-Run Wizard** that guides you 
 4.  You should see "SV241 Power Switch" and "SV241 Environment" listed under the Alpaca section. Select them.
 
 You can now control the power outputs and read sensor data directly from your main software!
+
+## 4. Unattended or Remote Rigs (Recommended)
+
+Out of the box, every output is **Off** after the SV241 boots, and the current limit is disabled. That is the safe default, but a rig nobody can walk up to needs a little preparation:
+
+1.  **Set the startup states** (Switches tab) for whatever has to come back on its own after a power cut, e.g. the mount and the camera. A power cut, brownout or watchdog reset keeps your saved settings, so the outputs return to these states by themselves.
+2.  **Consider the current limit** (Dew Heaters tab, *Power Protection*). It throttles the dew heaters when the total input current nears the limit, so they don't trip the box's own overcurrent protection. It does not protect against power loss in general.
+3.  **Save a backup of your settings** (System tab, *Backup & Restore*, or a profile on the Profiles tab). A **Factory Reset** puts everything back to the defaults, all outputs Off, and a saved backup or profile brings your configuration back in one step.
