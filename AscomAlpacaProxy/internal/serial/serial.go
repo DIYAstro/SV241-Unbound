@@ -239,7 +239,7 @@ func ProcessCommands() {
 					break
 				}
 			}
-			response, readErr = readLine(sv241Port, cmd.Timeout)
+			response, readErr = readResponseLine(sv241Port, cmd.Timeout)
 			if readErr == nil {
 				break
 			}
@@ -311,6 +311,19 @@ func drainInputBuffer(port Port) {
 
 // readLine reads from the port until a newline is encountered or timeout.
 // Uses chunk-based reading (256 bytes) instead of byte-by-byte to minimize syscall overhead.
+//
+// Known limitation, deliberately not fixed: whatever follows the first newline within the same
+// chunk is dropped, because the read buffer is local to the call. If an unsolicited log line (see
+// isUnsolicitedLine) and the command's reply arrive in a single read, the reply is lost - either
+// entirely (read timeout, then the retry in ProcessCommands resends the command) or, if only its
+// beginning was in that chunk, as a truncated line that is returned as the reply. Neither sticks:
+// the input buffer is drained before every command and the polls refresh the status/sensor cache
+// a few seconds later. The firmware itself is never affected, only what the proxy learns about
+// the command. Keeping the remainder between calls would fix it, but it would have to be discarded
+// in exactly the right places (drainInputBuffer, reconnect, the port probing in this file and the
+// Linux CH340 path), or a stale reply would be read as the answer to the next command - a worse
+// failure than the one it cures, on a path every command takes. It needs a log line landing right
+// in front of a reply, and those only occur with I2C trouble or during auto-dry cycles.
 func readLine(port Port, timeout time.Duration) (string, error) {
 	port.SetReadTimeout(timeout)
 	var result []byte
@@ -334,6 +347,45 @@ func readLine(port Port, timeout time.Duration) (string, error) {
 				result = append(result, buf[i])
 			}
 		}
+	}
+}
+
+// isUnsolicitedLine reports whether a line is an asynchronous firmware log message rather than a
+// reply to the command just sent. The firmware writes these on its own: sensor warnings, the I2C
+// recovery notice and the end of an SHT40 drying cycle. One can arrive between a command and its
+// reply; taken for the reply, the real reply would be drained before the next command (a switch
+// command would then succeed without updating the status cache, a poll would deliver no values).
+//
+// Only lines that are never a command's reply are listed. {"info":...} is NOT skipped in general:
+// reboot, factory_reset and dry_sensor reply with an {"info":...} line, and skipping those would
+// turn the reply into a read timeout - and the retry would then resend the command (a second
+// reboot, factory reset or drying cycle). That is also why the automatic drying cycle announces
+// itself with a text of its own (see dry_sht40_sensor() in the firmware).
+func isUnsolicitedLine(line string) bool {
+	t := strings.TrimSpace(line)
+	return strings.HasPrefix(t, `{"warn"`) ||
+		t == `{"info":"SHT40 drying cycle complete"}` ||
+		t == `{"info":"SHT40 auto-drying cycle started"}`
+}
+
+// readResponseLine reads lines until it gets one that isn't an unsolicited log message, all within
+// the one overall timeout.
+func readResponseLine(port Port, timeout time.Duration) (string, error) {
+	deadline := time.Now().Add(timeout)
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return "", errors.New("read timeout")
+		}
+		line, err := readLine(port, remaining)
+		if err != nil {
+			return "", err
+		}
+		if isUnsolicitedLine(line) {
+			logger.Info("Firmware log: %s", strings.TrimSpace(line))
+			continue
+		}
+		return line, nil
 	}
 }
 

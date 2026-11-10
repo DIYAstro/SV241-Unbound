@@ -6,7 +6,120 @@ import (
 	"strings"
 	"sv241pro-alpaca-proxy/internal/config"
 	"testing"
+	"time"
 )
+
+// scriptedPort is a Port whose Read hands out one scripted chunk per call, so a test controls
+// exactly how the bytes are split across reads (readLine drops what follows the first newline of a
+// chunk). Once the script is used up it behaves like a real port with nothing to read: it waits
+// out the read timeout and returns (0, nil).
+type scriptedPort struct {
+	chunks  []string
+	timeout time.Duration
+}
+
+func (p *scriptedPort) Read(b []byte) (int, error) {
+	if len(p.chunks) == 0 {
+		time.Sleep(p.timeout)
+		return 0, nil
+	}
+	n := copy(b, p.chunks[0])
+	p.chunks = p.chunks[1:]
+	return n, nil
+}
+
+func (p *scriptedPort) Write(b []byte) (int, error) { return len(b), nil }
+func (p *scriptedPort) Close() error                { return nil }
+func (p *scriptedPort) SetDTR(bool) error           { return nil }
+func (p *scriptedPort) SetRTS(bool) error           { return nil }
+func (p *scriptedPort) SetReadTimeout(d time.Duration) error {
+	p.timeout = d
+	return nil
+}
+
+// The firmware's own log lines are skipped, but anything that can be a command's reply - the
+// {"info":...} acks of reboot/factory_reset/dry_sensor and every real error reply - must not be:
+// skipping those would turn the reply into a timeout and resend the command.
+func TestIsUnsolicitedLine(t *testing.T) {
+	cases := []struct {
+		line string
+		want bool
+	}{
+		{`{"warn":"INA219 read failed"}`, true},
+		{`{"warn":"Attempting I2C bus recovery after repeated sensor read failures"}` + "\r", true},
+		{`  {"warn":"SHT40 sensor not found"}  `, true},
+		{`{"info":"SHT40 drying cycle complete"}`, true},
+		{`{"info":"SHT40 auto-drying cycle started"}`, true},
+
+		{`{"info":"rebooting"}`, false},
+		{`{"info":"performing factory reset"}`, false},
+		{`{"info":"starting SHT40 drying cycle"}`, false},
+		{`{"error":"Cannot enable disabled output: DC3"}`, false},
+		{`{"error":"Invalid port or minutes (1-1440) for delay_set"}`, false},
+		{`{"error":"unknown command in valid JSON"}`, false},
+		{`{"error":"invalid command"}`, false},
+		{`{"status":{"d1":1,"d2":0}}`, false},
+		{`{"v":12.1,"i":340}`, false},
+		{``, false},
+	}
+	for _, c := range cases {
+		if got := isUnsolicitedLine(c.line); got != c.want {
+			t.Errorf("isUnsolicitedLine(%q) = %v, want %v", c.line, got, c.want)
+		}
+	}
+}
+
+// A log line that arrives between the command and its reply must be skipped, and the reply read
+// right after it (here as separate chunks - see readLine's doc comment for the limitation when
+// both land in one).
+func TestReadResponseLine_SkipsUnsolicitedLines(t *testing.T) {
+	p := &scriptedPort{chunks: []string{
+		`{"warn":"INA219 read failed"}` + "\r\n",
+		`{"info":"SHT40 drying cycle complete"}` + "\r\n",
+		`{"status":{"d1":1}}` + "\r\n",
+	}}
+	var got string
+	var err error
+	captureLog(func() { got, err = readResponseLine(p, time.Second) })
+	if err != nil {
+		t.Fatalf("readResponseLine returned an error: %v", err)
+	}
+	if strings.TrimSpace(got) != `{"status":{"d1":1}}` {
+		t.Errorf("got %q, want the status reply", got)
+	}
+}
+
+// The ack of reboot/factory_reset/dry_sensor is the reply itself and has to come through.
+func TestReadResponseLine_KeepsInfoAck(t *testing.T) {
+	p := &scriptedPort{chunks: []string{`{"info":"starting SHT40 drying cycle"}` + "\n"}}
+	var got string
+	var err error
+	captureLog(func() { got, err = readResponseLine(p, time.Second) })
+	if err != nil {
+		t.Fatalf("readResponseLine returned an error: %v", err)
+	}
+	if strings.TrimSpace(got) != `{"info":"starting SHT40 drying cycle"}` {
+		t.Errorf("got %q, want the ack", got)
+	}
+}
+
+// Skipped lines share the one overall timeout - a stream of log lines without a reply must not
+// stretch the wait.
+func TestReadResponseLine_OnlyLogLinesTimesOut(t *testing.T) {
+	p := &scriptedPort{chunks: []string{
+		`{"warn":"INA219 read failed"}` + "\n",
+		`{"warn":"INA219 read failed"}` + "\n",
+	}}
+	start := time.Now()
+	var err error
+	captureLog(func() { _, err = readResponseLine(p, 150*time.Millisecond) })
+	if err == nil || !strings.Contains(err.Error(), "timeout") {
+		t.Fatalf("expected a read timeout, got %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("took %v, expected about the 150ms overall timeout", elapsed)
+	}
+}
 
 // withSafetyConditions sets config.Get().SafetyMonitorConditions for the duration of a test and
 // restores the previous value afterward, so these tests don't leak config state into others.

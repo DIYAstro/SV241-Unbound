@@ -26,6 +26,9 @@ The controller communicates over serial at **115200 baud**. Commands are sent as
 > [!IMPORTANT]
 > All JSON commands must be sent as a single, continuous line of text without any line breaks, followed by a single newline character (`\n`) to execute the command.
 
+> [!NOTE]
+> **Unsolicited lines:** besides replies, the firmware writes a few log lines of its own at any time, so a client can read one between sending a command and getting its reply. They are `{"warn":"..."}` (a sensor read failed, the I2C bus is being recovered, a sensor wasn't found) and the `{"info":"..."}` lines `SHT40 drying cycle complete` and `SHT40 auto-drying cycle started`. Skip these and keep reading for the actual reply. Other `{"info":"..."}` lines (`rebooting`, `performing factory reset`, `starting SHT40 drying cycle`) are the replies to `reboot`, `factory_reset` and `dry_sensor` and must not be skipped. The proxy does all of this itself.
+
 ## Get Sensor Data
 
 *   **Request:** `{"get": "sensors"}`
@@ -62,7 +65,7 @@ The controller communicates over serial at **115200 baud**. Commands are sent as
 *   **Reboot:** `{"command": "reboot"}`
 *   **Factory Reset:** `{"command": "factory_reset"}`
 *   **Manual Sensor Drying:** `{"command": "dry_sensor"}`
-    *   Triggers the SHT40 internal heater to remove condensation. This is a blocking operation.
+    *   Triggers the SHT40 internal heater to remove condensation. This is a blocking operation. Replies with `{"info":"starting SHT40 drying cycle"}`; the automatic drying cycle (see `ad`) announces itself with a different line, `{"info":"SHT40 auto-drying cycle started"}`.
 *   **Get Firmware Version:** `{"get": "version"}`
     *   **Response:** A JSON object containing the firmware version and the device's factory MAC address, used by the Proxy as a per-box serial number to keep switch names and related settings tied to this specific physical box (e.g., `{"version": "1.0.0", "mac": "AA:BB:CC:11:22:33"}`).
 
