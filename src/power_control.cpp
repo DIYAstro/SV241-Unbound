@@ -766,7 +766,11 @@ void service_power_stagger_queue() {
   bool should_enable = false;
 
   xSemaphoreTake(stagger_mutex, portMAX_DELAY);
-  if (stagger_queue_pos < stagger_queue_len && millis() >= stagger_due_at_ms) {
+  // Signed difference instead of `millis() >= stagger_due_at_ms`, same reasoning as
+  // service_delayed_action_queue(): stagger_due_at_ms is millis() + delay and wraps with it. The
+  // first entry of a queue is stamped with millis() itself (see handle_set_power_command()), so the
+  // difference is never huge by accident.
+  if (stagger_queue_pos < stagger_queue_len && (long)(millis() - stagger_due_at_ms) >= 0) {
     output_to_enable = stagger_queue[stagger_queue_pos++];
     should_enable = true;
   }

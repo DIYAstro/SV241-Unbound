@@ -44,7 +44,9 @@ void get_sensor_values(SensorValues& values_copy);
 // Prints all current values from the cache in JSON format.
 void get_sensor_values_json(JsonDocument& doc);
 
-// Triggers the SHT40 internal heater to dry the sensor.
-void dry_sht40_sensor();
+// Triggers the SHT40 internal heater to dry the sensor. `automatic` is true for the auto-dry
+// feature and false for the dry_sensor command: the command's reply is the "starting" line this
+// function prints, so the automatic cycle prints a different one (see the definition).
+void dry_sht40_sensor(bool automatic = false);
 
 #endif // SENSORS_H

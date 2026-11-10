@@ -52,6 +52,19 @@ static volatile bool is_sht40_drying = false;
 static unsigned long sht40_drying_start_time = 0;
 const unsigned long SHT40_DRYING_COOLDOWN_MS = 45000;
 
+// The proxy reads exactly one line per command, so a log line must never be written into the
+// middle of a command response (serial_command_task writes its replies under serial_mutex) -
+// take the same mutex, with a short timeout. If it's busy the line is dropped: these are
+// best-effort warnings, and corrupting a response is worse than losing one. All of them are
+// {"warn":...} lines, which the proxy skips instead of mistaking for a command's reply (see
+// isUnsolicitedLine() in the proxy's serial.go).
+static void log_line_locked(const char* line) {
+  if (serial_mutex != NULL && xSemaphoreTake(serial_mutex, (TickType_t)50) == pdTRUE) {
+    Serial.println(line);
+    xSemaphoreGive(serial_mutex);
+  }
+}
+
 // Sensor Objects
 Adafruit_INA219 ina219(INA219_ADDR);
 Adafruit_SHT4x sht40 = Adafruit_SHT4x();
@@ -171,7 +184,7 @@ static bool init_ina219() {
     Wire.write(INA219_CALIB_VALUE & 0xFF);
     Wire.endTransmission();
   } else {
-    Serial.println("{\"error\":\"INA219 sensor not found\"}");
+    log_line_locked("{\"warn\":\"INA219 sensor not found\"}");
   }
   return ok;
 }
@@ -184,7 +197,7 @@ static bool init_sht40() {
     sht40.setPrecision(SHT4X_HIGH_PRECISION);
     sht40.setHeater(SHT4X_NO_HEATER);
   } else {
-    Serial.println("{\"error\":\"SHT40 sensor not found\"}");
+    log_line_locked("{\"warn\":\"SHT40 sensor not found\"}");
   }
   return ok;
 }
@@ -220,7 +233,7 @@ static void attempt_i2c_bus_recovery() {
   if (now - last_i2c_recovery_attempt_ms < I2C_RECOVERY_COOLDOWN_MS) return;
   last_i2c_recovery_attempt_ms = now;
 
-  Serial.println("{\"warn\":\"Attempting I2C bus recovery after repeated sensor read failures\"}");
+  log_line_locked("{\"warn\":\"Attempting I2C bus recovery after repeated sensor read failures\"}");
 
   Wire.end();
   pinMode(I2C_SDA, INPUT_PULLUP);
@@ -272,7 +285,7 @@ void setup_sensors() {
   dallas_sensors.setWaitForConversion(dallas_sensors.isParasitePowerMode());
   is_ds18b20_available = (dallas_sensors.getDeviceCount() > 0);
   if (!is_ds18b20_available) {
-    Serial.println("{\"error\":\"DS18B20 sensor not found\"}");
+    log_line_locked("{\"warn\":\"DS18B20 sensor not found\"}");
   }
 }
 
@@ -293,7 +306,7 @@ void update_sensor_cache() {
 
     if (!probe_ina219()) {
       i2c_consecutive_failures++;
-      Serial.println("{\"warn\":\"INA219 read failed\"}");
+      log_line_locked("{\"warn\":\"INA219 read failed\"}");
       if (i2c_consecutive_failures >= I2C_FAILURE_THRESHOLD) {
         attempt_i2c_bus_recovery();
       }
@@ -350,7 +363,7 @@ void update_sensor_cache() {
                   high_humidity_start_time = current_millis;
               } else {
                   if (current_millis - high_humidity_start_time >= auto_dry_config.trigger_duration_ms) {
-                      dry_sht40_sensor();
+                      dry_sht40_sensor(true);
                       // high_humidity_start_time is deliberately NOT reset here: it stays at the
                       // original moment humidity first went high, so the very next reading after
                       // this cycle's 45s cooldown immediately re-triggers another cycle if
@@ -389,7 +402,7 @@ void update_sensor_cache() {
       // to recover short of a reboot). Same shared failure counter/recovery as INA219 above,
       // since both are on the same physical I2C bus.
       i2c_consecutive_failures++;
-      Serial.println("{\"warn\":\"SHT40 read failed\"}");
+      log_line_locked("{\"warn\":\"SHT40 read failed\"}");
       if (i2c_consecutive_failures >= I2C_FAILURE_THRESHOLD) {
         attempt_i2c_bus_recovery();
       }
@@ -435,14 +448,19 @@ void update_sensor_cache() {
 
 
 
-void dry_sht40_sensor() {
+void dry_sht40_sensor(bool automatic) {
     // 1. Set flag to pause normal SHT40 updates
     is_sht40_drying = true;
     sht40_drying_start_time = millis();
 
-    // Optional: Log to serial that the process has started.
+    // Log to serial that the process has started. For the dry_sensor command this line IS the
+    // reply the proxy is waiting for. The automatic cycle fires at an arbitrary moment (and, with
+    // the humidity staying high, about every 46s), so it must not use the same text: the proxy
+    // would take it for the reply to whatever command happens to be in flight, and it can't skip
+    // it by text without also skipping the real reply to dry_sensor.
     if(xSemaphoreTake(serial_mutex, (TickType_t)10) == pdTRUE) {
-        Serial.println("{\"info\":\"starting SHT40 drying cycle\"}");
+        Serial.println(automatic ? "{\"info\":\"SHT40 auto-drying cycle started\"}"
+                                 : "{\"info\":\"starting SHT40 drying cycle\"}");
         xSemaphoreGive(serial_mutex);
     }
 
