@@ -383,7 +383,9 @@ void dew_control_task(void *pvParameters) {
             // Before running automatic modes, ensure the required sensor data is valid.
             bool sensor_data_valid = true;
             if (heater_config.mode == 1 || heater_config.mode == 4) { // PID Mode & Min Temp Mode
-                if (isnan(dew_point) || isnan(sensor_values.ds18b20_temperature)) {
+                // lens_temperature[i] is the probe assigned to this heater, NaN if none is
+                // assigned or it is missing - the heater then stays off.
+                if (isnan(dew_point) || isnan(sensor_values.lens_temperature[i])) {
                     sensor_data_valid = false;
                 }
             } else if (heater_config.mode == 2) { // Ambient Tracking Mode
@@ -418,7 +420,7 @@ void dew_control_task(void *pvParameters) {
                 }
 
                 case 1: { // PID Mode
-                    float lens_temp = sensor_values.ds18b20_temperature;
+                    float lens_temp = sensor_values.lens_temperature[i];
                     pid_input[i] = lens_temp;
                     pid_setpoint[i] = dew_point + heater_config.target_offset;
 
@@ -442,7 +444,7 @@ void dew_control_task(void *pvParameters) {
                 }
 
                 case 4: { // Minimum Temperature Mode
-                    float lens_temp = sensor_values.ds18b20_temperature;
+                    float lens_temp = sensor_values.lens_temperature[i];
                     pid_input[i] = lens_temp;
 
                     // The setpoint is the HIGHER of the minimum temp or the dew point target

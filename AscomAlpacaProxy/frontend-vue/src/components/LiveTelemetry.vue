@@ -2,10 +2,12 @@
 import { computed } from 'vue'
 import { useDeviceStore } from '../stores/device'
 import { storeToRefs } from 'pinia'
+import { useLensProbeWarnings, LENS_PROBE_WARNING_SUFFIX } from '../composables/useLensProbeWarnings'
 import { useSafetyConditionStatuses, metricInfo, operatorLabel, formatValue } from '../composables/useSafetyMonitor'
 
 const store = useDeviceStore()
-const { liveStatus, proxyConfig, isConnected } = storeToRefs(store)
+const { liveStatus, proxyConfig, isConnected, config } = storeToRefs(store)
+const lensWarnings = useLensProbeWarnings(config, liveStatus, isConnected)
 
 // The Safety Monitor's at-a-glance status lives here (always-visible dashboard) rather than
 // buried in the collapsed Configuration panel - see SafetyConfig.vue for the editor side of this
@@ -61,6 +63,15 @@ const emit = defineEmits(['open-explorer'])
         </ul>
     </div>
 
+    <!-- A heater in PID / Min-Temp mode without a working lens probe stays off (firmware safety
+         check) - must not go unnoticed. Shown whenever the config says so, see
+         useLensProbeWarnings. -->
+    <div v-if="lensWarnings.some(w => w)" class="lens-warning">
+        <div v-for="(w, idx) in lensWarnings" :key="idx">
+            <template v-if="w">&#9888; Dew heater {{ idx + 1 }}: {{ w }}. {{ LENS_PROBE_WARNING_SUFFIX }}.</template>
+        </div>
+    </div>
+
     <div class="telemetry-grid">
         <!-- Voltage -->
         <div class="telemetry-item">
@@ -114,7 +125,15 @@ const emit = defineEmits(['open-explorer'])
         <div class="telemetry-item">
         <span class="label">Lens Temp</span>
         <span class="value" id="status-t_lens">
-            {{ isConnected ? (liveStatus.t_lens || 0).toFixed(1) : '--' }} <small>°C</small>
+            {{ isConnected && liveStatus.t_lens != null ? liveStatus.t_lens.toFixed(1) : '--' }} <small>°C</small>
+        </span>
+        </div>
+
+        <!-- Lens Temp 2 (probe assigned to dew heater 2) -->
+        <div class="telemetry-item">
+        <span class="label">Lens Temp 2</span>
+        <span class="value" id="status-t_lens2">
+            {{ isConnected && liveStatus.t_lens2 != null ? liveStatus.t_lens2.toFixed(1) : '--' }} <small>°C</small>
         </span>
         </div>
 
@@ -163,6 +182,17 @@ const emit = defineEmits(['open-explorer'])
     font-size: 1.2rem;
 }
 .icon-btn:hover { background: rgba(255,255,255,0.1); }
+
+.lens-warning {
+  margin: 0 1rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--danger-color, #e04040);
+  border-radius: 8px;
+  background: rgba(224, 64, 64, 0.12);
+  color: var(--danger-color, #e04040);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
 
 .telemetry-grid {
   display: grid;

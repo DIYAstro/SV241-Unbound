@@ -12,7 +12,7 @@ struct SensorValues {
   float sht_temperature;
   float sht_humidity;
   float sht_dew_point;
-  float ds18b20_temperature;
+  float lens_temperature[2]; // per dew heater (MAX_DEW_HEATERS), with the probe offset applied
 
   // Memory statistics
   uint32_t heap_free;
@@ -43,6 +43,17 @@ void get_sensor_values(SensorValues& values_copy);
 
 // Prints all current values from the cache in JSON format.
 void get_sensor_values_json(JsonDocument& doc);
+
+// Maximum number of DS18B20 probes remembered from a bus scan.
+#define MAX_FOUND_PROBES 4
+
+// Re-enumerates the 1-Wire bus (also called at startup) and resets the lens filters.
+void scan_lens_probes();
+// scan_lens_probes() followed by one measurement cycle (used by the "rescan_probes" command).
+void rescan_lens_probes();
+// {"probes":[{"id":"28FF...","t":12.4,"h":0},...]} from the cached list, no bus access.
+// "t" is the raw reading (null if unreadable), "h" the assigned heater or -1.
+void get_lens_probes_json(JsonDocument& doc);
 
 // Triggers the SHT40 internal heater to dry the sensor. `automatic` is true for the auto-dry
 // feature and false for the dry_sensor command: the command's reply is the "starting" line this

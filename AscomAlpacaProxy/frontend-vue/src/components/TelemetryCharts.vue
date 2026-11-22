@@ -61,6 +61,13 @@ const chartData = computed(() => {
                 yAxisID: 'y'
             },
             {
+                label: 'Lens Temp 2 (°C)',
+                borderColor: '#ff9f40', // Orange
+                backgroundColor: '#ff9f40',
+                data: telemetryHistory.value.map(d => d.t_lens2),
+                yAxisID: 'y'
+            },
+            {
                 label: 'Dew Point (°C)',
                 borderColor: '#36a2eb', // Blue
                 backgroundColor: '#36a2eb',

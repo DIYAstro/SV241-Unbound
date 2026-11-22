@@ -1,6 +1,7 @@
 #include "config_manager.h"
 #include "sensors.h"
 #include <LittleFS.h>
+#include <OneWire.h> // OneWire::crc8 for validating lens probe ROM ids
 
 // Forward declarations
 void populateDefaultConfig();
@@ -41,6 +42,46 @@ void populateDefaultConfig() {
     for (int i = 0; i < MAX_DEW_HEATERS; i++) {
         createDefaultDewHeaterConfig(i);
     }
+
+    // No lens probe is assigned by default - there is deliberately no auto-assignment. Heaters in
+    // PID / Min-Temp mode stay off until the user assigns a probe.
+    for (int i = 0; i < MAX_LENS_PROBES; i++) {
+        memset(config.lens_probes[i].rom, 0, sizeof(config.lens_probes[i].rom));
+        config.lens_probes[i].offset = 0.0f;
+        config.lens_probes[i].heater = -1;
+    }
+}
+
+bool lensProbeIsEmpty(const LensProbeConfig& p) {
+    for (int i = 0; i < 8; i++) {
+        if (p.rom[i] != 0) return false;
+    }
+    return true;
+}
+
+void romToHex(const uint8_t* rom, char* out) {
+    static const char* hex = "0123456789ABCDEF";
+    for (int i = 0; i < 8; i++) {
+        out[i * 2] = hex[rom[i] >> 4];
+        out[i * 2 + 1] = hex[rom[i] & 0x0F];
+    }
+    out[16] = '\0';
+}
+
+// Parses a 16-char hex ROM id and checks its CRC. Returns false on any problem.
+static bool parseRomHex(const char* s, uint8_t* rom) {
+    if (s == nullptr || strlen(s) != 16) return false;
+    for (int i = 0; i < 16; i++) {
+        char c = s[i];
+        uint8_t v;
+        if (c >= '0' && c <= '9') v = c - '0';
+        else if (c >= 'a' && c <= 'f') v = c - 'a' + 10;
+        else if (c >= 'A' && c <= 'F') v = c - 'A' + 10;
+        else return false;
+        if (i % 2 == 0) rom[i / 2] = v << 4;
+        else rom[i / 2] |= v;
+    }
+    return OneWire::crc8(rom, 7) == rom[7];
 }
 
 // Initializes the configuration from the filesystem.
@@ -94,8 +135,14 @@ bool loadConfig() {
     // at this one.
     xSemaphoreTake(config_mutex, portMAX_DELAY);
     populateDefaultConfig();
-    updateConfig(doc.as<JsonObject>());
+    String lp_error;
+    bool lp_ok = updateConfig(doc.as<JsonObject>(), &lp_error);
     xSemaphoreGive(config_mutex);
+    if (!lp_ok) {
+        // A broken lens probe table is discarded (updateConfig leaves the empty default in place).
+        // Serial may be busy/not yet used, but this is a one-line best-effort warning at boot.
+        Serial.println("{\"warn\":\"saved lens probe assignment invalid, discarded\"}");
+    }
 
     return true;
 }
@@ -224,6 +271,18 @@ void serializeConfig(JsonDocument& doc) {
         heater_obj["mt"] = config.dew_heaters[i].min_temp;
         heater_obj["xd"] = config.dew_heaters[i].max_duty_percent;
     }
+
+    // "lp": lens probe assignments, non-empty slots only.
+    JsonArray lp_arr = doc["lp"].to<JsonArray>();
+    for (int i = 0; i < MAX_LENS_PROBES; i++) {
+        if (lensProbeIsEmpty(config.lens_probes[i])) continue;
+        char id[17];
+        romToHex(config.lens_probes[i].rom, id);
+        JsonObject o = lp_arr.add<JsonObject>();
+        o["id"] = String(id);
+        o["o"] = config.lens_probes[i].offset;
+        o["h"] = (int)config.lens_probes[i].heater;
+    }
 }
 
 // Clamps a configured switch delay (seconds) to 0..MAX_SWITCH_DELAY_S. NaN and negatives give 0.
@@ -234,7 +293,71 @@ static unsigned long clamp_delay_s(JsonVariantConst v) {
     return (unsigned long)d;
 }
 
-void updateConfig(const JsonObject& doc) {
+// Parses and validates a complete lens probe table from the "lp" array. The checks run on the
+// resulting table (not per update) so they also hold for a full-config backup restore.
+static bool parseLensProbeTable(JsonArrayConst arr, LensProbeConfig* out, String* error) {
+    // Zero everything first (padding included) so a table copied into `config` compares equal
+    // byte for byte with an unchanged one - main.cpp's "nothing changed, skip the flash write" check.
+    memset(out, 0, sizeof(LensProbeConfig) * MAX_LENS_PROBES);
+    for (int i = 0; i < MAX_LENS_PROBES; i++) {
+        out[i].heater = -1;
+    }
+    if (arr.size() > MAX_LENS_PROBES) {
+        if (error) *error = "too many probes";
+        return false;
+    }
+    int n = 0;
+    for (JsonObjectConst e : arr) {
+        const char* id = e["id"] | (const char*)nullptr;
+        if (!parseRomHex(id, out[n].rom)) {
+            if (error) *error = "invalid probe id";
+            return false;
+        }
+        float off = e["o"] | 0.0f;
+        if (isnan(off) || off < -50.0f || off > 50.0f) {
+            if (error) *error = "offset out of range";
+            return false;
+        }
+        out[n].offset = off;
+        int h = e["h"] | -1;
+        if (h < -1 || h >= MAX_DEW_HEATERS) {
+            if (error) *error = "invalid heater";
+            return false;
+        }
+        out[n].heater = (int8_t)h;
+        n++;
+    }
+    for (int a = 0; a < n; a++) {
+        for (int b = a + 1; b < n; b++) {
+            if (memcmp(out[a].rom, out[b].rom, 8) == 0) {
+                if (error) *error = "duplicate probe id";
+                return false;
+            }
+            if (out[a].heater >= 0 && out[a].heater == out[b].heater) {
+                if (error) *error = "heater assigned to more than one probe";
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool updateConfig(const JsonObject& doc, String* error) {
+    bool ok = true;
+
+    if (!doc["lp"].isNull()) {
+        LensProbeConfig table[MAX_LENS_PROBES];
+        JsonArrayConst lp_arr = doc["lp"].as<JsonArrayConst>();
+        if (lp_arr.isNull()) {
+            if (error) *error = "lp must be an array";
+            ok = false;
+        } else if (parseLensProbeTable(lp_arr, table, error)) {
+            memcpy(config.lens_probes, table, sizeof(table));
+        } else {
+            ok = false;
+        }
+    }
+
     if (!doc["so"].isNull()) {
         JsonObjectConst sensor_offsets = doc["so"];
         config.sensor_offsets.sht40_temp = sensor_offsets["st"] | config.sensor_offsets.sht40_temp;
@@ -363,4 +486,5 @@ void updateConfig(const JsonObject& doc) {
             }
         }
     }
+    return ok;
 }

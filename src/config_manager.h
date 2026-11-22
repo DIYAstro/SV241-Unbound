@@ -17,9 +17,20 @@
 struct SensorOffsets {
     float sht40_temp;
     float sht40_humidity;
+    // Legacy: kept in the struct and on the wire ("so"."dt") so old backups still load, but the
+    // firmware no longer applies it. The lens probe offset now lives in LensProbeConfig::offset.
     float ds18b20_temp;
     float ina219_voltage;
     float ina219_current;
+};
+
+// DS18B20 lens probes on the shared 1-Wire bus. Each probe (identified by its ROM id) is assigned
+// to at most one dew heater, and each heater has at most one probe. No automatic assignment.
+#define MAX_LENS_PROBES 2
+struct LensProbeConfig {
+    uint8_t rom[8];   // all zero bytes = empty slot
+    float offset;     // calibration offset in deg C, belongs to the probe
+    int8_t heater;    // -1 = none, 0 = heater 1, 1 = heater 2
 };
 
 struct PowerStartupStates {
@@ -110,6 +121,7 @@ struct Config {
     float adj_conv_preset_v;
     Sht40AutoDryConfig sht40_auto_dry;
     DewHeaterConfig dew_heaters[MAX_DEW_HEATERS];
+    LensProbeConfig lens_probes[MAX_LENS_PROBES];
     unsigned long poweron_stagger_delay_ms; // Delay between staggered output enables during "all"
                                              // master power on and at boot. 0 = disabled (instant).
 
@@ -149,7 +161,16 @@ void serializeConfig(JsonDocument& doc);
 // loadConfig() at startup) hold it for the entire call; loadConfig()'s case runs before any
 // FreeRTOS task that could contend for it even exists, so the lock there is a consistency/defense
 // -in-depth measure, not a fix for a reachable race.
-void updateConfig(const JsonObject& doc);
+//
+// Returns false if the lens probe table ("lp") in `doc` was invalid (bad/duplicate id, bad heater,
+// heater used twice). In that case the lens probe table is left untouched (all other fields in
+// `doc` are still applied - callers that need all-or-nothing restore a copy of config), and `error`
+// (if given) receives a short reason.
+bool updateConfig(const JsonObject& doc, String* error = nullptr);
+// Formats a ROM id as 16 upper-case hex chars. `out` must hold 17 bytes.
+void romToHex(const uint8_t* rom, char* out);
+// True if the slot is empty (all-zero ROM).
+bool lensProbeIsEmpty(const LensProbeConfig& p);
 
 
 #endif // CONFIG_MANAGER_H

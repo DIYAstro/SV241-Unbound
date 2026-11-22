@@ -35,7 +35,7 @@ The controller communicates over serial at **115200 baud**. Commands are sent as
 *   **Response:** A JSON object with the latest sensor readings.
     *   `v`: Input Voltage (V), `i`: Input Current (mA), `p`: Input Power (W)
     *   `t_amb`: Ambient Temp (°C), `h_amb`: Ambient Humidity (%), `d`: Dew Point (°C)
-    *   `t_lens`: Lens Temp (°C), `pwm1`/`pwm2`: Heater Power (%)
+    *   `t_lens`: Lens Temp (°C) of the probe assigned to dew heater 1, `t_lens2`: same for dew heater 2 (both `null` without an assigned, readable probe - see `lp` and `get: probes` below), `pwm1`/`pwm2`: Heater Power (%)
     *   `hf`, `hmf`, `hma`, `hs`: Heap memory statistics (Bytes)
     *   `c0`, `c1`: How busy CPU core 0 / core 1 were over the last 10-second window, in 0.1 % units (`88` = 8.8 %). Only present after the first window has been sampled.
     *   `sk`: Smallest stack headroom ever seen across the firmware's tasks (Bytes). Only present after the first window.
@@ -44,6 +44,15 @@ The controller communicates over serial at **115200 baud**. Commands are sent as
 
 > [!TIP]
 > The proxy logs every sensors response at `DEBUG` log level and serves the raw values at `GET /api/v1/status`, so these diagnostics can be checked there without opening the serial port yourself.
+
+## Lens Probes (DS18B20)
+
+Up to two DS18B20 probes share the 1-Wire bus (GPIO 23). Every probe is identified by its unique ROM id and is assigned to at most one dew heater via `lp` (see below); each heater has at most one probe.
+
+*   **List probes:** `{"get": "probes"}`
+    *   **Response:** `{"probes":[{"id":"28FF3A0B12345678","t":12.4,"h":0}]}` - every probe found on the bus (from the bus scan at boot or the last `rescan_probes`; no bus access, so it answers immediately). `id` is the 16-digit ROM id, `t` the last raw reading in °C (no offset; `null` if it could not be read), `h` the assigned heater (`0` = heater 1, `1` = heater 2, `-1` = not assigned). Warming one probe and watching which `t` rises tells which is which.
+*   **Rescan the bus:** `{"command": "rescan_probes"}`
+    *   Searches the bus again (e.g. after plugging in a second probe), runs one measurement and replies like `get: probes`. May take about a second.
 
 ## Get Power Status
 
@@ -90,6 +99,7 @@ For numerical parameters without explicit ranges, typical values are expected. R
 | `cla` | **C**urrent **L**imit **A**mps: the threshold for `cle`. The ramp starts 1 A below this value and reaches 0% heater output exactly at it - a hard on/off at the threshold would cause the output to oscillate. Does not affect DC/USB outputs. | `float` |
 | `ad` | **A**uto **D**ry: Configures the automatic sensor drying feature. | `object` |
 | `dh` | **D**ew **H**eaters: Configures the two dew heaters. | `array` |
+| `lp` | **L**ens **P**robes: assigns DS18B20 probes (by ROM id) to dew heaters. | `array` |
 
 ---
 
@@ -98,7 +108,7 @@ For numerical parameters without explicit ranges, typical values are expected. R
 |:---|:--------------------------------|:-----------|
 | `st` | SHT40 Temperature offset (°C) | `float` |
 | `sh` | SHT40 Humidity offset (%) | `float` |
-| `dt` | DS18B20 Temperature offset (°C) | `float` |
+| `dt` | Legacy DS18B20 offset (°C). Still accepted and returned so old backups load, but **no longer applied** - the offset now belongs to the probe, see `lp`. | `float` |
 | `iv` | INA219 Voltage offset (V) | `float` |
 | `ic` | INA219 Current offset (mA) | `float` |
 
@@ -108,6 +118,19 @@ for all three sensors) - there was no legitimate reason to run them off these de
 getting either wrong silently delays every reading, including the dew heater PID loops and the
 current-limit heater throttling. Both keys are silently ignored if still present in an older
 saved config or backup.
+
+### `lp` (Lens Probes)
+`lp` is an array of up to two objects, e.g. `"lp":[{"id":"28FF3A0B12345678","o":0.0,"h":0}]`. When present in an `sc` it **replaces the whole table** (an empty array clears all assignments); only non-empty entries are returned by `get: config`.
+
+| Sub-Key | Description | Value Type |
+|:---|:------------------------------------------------|:---------|
+| `id` | ROM id as 16 hex digits (the last byte is the CRC and is checked) | `string` |
+| `o` | Calibration offset (°C), added to this probe's reading | `float` |
+| `h` | Assigned dew heater: `0` = heater 1, `1` = heater 2, `-1` = none | `int` |
+
+The table is validated as a whole: no duplicate ids, `h` in -1/0/1, no heater assigned to two probes, valid CRC. If it is invalid the **entire** `sc` is rejected, nothing is applied or saved, and the reply is the single line `{"error":"lens probe assignment invalid: <reason>"}` instead of the config. A saved table that turns out to be invalid at boot is discarded (empty table).
+
+Heaters in PID (`m` = 1) and Minimum Temperature (`m` = 4) mode regulate on the temperature of their own probe. Without an assigned or readable probe the heater stays **off**. There is no automatic assignment.
 
 ### `ps` (Power Startup States)
 | Sub-Key | Description | Value Type |

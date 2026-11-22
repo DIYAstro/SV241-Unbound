@@ -162,6 +162,7 @@ func logTelemetry() {
 		HumAmb:             getFloat("h_amb"),
 		DewPoint:           getFloat("d"),
 		TempLens:           getFloat("t_lens"),
+		TempLens2:          getFloat("t_lens2"),
 		PWM1:               getInt("pwm1"),
 		PWM2:               getInt("pwm2"),
 		CurrentLimitActive: currentLimitActive,

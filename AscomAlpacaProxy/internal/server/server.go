@@ -295,6 +295,18 @@ func handleSetFirmwareConfig(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, resp)
 }
 
+// firmwareReplyError returns the message of a firmware {"error":"..."} reply line, or "" if the
+// reply is not an error (a successful "sc" echoes the full config instead).
+func firmwareReplyError(resp string) string {
+	var m struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal([]byte(resp), &m) != nil {
+		return ""
+	}
+	return m.Error
+}
+
 func handleGetPowerStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -781,8 +793,14 @@ func handleApplyProfile(w http.ResponseWriter, r *http.Request) {
 	// Firmware config: identical call to handleSetFirmwareConfig - a live merge, no reboot.
 	compactFirmwareConfig, _ := json.Marshal(profile.FirmwareConfig)
 	firmwareCommand := fmt.Sprintf(`{"sc":%s}`, string(compactFirmwareConfig))
-	if _, err := serial.SendCommand(firmwareCommand, true, 10*time.Second); err != nil {
+	fwResp, err := serial.SendCommand(firmwareCommand, true, 10*time.Second)
+	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to send firmware config to device: %v", err), http.StatusServiceUnavailable)
+		return
+	}
+	if msg := firmwareReplyError(fwResp); msg != "" {
+		logger.Error("Firmware rejected the profile configuration: %s", msg)
+		http.Error(w, "Firmware rejected the configuration: "+msg, http.StatusUnprocessableEntity)
 		return
 	}
 
@@ -791,6 +809,7 @@ func handleApplyProfile(w http.ResponseWriter, r *http.Request) {
 	config.SetProxyMaps(profile.DeviceProfile.SwitchNames, profile.DeviceProfile.HeaterAutoEnableLeader, profile.DeviceProfile.WeatherSourcePriority)
 	config.SetActiveRigName(profile.DeviceProfile.RigName)
 	config.SetLensTempName(profile.DeviceProfile.LensTempName)
+	config.SetLensTemp2Name(profile.DeviceProfile.LensTemp2Name)
 	if err := config.Save(); err != nil {
 		http.Error(w, "Failed to save proxy configuration", http.StatusInternalServerError)
 		return
@@ -839,8 +858,15 @@ func applyBackupRestore(w http.ResponseWriter, backupData config.CombinedConfig,
 	// Restore Firmware Config
 	compactFirmwareConfig, _ := json.Marshal(backupData.FirmwareConfig)
 	firmwareCommand := fmt.Sprintf(`{"sc":%s}`, string(compactFirmwareConfig))
-	if _, err := serial.SendCommand(firmwareCommand, true, 10*time.Second); err != nil {
+	fwResp, err := serial.SendCommand(firmwareCommand, true, 10*time.Second)
+	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to send firmware config to device: %v", err), http.StatusServiceUnavailable)
+		return
+	}
+	if msg := firmwareReplyError(fwResp); msg != "" {
+		// e.g. an invalid lens probe table - the firmware rejects the whole update.
+		logger.Error("Firmware rejected the restored configuration: %s", msg)
+		http.Error(w, "Firmware rejected the configuration: "+msg, http.StatusUnprocessableEntity)
 		return
 	}
 	logger.Info("Firmware configuration restored successfully.")

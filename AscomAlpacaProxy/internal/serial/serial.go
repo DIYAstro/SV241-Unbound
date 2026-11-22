@@ -963,6 +963,7 @@ var safetyMetricExtractors = map[string]func(map[string]interface{}) (float64, b
 	"humidity":    func(d map[string]interface{}) (float64, bool) { v, ok := d["h_amb"].(float64); return v, ok },
 	"dewPoint":    func(d map[string]interface{}) (float64, bool) { v, ok := d["d"].(float64); return v, ok },
 	"lensTemp":    func(d map[string]interface{}) (float64, bool) { v, ok := d["t_lens"].(float64); return v, ok },
+	"lensTemp2":   func(d map[string]interface{}) (float64, bool) { v, ok := d["t_lens2"].(float64); return v, ok },
 }
 
 // safetyMetricLabels gives each metric a human-readable name and unit, used to build the
@@ -975,6 +976,7 @@ var safetyMetricLabels = map[string]struct{ Name, Unit string }{
 	"humidity":    {"Humidity", "%"},
 	"dewPoint":    {"Dew Point", "°C"},
 	"lensTemp":    {"Lens Temperature", "°C"},
+	"lensTemp2":   {"Lens Temperature 2", "°C"},
 }
 
 // booleanSafetyMetrics are conditions with no user-configurable operator/threshold - tripped

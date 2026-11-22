@@ -2,14 +2,22 @@
 import { useDeviceStore } from '../../stores/device'
 import { useModalStore } from '../../stores/modal'
 import { storeToRefs } from 'pinia'
-import { ref, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import HelpTip from '../HelpTip.vue'
+import { useLensProbeWarnings, LENS_PROBE_WARNING_SUFFIX } from '../../composables/useLensProbeWarnings'
 
 const store = useDeviceStore()
 const modal = useModalStore()
-const { config, proxyConfig, switchNames, liveStatus } = storeToRefs(store)
+const { config, proxyConfig, switchNames, liveStatus, isConnected } = storeToRefs(store)
 
 const localHeaters = ref([])
+// Warning per heater: automatic lens-probe mode (PID / Min Temp) without a working probe. Uses the
+// locally edited modes so the warning reacts before saving.
+const lensWarnings = useLensProbeWarnings(
+    computed(() => ({ dh: localHeaters.value, lp: config.value.lp })),
+    liveStatus,
+    isConnected
+)
 // We need local state for names and auto-enable settings to allow editing before saving
 const localNames = ref({})
 const localAutoEnable = ref({})
@@ -257,7 +265,7 @@ async function save() {
 
           <div class="form-group">
               <label>Mode<HelpTip text="Manual: fixed power %.
-PID (Lens Sensor): PID-controls the lens sensor to stay Target Offset °C above the dew point.
+PID (Lens Sensor): PID-controls this heater's own lens probe (assigned under Sensors) to stay Target Offset °C above the dew point. Stays off until a probe is assigned.
 Ambient Tracking: ramps power up as ambient temperature nears the dew point, between Start Delta and End Delta.
 PID-Sync (Follower): mirrors another heater's raw PID demand, scaled by Sync Factor - needs that heater in PID or Minimum Temperature mode.
 Minimum Temperature: PID control with a hard floor temperature.
@@ -267,6 +275,12 @@ Disabled: output off, hidden from Alpaca/WebUI switches." /></label>
                       {{ opt.label }}
                   </option>
               </select>
+          </div>
+
+          <!-- PID / Min-Temp regulate on the lens probe assigned to this heater (Sensors tab). Without
+               a working probe the firmware keeps the heater off. -->
+          <div v-if="lensWarnings[index]" class="lens-probe-warning">
+              &#9888; {{ lensWarnings[index] }}. {{ LENS_PROBE_WARNING_SUFFIX }}. Assign a probe under Sensors &rarr; Lens Probes.
           </div>
 
           <!-- Max PWM Duty - hardware safety limit, applies in every mode -->
@@ -339,6 +353,17 @@ Disabled: output off, hidden from Alpaca/WebUI switches." /></label>
 </template>
 
 <style scoped>
+.lens-probe-warning {
+    margin: 0.5rem 0;
+    padding: 0.6rem 0.9rem;
+    border: 1px solid var(--danger-color, #e04040);
+    border-radius: 8px;
+    background: rgba(224, 64, 64, 0.12);
+    color: var(--danger-color, #e04040);
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
 /* Visually set apart from the per-channel cards below - this one is box-wide, not per-heater. */
 .current-limit-card {
     border-left: 3px solid var(--warning-color, #e0a030);

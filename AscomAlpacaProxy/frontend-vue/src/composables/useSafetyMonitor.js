@@ -13,6 +13,7 @@ export const METRICS = [
     { id: 'humidity', label: 'Humidity', unit: '%', kind: 'numeric' },
     { id: 'dewPoint', label: 'Dew Point', unit: '°C', kind: 'numeric' },
     { id: 'lensTemp', label: 'Lens Temperature', unit: '°C', kind: 'numeric' },
+    { id: 'lensTemp2', label: 'Lens Temperature 2', unit: '°C', kind: 'numeric' },
     { id: 'connection', label: 'Connection', kind: 'event', events: [
         { id: 'connectionLost', label: 'Lost' },
         { id: 'connectionRestored', label: 'Restored' },
@@ -70,6 +71,7 @@ export function extractMetricValue(metric, status) {
         case 'humidity': return status.h_amb
         case 'dewPoint': return status.d
         case 'lensTemp': return status.t_lens
+        case 'lensTemp2': return status.t_lens2
         default: return undefined
     }
 }

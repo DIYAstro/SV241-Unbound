@@ -19,7 +19,8 @@ These actions provide a "Master Switch" to control all power outputs simultaneou
 
 The `ObservingConditions` device provides an action to read the lens/objective temperature separately from the ambient temperature.
 
-*   `getlenstemperature`: Returns the current lens/objective temperature from the DS18B20 sensor (in °C).
+*   `getlenstemperature`: Returns the current lens/objective temperature from the DS18B20 probe assigned to dew heater 1 (in °C).
+*   `getlenstemperature2`: The same for the probe assigned to dew heater 2.
 
 
 ### Using Actions via API (e.g., with `curl`)
@@ -67,12 +68,13 @@ by configuration:
 
 | Slot (after ID 2) | Name | Unit | Present when... |
 |----|------|------|-------------|
-| next free ID | Lens Temperature | °C | Any heater is in PID or Minimum Temperature mode, or "Persistent Lens Temp" is enabled in the Proxy Tab |
+| next free ID | Lens Temperature | °C | Heater 1 is in PID or Minimum Temperature mode, or "Persistent Lens Temp" is enabled in the Proxy Tab |
+| next free ID | Lens Temperature 2 | °C | Heater 2 is in PID or Minimum Temperature mode, or "Persistent Lens Temp" is enabled in the Proxy Tab |
 | next free ID | Heater 1 Output | % | Heater 1's mode isn't Disabled |
 | next free ID | Heater 2 Output | % | Heater 2's mode isn't Disabled |
 
 So power switches (`dc1` onward) can start anywhere from **ID 3** (both heaters Disabled,
-Lens Temp not forced on) to **ID 6** (Lens Temp shown and both heaters enabled). A fresh
+Lens Temp not forced on) to **ID 7** (both Lens Temperature sensors shown and both heaters enabled). A fresh
 install with both heaters left in the default Manual mode puts DC1 at **ID 5** (Lens Temp
 hidden, both Heater Output sensors present).
 

@@ -69,7 +69,46 @@ func Init(dbPath string) error {
 		return fmt.Errorf("failed to migrate telemetry_log schema: %w", err)
 	}
 
+	if err := migrateAddTempLens2Column(); err != nil {
+		return fmt.Errorf("failed to migrate telemetry_log schema: %w", err)
+	}
+
 	return nil
+}
+
+// migrateAddTempLens2Column adds telemetry_log.temp_lens2 (the second lens probe, assigned to dew
+// heater 2) for installs whose database predates it - same PRAGMA table_info check as the other
+// migrateAdd* functions. Existing rows get NULL (0 via COALESCE on read, see GetHistory).
+func migrateAddTempLens2Column() error {
+	rows, err := db.Query("PRAGMA table_info(telemetry_log)")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	hasColumn := false
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull, pk int
+		var dfltValue sql.NullString
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &dfltValue, &pk); err != nil {
+			return err
+		}
+		if name == "temp_lens2" {
+			hasColumn = true
+			break
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if hasColumn {
+		return nil
+	}
+
+	_, err = db.Exec("ALTER TABLE telemetry_log ADD COLUMN temp_lens2 REAL")
+	return err
 }
 
 // migrateAddDeviceSerialColumn adds telemetry_log.device_serial for installs whose database
@@ -299,6 +338,8 @@ type TelemetryRecord struct {
 	// before this feature/column existed (see migrateAddSensorDryingColumn). Added for GitHub issue
 	// #9's drift investigation, to let a correlation between drift and drying events be checked.
 	SensorDryingActive int
+	// TempLens2 is the lens probe assigned to dew heater 2 (TempLens is the one for heater 1).
+	TempLens2 float64
 }
 
 // InsertTelemetry writes a record to the DB.
@@ -309,15 +350,15 @@ func InsertTelemetry(r TelemetryRecord) error {
 		dc1, dc2, dc3, dc4, dc5, usbc12, usb345, adj_conv, current_limit_active, device_serial,
 		weather_temp, weather_humidity, weather_dew_point, weather_pressure,
 		weather_wind_speed, weather_wind_direction, weather_wind_gust,
-		weather_cloud_cover, weather_precipitation, sensor_drying_active
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		weather_cloud_cover, weather_precipitation, sensor_drying_active, temp_lens2
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	_, err := db.Exec(query,
 		r.Timestamp, r.Voltage, r.Current, r.Power, r.TempAmb, r.HumAmb, r.DewPoint, r.TempLens, r.PWM1, r.PWM2,
 		r.DC1, r.DC2, r.DC3, r.DC4, r.DC5, r.USBC12, r.USB345, r.AdjConv, r.CurrentLimitActive, nullIfEmpty(r.DeviceSerial),
 		r.WeatherTemp, r.WeatherHumidity, r.WeatherDewPoint, r.WeatherPressure,
 		r.WeatherWindSpeed, r.WeatherWindDirection, r.WeatherWindGust,
-		r.WeatherCloudCover, r.WeatherPrecipitation, r.SensorDryingActive,
+		r.WeatherCloudCover, r.WeatherPrecipitation, r.SensorDryingActive, r.TempLens2,
 	)
 	return err
 }
@@ -343,7 +384,7 @@ func GetHistory(start, end int64, deviceSerial string) ([]TelemetryRecord, error
 	                 COALESCE(current_limit_active, 0), COALESCE(device_serial, ''),
 	                 weather_temp, weather_humidity, weather_dew_point, weather_pressure,
 	                 weather_wind_speed, weather_wind_direction, weather_wind_gust,
-	                 weather_cloud_cover, weather_precipitation, COALESCE(sensor_drying_active, 0)
+	                 weather_cloud_cover, weather_precipitation, COALESCE(sensor_drying_active, 0), COALESCE(temp_lens2, 0)
 	          FROM telemetry_log
 	          WHERE timestamp BETWEEN ? AND ?`
 	args := []interface{}{start, end}
@@ -367,7 +408,7 @@ func GetHistory(start, end int64, deviceSerial string) ([]TelemetryRecord, error
 			&r.DC1, &r.DC2, &r.DC3, &r.DC4, &r.DC5, &r.USBC12, &r.USB345, &r.AdjConv, &r.CurrentLimitActive, &r.DeviceSerial,
 			&r.WeatherTemp, &r.WeatherHumidity, &r.WeatherDewPoint, &r.WeatherPressure,
 			&r.WeatherWindSpeed, &r.WeatherWindDirection, &r.WeatherWindGust,
-			&r.WeatherCloudCover, &r.WeatherPrecipitation, &r.SensorDryingActive,
+			&r.WeatherCloudCover, &r.WeatherPrecipitation, &r.SensorDryingActive, &r.TempLens2,
 		); err != nil {
 			return nil, err
 		}

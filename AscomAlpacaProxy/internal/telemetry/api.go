@@ -23,6 +23,7 @@ type DataPoint struct {
 	HumAmb    float64 `json:"hum"`
 	DewPoint  float64 `json:"dew"`
 	TempLens  float64 `json:"lens"`
+	TempLens2 float64 `json:"lens2"`
 	PWM1      int     `json:"pwm1"`
 	PWM2      int     `json:"pwm2"`
 	DC1       int     `json:"dc1"`
@@ -131,6 +132,7 @@ func HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 			HumAmb:             r.HumAmb,
 			DewPoint:           r.DewPoint,
 			TempLens:           r.TempLens,
+			TempLens2:          r.TempLens2,
 			PWM1:               r.PWM1,
 			PWM2:               r.PWM2,
 			DC1:                r.DC1,
@@ -255,7 +257,7 @@ func HandleDownloadCSV(w http.ResponseWriter, r *http.Request) {
 		"pwm1": true, "pwm2": true,
 		"dc1": true, "dc2": true, "dc3": true, "dc4": true, "dc5": true,
 		"usbc12": true, "usb345": true, "adj_conv": true,
-		"cl": true, "sd": true,
+		"cl": true, "sd": true, "t_lens2": true,
 		"weather_temp": true, "weather_humidity": true, "weather_dew_point": true,
 		"weather_pressure": true, "weather_wind_speed": true, "weather_wind_direction": true,
 		"weather_wind_gust": true, "weather_cloud_cover": true, "weather_precipitation": true,
@@ -284,6 +286,7 @@ func HandleDownloadCSV(w http.ResponseWriter, r *http.Request) {
 			"weather_temp", "weather_humidity", "weather_dew_point", "weather_pressure",
 			"weather_wind_speed", "weather_wind_direction", "weather_wind_gust",
 			"weather_cloud_cover", "weather_precipitation",
+			"t_lens2", // appended last so existing columns keep their position
 		}
 	}
 
@@ -328,6 +331,8 @@ func HandleDownloadCSV(w http.ResponseWriter, r *http.Request) {
 				val = fmt.Sprintf("%v", r.DewPoint)
 			case "t_lens":
 				val = fmt.Sprintf("%v", r.TempLens)
+			case "t_lens2":
+				val = fmt.Sprintf("%v", r.TempLens2)
 			case "pwm1":
 				val = fmt.Sprintf("%d", r.PWM1)
 			case "pwm2":

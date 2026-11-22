@@ -186,7 +186,7 @@ func (a *API) HandleDeviceName(name string) http.HandlerFunc {
 }
 
 func (a *API) HandleSupportedActions(w http.ResponseWriter, r *http.Request) {
-	StringListResponse(w, r, []string{"getlenstemperature"})
+	StringListResponse(w, r, []string{"getlenstemperature", "getlenstemperature2"})
 }
 
 // --- SafetyMonitor Handlers ---
@@ -209,10 +209,15 @@ func (a *API) HandleObsCondAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if strings.ToLower(action) == "getlenstemperature" {
+	lowerAction := strings.ToLower(action)
+	if lowerAction == "getlenstemperature" || lowerAction == "getlenstemperature2" {
+		dataKey := "t_lens"
+		if lowerAction == "getlenstemperature2" {
+			dataKey = "t_lens2"
+		}
 		serial.Conditions.RLock()
 		defer serial.Conditions.RUnlock()
-		if val, ok := serial.Conditions.Data["t_lens"]; ok && val != nil {
+		if val, ok := serial.Conditions.Data[dataKey]; ok && val != nil {
 			StringResponse(w, r, fmt.Sprintf("%v", val))
 		} else {
 			ErrorResponse(w, r, http.StatusOK, 0x401, "Sensor not available or failed to read.")
@@ -250,6 +255,13 @@ func (a *API) HandleSwitchGetSwitchName(w http.ResponseWriter, r *http.Request) 
 				StringResponse(w, r, name)
 			} else {
 				StringResponse(w, r, "Lens Temperature")
+			}
+			return
+		case config.SensorLensTemp2Key:
+			if name := config.Get().LensTemp2Name; name != "" {
+				StringResponse(w, r, name)
+			} else {
+				StringResponse(w, r, "Lens Temperature 2")
 			}
 			return
 		case config.SensorPWM1Key:
@@ -292,7 +304,7 @@ func (a *API) HandleSwitchGetSwitchDescription(w http.ResponseWriter, r *http.Re
 		case config.SensorPowerKey:
 			StringResponse(w, r, "Total power consumption in Watts (W)")
 			return
-		case config.SensorLensTempKey:
+		case config.SensorLensTempKey, config.SensorLensTemp2Key:
 			StringResponse(w, r, "Temperature in °C")
 			return
 		case config.SensorPWM1Key:
@@ -411,6 +423,8 @@ func (a *API) HandleSwitchGetSwitchValue(w http.ResponseWriter, r *http.Request)
 			dataKey = "p"
 		case config.SensorLensTempKey:
 			dataKey = "t_lens"
+		case config.SensorLensTemp2Key:
+			dataKey = "t_lens2"
 		case config.SensorPWM1Key:
 			dataKey = "pwm1"
 		case config.SensorPWM2Key:
@@ -418,8 +432,8 @@ func (a *API) HandleSwitchGetSwitchValue(w http.ResponseWriter, r *http.Request)
 		}
 
 		// Handle Lens Temp specifically to inject fallback check
-		if key == config.SensorLensTempKey {
-			if val, found := serial.Conditions.Data["t_lens"]; found && val != nil {
+		if key == config.SensorLensTempKey || key == config.SensorLensTemp2Key {
+			if val, found := serial.Conditions.Data[dataKey]; found && val != nil {
 				if floatVal, isFloat := val.(float64); isFloat {
 					FloatResponse(w, r, floatVal)
 					return
@@ -892,7 +906,7 @@ func (a *API) HandleSwitchMaxSwitchValue(w http.ResponseWriter, r *http.Request)
 		case config.SensorPowerKey:
 			FloatResponse(w, r, 150.0) // Max power in W
 			return
-		case config.SensorLensTempKey:
+		case config.SensorLensTempKey, config.SensorLensTemp2Key:
 			FloatResponse(w, r, 100.0) // Max temp
 			return
 		case config.SensorPWM1Key, config.SensorPWM2Key:
@@ -938,7 +952,7 @@ func (a *API) HandleSwitchMaxSwitchValue(w http.ResponseWriter, r *http.Request)
 func (a *API) HandleSwitchMinSwitchValue(w http.ResponseWriter, r *http.Request) {
 	if id, ok := ParseSwitchID(w, r); ok {
 		key, _ := config.GetSwitchIDMapEntry(id)
-		if key == config.SensorLensTempKey {
+		if key == config.SensorLensTempKey || key == config.SensorLensTemp2Key {
 			FloatResponse(w, r, -273.15) // Absolute zero as min/error
 			return
 		}

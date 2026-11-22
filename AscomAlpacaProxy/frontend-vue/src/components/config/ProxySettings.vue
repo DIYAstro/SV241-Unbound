@@ -186,6 +186,13 @@ async function save() {
                                  @input="onChange"
                                  placeholder="Lens Temperature">
                       </div>
+                      <div class="form-group">
+                          <label>Custom Lens Temperature 2 Sensor Name<HelpTip text="Friendly name for the second DS18B20 lens sensor (the probe assigned to dew heater 2), shown wherever its reading appears in the Web UI and ASCOM clients." /></label>
+                          <input type="text"
+                                 v-model="localConfig.lensTemp2Name"
+                                 @input="onChange"
+                                 placeholder="Lens Temperature 2">
+                      </div>
                   </div>
               </div>
 

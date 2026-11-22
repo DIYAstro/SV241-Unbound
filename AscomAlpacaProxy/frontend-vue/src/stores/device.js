@@ -11,7 +11,7 @@ export const useDeviceStore = defineStore('device', () => {
     const liveStatus = ref({
         v: 0, i: 0, p: 0,
         t_amb: 0, h_amb: 0, d: 0,
-        t_lens: 0,
+        t_lens: 0, t_lens2: 0,
         pwm1: 0, pwm2: 0
     })
     const telemetryHistory = ref([]) // For charts
@@ -71,6 +71,12 @@ export const useDeviceStore = defineStore('device', () => {
                 body: JSON.stringify(newConfigChunk)
             });
             if (!response.ok) throw new Error(response.statusText);
+
+            // The firmware answers a rejected update (e.g. an invalid lens probe assignment) with a
+            // single {"error":"..."} line instead of the config - the proxy passes it through as 200.
+            let reply = null;
+            try { reply = await response.json(); } catch (_) { /* not JSON - treat as success */ }
+            if (reply && typeof reply.error === 'string') throw new Error(reply.error);
 
             // Refresh config after save
             await fetchConfig();
@@ -298,6 +304,7 @@ export const useDeviceStore = defineStore('device', () => {
                     h_amb: d.hum,
                     d: d.dew,
                     t_lens: d.lens,
+                    t_lens2: d.lens2,
                     pwm1: d.pwm1,
                     pwm2: d.pwm2
                 }));

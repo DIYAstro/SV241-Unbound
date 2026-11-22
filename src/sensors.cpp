@@ -37,6 +37,8 @@ const unsigned long INA219_INTERVAL_MS = 1000;
 const int SENSOR_MEDIAN_WINDOW = 5;
 static_assert(SENSOR_MEDIAN_WINDOW <= MAX_SENSOR_AVG_COUNT, "SENSOR_MEDIAN_WINDOW must fit MedianFilterBuf's fixed-size buffer");
 
+static_assert(sizeof(SensorValues::lens_temperature) / sizeof(float) == MAX_DEW_HEATERS, "SensorValues::lens_temperature needs one slot per dew heater");
+
 // --- The global sensor value cache ---
 SensorValues sensor_cache;
 // --- Mutex definition ---
@@ -70,6 +72,22 @@ Adafruit_INA219 ina219(INA219_ADDR);
 Adafruit_SHT4x sht40 = Adafruit_SHT4x();
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature dallas_sensors(&oneWire);
+
+// Protects every access to oneWire/dallas_sensors, the per-heater lens filters and the probe
+// scan/measure sequence (rescan runs in the serial task, measurement in the sensor task).
+// Lock order: config_mutex is never held while taking onewire_mutex; found_probes_mutex and
+// sensor_cache_mutex are leaf locks that may be taken inside it.
+static SemaphoreHandle_t onewire_mutex = NULL;
+// Protects the found-probe list so "get:probes" can answer from the cache without waiting for a
+// running (up to ~800 ms) conversion.
+static SemaphoreHandle_t found_probes_mutex = NULL;
+
+struct FoundProbe {
+  uint8_t rom[8];
+  float raw_temp; // last raw reading (no offset, no filter), NAN if none/disconnected
+};
+static FoundProbe found_probes[MAX_FOUND_PROBES];
+static int found_probe_count = 0;
 
 // --- Last update timestamps ---
 static unsigned long last_ina219_update = 0;
@@ -118,6 +136,8 @@ struct MedianFilterBuf {
   int index = 0;
   int count = 0;
 
+  void reset() { index = 0; count = 0; }
+
   // Feeds one new raw reading in and returns the resulting median. avg_count is the (now fixed)
   // averaging window, SENSOR_MEDIAN_WINDOW - never changes live, so unlike before there's no
   // longer a need to handle it shrinking mid-flight.
@@ -135,7 +155,10 @@ static MedianFilterBuf ina219_voltage_filter;
 static MedianFilterBuf ina219_current_filter;
 static MedianFilterBuf sht40_temp_filter;
 static MedianFilterBuf sht40_humidity_filter;
-static MedianFilterBuf ds18b20_temp_filter;
+// One filter per dew heater (the probe assigned to that heater), plus the ROM each filter was last
+// fed from - a changed assignment resets it. Only touched while holding onewire_mutex.
+static MedianFilterBuf lens_filter[MAX_DEW_HEATERS];
+static uint8_t lens_filter_rom[MAX_DEW_HEATERS][8];
 
 // Initializes the INA219 (calibration for the 0.005 Ohm shunt + 128-sample averaging - see the
 // detailed rationale below) and returns whether it responded. Extracted out of setup_sensors()
@@ -269,23 +292,178 @@ void setup_sensors() {
   sensor_cache.sht_temperature = NAN;
   sensor_cache.sht_humidity = NAN;
   sensor_cache.sht_dew_point = NAN;
-  sensor_cache.ds18b20_temperature = NAN;
+  for (int h = 0; h < MAX_DEW_HEATERS; h++) sensor_cache.lens_temperature[h] = NAN;
 
   Wire.begin(I2C_SDA, I2C_SCL);
 
   is_ina219_available = init_ina219();
   is_sht40_available = init_sht40();
 
+  if (onewire_mutex == NULL) onewire_mutex = xSemaphoreCreateMutex();
+  if (found_probes_mutex == NULL) found_probes_mutex = xSemaphoreCreateMutex();
+  scan_lens_probes();
+}
+
+// Enumerates the 1-Wire bus: finds every DS18B20, keeps those with a valid ROM CRC, and resets the
+// per-heater filters (the assignment may have changed). Called at startup and by "rescan_probes".
+void scan_lens_probes() {
+  FoundProbe scanned[MAX_FOUND_PROBES];
+  int count = 0;
+  int invalid = 0;
+
+  xSemaphoreTake(onewire_mutex, portMAX_DELAY);
   dallas_sensors.begin();
-  // With external power the conversion is waited for in update_sensor_cache() by sleeping and
+  int devices = dallas_sensors.getDeviceCount();
+  for (int i = 0; i < devices && count < MAX_FOUND_PROBES; i++) {
+    uint8_t addr[8];
+    if (!dallas_sensors.getAddress(addr, i)) continue;
+    if (OneWire::crc8(addr, 7) != addr[7]) {
+      invalid++;
+      continue;
+    }
+    memcpy(scanned[count].rom, addr, 8);
+    scanned[count].raw_temp = NAN;
+    count++;
+  }
+  // With external power the conversion is waited for in measure_lens_probes() by sleeping and
   // polling - the library's own wait is a yield() busy-loop that kept ~60 % of core 1 busy for
   // nothing (found via the workload measurement; core 1 is ~9 % busy without it). With parasite
   // power the poll isn't usable (the bus is held for the conversion), so the library keeps waiting
   // itself - its delay()-based path for parasite mode sleeps anyway.
   dallas_sensors.setWaitForConversion(dallas_sensors.isParasitePowerMode());
-  is_ds18b20_available = (dallas_sensors.getDeviceCount() > 0);
+  is_ds18b20_available = (count > 0);
+
+  for (int h = 0; h < MAX_DEW_HEATERS; h++) {
+    lens_filter[h].reset();
+    memset(lens_filter_rom[h], 0, 8);
+  }
+
+  if (found_probes_mutex != NULL) xSemaphoreTake(found_probes_mutex, portMAX_DELAY);
+  memcpy(found_probes, scanned, sizeof(scanned));
+  found_probe_count = count;
+  if (found_probes_mutex != NULL) xSemaphoreGive(found_probes_mutex);
+
+  if (count == 0 && xSemaphoreTake(sensor_cache_mutex, (TickType_t)10) == pdTRUE) {
+    for (int h = 0; h < MAX_DEW_HEATERS; h++) sensor_cache.lens_temperature[h] = NAN;
+    xSemaphoreGive(sensor_cache_mutex);
+  }
+  xSemaphoreGive(onewire_mutex);
+
+  if (invalid > 0) {
+    log_line_locked("{\"warn\":\"DS18B20 with invalid ROM CRC ignored\"}");
+  }
   if (!is_ds18b20_available) {
     log_line_locked("{\"warn\":\"DS18B20 sensor not found\"}");
+  }
+}
+
+// One measurement cycle over all found probes: a single requestTemperatures() (all probes convert
+// in parallel), then every probe is read into the found list (raw, for the hand test) and each
+// heater's assigned probe goes through that heater's median filter plus the probe's offset. A
+// heater without an assigned or readable probe gets NaN - dew_control then keeps it off.
+static void measure_lens_probes() {
+  LensProbeConfig assigned[MAX_LENS_PROBES];
+  xSemaphoreTake(config_mutex, portMAX_DELAY);
+  memcpy(assigned, config.lens_probes, sizeof(assigned));
+  xSemaphoreGive(config_mutex);
+
+  xSemaphoreTake(onewire_mutex, portMAX_DELAY);
+  if (!is_ds18b20_available) {
+    xSemaphoreGive(onewire_mutex);
+    return;
+  }
+
+  dallas_sensors.requestTemperatures();
+  if (!dallas_sensors.getWaitForConversion()) {
+    // Sleep between polls instead of spinning; the read happens as soon as the sensor reports the
+    // conversion done, exactly like the library's own wait. The cap leaves room above the 750ms
+    // a 12-bit conversion needs - on a timeout the scratchpad read below behaves as it always did.
+    const unsigned long conversion_start = millis();
+    while (!dallas_sensors.isConversionComplete() && (millis() - conversion_start) < 800) {
+      vTaskDelay(pdMS_TO_TICKS(5));
+    }
+  }
+
+  // found_probes[].rom is only written by scan_lens_probes(), which holds onewire_mutex too.
+  float raw[MAX_FOUND_PROBES];
+  for (int i = 0; i < found_probe_count; i++) {
+    raw[i] = dallas_sensors.getTempC(found_probes[i].rom);
+  }
+
+  if (found_probes_mutex != NULL) xSemaphoreTake(found_probes_mutex, portMAX_DELAY);
+  for (int i = 0; i < found_probe_count; i++) {
+    found_probes[i].raw_temp = (raw[i] == DEVICE_DISCONNECTED_C) ? NAN : raw[i];
+  }
+  if (found_probes_mutex != NULL) xSemaphoreGive(found_probes_mutex);
+
+  float lens[MAX_DEW_HEATERS];
+  for (int h = 0; h < MAX_DEW_HEATERS; h++) {
+    lens[h] = NAN;
+    const LensProbeConfig* lp = NULL;
+    for (int k = 0; k < MAX_LENS_PROBES; k++) {
+      if (!lensProbeIsEmpty(assigned[k]) && assigned[k].heater == h) { lp = &assigned[k]; break; }
+    }
+    uint8_t want_rom[8] = {0};
+    if (lp != NULL) memcpy(want_rom, lp->rom, 8);
+    // Assignment changed (or was removed): the old probe's samples must not feed the new one.
+    if (memcmp(lens_filter_rom[h], want_rom, 8) != 0) {
+      lens_filter[h].reset();
+      memcpy(lens_filter_rom[h], want_rom, 8);
+    }
+    if (lp == NULL) continue;
+    bool got = false;
+    for (int i = 0; i < found_probe_count; i++) {
+      if (memcmp(found_probes[i].rom, lp->rom, 8) == 0) {
+        if (raw[i] != DEVICE_DISCONNECTED_C) {
+          lens[h] = lens_filter[h].add_reading(raw[i], SENSOR_MEDIAN_WINDOW) + lp->offset;
+          got = true;
+        }
+        break;
+      }
+    }
+    if (!got) lens_filter[h].reset();
+  }
+
+  if (xSemaphoreTake(sensor_cache_mutex, (TickType_t)10) == pdTRUE) {
+    for (int h = 0; h < MAX_DEW_HEATERS; h++) sensor_cache.lens_temperature[h] = lens[h];
+    xSemaphoreGive(sensor_cache_mutex);
+  }
+  xSemaphoreGive(onewire_mutex);
+}
+
+void rescan_lens_probes() {
+  scan_lens_probes();
+  measure_lens_probes();
+}
+
+void get_lens_probes_json(JsonDocument& doc) {
+  LensProbeConfig assigned[MAX_LENS_PROBES];
+  xSemaphoreTake(config_mutex, portMAX_DELAY);
+  memcpy(assigned, config.lens_probes, sizeof(assigned));
+  xSemaphoreGive(config_mutex);
+
+  FoundProbe snapshot[MAX_FOUND_PROBES];
+  int count = 0;
+  if (found_probes_mutex != NULL) xSemaphoreTake(found_probes_mutex, portMAX_DELAY);
+  count = found_probe_count;
+  memcpy(snapshot, found_probes, sizeof(snapshot));
+  if (found_probes_mutex != NULL) xSemaphoreGive(found_probes_mutex);
+
+  JsonArray arr = doc["probes"].to<JsonArray>();
+  for (int i = 0; i < count; i++) {
+    char id[17];
+    romToHex(snapshot[i].rom, id);
+    JsonObject o = arr.add<JsonObject>();
+    o["id"] = String(id);
+    o["t"] = round(snapshot[i].raw_temp * 10) / 10.0; // NaN -> null
+    int h = -1;
+    for (int k = 0; k < MAX_LENS_PROBES; k++) {
+      if (!lensProbeIsEmpty(assigned[k]) && memcmp(assigned[k].rom, snapshot[i].rom, 8) == 0) {
+        h = assigned[k].heater;
+        break;
+      }
+    }
+    o["h"] = h;
   }
 }
 
@@ -418,31 +596,7 @@ void update_sensor_cache() {
   // --- DS18B20 Update ---
   if (is_ds18b20_available && (current_millis - last_ds18b20_update >= DS18B20_INTERVAL_MS)) {
     last_ds18b20_update = current_millis;
-    dallas_sensors.requestTemperatures();
-    if (!dallas_sensors.getWaitForConversion()) {
-      // Sleep between polls instead of spinning; the read happens as soon as the sensor reports the
-      // conversion done, exactly like the library's own wait. The cap leaves room above the 750ms
-      // a 12-bit conversion needs - on a timeout the scratchpad read below behaves as it always did.
-      const unsigned long conversion_start = millis();
-      while (!dallas_sensors.isConversionComplete() && (millis() - conversion_start) < 800) {
-        vTaskDelay(pdMS_TO_TICKS(5));
-      }
-    }
-    float tempC = dallas_sensors.getTempCByIndex(0);
-    if(tempC != DEVICE_DISCONNECTED_C) {
-      float final_ds18b20_temp = ds18b20_temp_filter.add_reading(tempC, SENSOR_MEDIAN_WINDOW);
-
-      if(xSemaphoreTake(sensor_cache_mutex, (TickType_t)10) == pdTRUE) {
-        sensor_cache.ds18b20_temperature = final_ds18b20_temp + offsets.ds18b20_temp;
-        xSemaphoreGive(sensor_cache_mutex);
-      }
-    } else {
-      // Device disconnected
-      if(xSemaphoreTake(sensor_cache_mutex, (TickType_t)10) == pdTRUE) {
-        sensor_cache.ds18b20_temperature = NAN;
-        xSemaphoreGive(sensor_cache_mutex);
-      }
-    }
+    measure_lens_probes();
   }
 }
 
@@ -494,7 +648,8 @@ void get_sensor_values_json(JsonDocument& doc) {
   doc["t_amb"] = round(values.sht_temperature * 10) / 10.0;
   doc["h_amb"] = round(values.sht_humidity * 10) / 10.0;
   doc["d"] = round(values.sht_dew_point * 10) / 10.0;
-  doc["t_lens"] = round(values.ds18b20_temperature * 10) / 10.0;
+  doc["t_lens"] = round(values.lens_temperature[0] * 10) / 10.0;
+  doc["t_lens2"] = round(values.lens_temperature[1] * 10) / 10.0;
   
   doc["pwm1"] = get_heater_power(0);
   doc["pwm2"] = get_heater_power(1);

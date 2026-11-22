@@ -29,6 +29,7 @@ type DeviceProfile struct {
 	RigName                string            `json:"rigName"` // User-facing label shown instead of the raw MAC
 	SwitchNames            map[string]string `json:"switchNames"`
 	LensTempName           string            `json:"lensTempName"`
+	LensTemp2Name          string            `json:"lensTemp2Name"`
 	HeaterAutoEnableLeader map[string]bool   `json:"heaterAutoEnableLeader"`
 	WeatherSourcePriority  map[string]string `json:"weatherSourcePriority"`
 }
@@ -75,6 +76,7 @@ type ProxyConfig struct {
 	ReportPendingOffAsOff      bool   `json:"reportPendingOffAsOff"`      // Answer ASCOM clients "off" while a delayed switch-off is still counting down (default: report the actual state)
 	AlwaysShowLensTemp         bool   `json:"alwaysShowLensTemp"`         // Always expose Lens Temp switch regardless of PID mode
 	LensTempName               string `json:"lensTempName"`               // Custom name for Lens Temp sensor check
+	LensTemp2Name              string `json:"lensTemp2Name"`              // Custom name for the second Lens Temp sensor (dew heater 2)
 	FirstRunComplete           bool   `json:"firstRunComplete"`           // Onboarding wizard completed
 
 	// Automatic Backups (see internal/backup) - a full config+firmware snapshot written to
@@ -218,6 +220,15 @@ func SetLensTempName(name string) {
 	defer ProxyConfigMutex.Unlock()
 	conf := Get()
 	conf.LensTempName = name
+	syncActiveProfileFromFlatLocked(conf)
+}
+
+// SetLensTemp2Name is SetLensTempName for the second lens temperature sensor.
+func SetLensTemp2Name(name string) {
+	ProxyConfigMutex.Lock()
+	defer ProxyConfigMutex.Unlock()
+	conf := Get()
+	conf.LensTemp2Name = name
 	syncActiveProfileFromFlatLocked(conf)
 }
 
@@ -385,6 +396,7 @@ func SetActiveDeviceSerial(serial string) {
 			profile = DeviceProfile{
 				SwitchNames:            conf.SwitchNames,
 				LensTempName:           conf.LensTempName,
+				LensTemp2Name:          conf.LensTemp2Name,
 				HeaterAutoEnableLeader: conf.HeaterAutoEnableLeader,
 				WeatherSourcePriority:  conf.WeatherSourcePriority,
 			}
@@ -407,6 +419,7 @@ func SetActiveDeviceSerial(serial string) {
 func applyActiveProfileLocked(conf *ProxyConfig, profile DeviceProfile) {
 	conf.SwitchNames = profile.SwitchNames
 	conf.LensTempName = profile.LensTempName
+	conf.LensTemp2Name = profile.LensTemp2Name
 	conf.HeaterAutoEnableLeader = profile.HeaterAutoEnableLeader
 	conf.WeatherSourcePriority = profile.WeatherSourcePriority
 }
@@ -428,6 +441,7 @@ func syncActiveProfileFromFlatLocked(conf *ProxyConfig) {
 		RigName:                conf.DeviceProfiles[activeDeviceSerial].RigName,
 		SwitchNames:            conf.SwitchNames,
 		LensTempName:           conf.LensTempName,
+		LensTemp2Name:          conf.LensTemp2Name,
 		HeaterAutoEnableLeader: conf.HeaterAutoEnableLeader,
 		WeatherSourcePriority:  conf.WeatherSourcePriority,
 	}
@@ -459,14 +473,15 @@ const (
 	SensorCurrentKey  = "sensor_current"
 	SensorPowerKey    = "sensor_power"
 	SensorLensTempKey = "sensor_lens_temp"
-	SensorPWM1Key     = "sensor_pwm1"
+	SensorLensTemp2Key = "sensor_lens_temp2"
+	SensorPWM1Key    = "sensor_pwm1"
 	SensorPWM2Key     = "sensor_pwm2"
 )
 
 // IsSensorSwitch returns true if the switch key is a read-only sensor
 func IsSensorSwitch(key string) bool {
 	return key == SensorVoltageKey || key == SensorCurrentKey || key == SensorPowerKey ||
-		key == SensorLensTempKey || key == SensorPWM1Key || key == SensorPWM2Key
+		key == SensorLensTempKey || key == SensorLensTemp2Key || key == SensorPWM1Key || key == SensorPWM2Key
 }
 
 var (

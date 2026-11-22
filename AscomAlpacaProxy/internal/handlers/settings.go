@@ -117,6 +117,7 @@ func HandlePostSettings(w http.ResponseWriter, r *http.Request) {
 	// LensTempName is tied to the active device's profile (see config.SetLensTempName) - a direct
 	// assignment here would skip syncing the change into it.
 	config.SetLensTempName(newConfig.LensTempName)
+	config.SetLensTemp2Name(newConfig.LensTemp2Name)
 	if payload.ActiveRigName != nil {
 		config.SetActiveRigName(*payload.ActiveRigName)
 	}

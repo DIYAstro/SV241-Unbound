@@ -116,6 +116,7 @@ const availableSensors = computed(() => {
         { id: 'h_amb', label: 'Humidity (%)', color: '#1e90ff', axis: 'y_left' },        // Dodger Blue
         { id: 'dew_point', label: 'Dew Point (°C)', color: '#9370db', axis: 'y_left' },  // Medium Purple
         { id: 't_lens', label: 'Lens Temp (°C)', color: '#20b2aa', axis: 'y_left' },     // Light Sea Green
+        { id: 't_lens2', label: 'Lens Temp 2 (°C)', color: '#ff8c00', axis: 'y_left' },  // Dark Orange
         // Box-wide (not per-heater) - not tied to a switch/heater-disable state, so it doesn't
         // go through the isSwitchDisabled-filtered switchSensors list below.
         { id: 'current_limit', label: 'Current Limit Active', color: '#ff0000', isBool: true }, // Red
@@ -342,6 +343,7 @@ const chartData = computed(() => {
                     case 'h_amb': return d.hum;
                     case 'dew_point': return d.dew;
                     case 't_lens': return d.lens;
+                    case 't_lens2': return d.lens2;
                     case 'pwm1': return d.pwm1;
                     case 'pwm2': return d.pwm2;
                     case 'dc1': return d.dc1;

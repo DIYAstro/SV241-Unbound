@@ -95,6 +95,7 @@ void serial_command_task(void *pvParameters) {
   static JsonDocument config_doc;
   static JsonDocument sensors_doc;
   static JsonDocument version_doc;
+  static JsonDocument probes_doc;
 
   for (;;) {
     while (Serial.available() > 0) {
@@ -224,6 +225,22 @@ void serial_command_task(void *pvParameters) {
             Serial.println(output_buffer);
             xSemaphoreGive(serial_mutex);
 
+          } else if ((doc["get"].is<const char*>() && strcmp(doc["get"], "probes") == 0) ||
+                     (doc["command"].is<const char*>() && strcmp(doc["command"], "rescan_probes") == 0)) {
+            // "get":"probes" answers from the cached list (no bus access). "rescan_probes" first
+            // re-enumerates the 1-Wire bus and runs one measurement cycle, then answers the same.
+            if (doc["command"].is<const char*>()) {
+              rescan_lens_probes();
+            }
+            String output_buffer;
+            probes_doc.clear();
+            get_lens_probes_json(probes_doc);
+            serializeJson(probes_doc, output_buffer);
+
+            xSemaphoreTake(serial_mutex, portMAX_DELAY);
+            Serial.println(output_buffer);
+            xSemaphoreGive(serial_mutex);
+
           } else if (doc["get"].is<const char*>() && strcmp(doc["get"], "version") == 0) {
             String output_buffer;
             version_doc.clear();
@@ -261,15 +278,23 @@ void serial_command_task(void *pvParameters) {
             // safe and exact: any padding bytes are identical on both sides since updateConfig()
             // only ever touches named fields, never padding.
             Config config_before_update = config;
-            updateConfig(set_obj);
-            if (memcmp(&config_before_update, &config, sizeof(Config)) != 0) {
-              saveConfig();
+            String update_error;
+            bool update_ok = updateConfig(set_obj, &update_error);
+            if (!update_ok) {
+              // Invalid lens probe assignment: reject the whole update, nothing is saved. Reply
+              // with exactly one error line (the proxy reads one line per command).
+              config = config_before_update;
+              output_buffer = "{\"error\":\"lens probe assignment invalid: " + update_error + "\"}";
+              adj_voltage_changed = false;
+            } else {
+              if (memcmp(&config_before_update, &config, sizeof(Config)) != 0) {
+                saveConfig();
+              }
+              config_doc.clear();
+              serializeConfig(config_doc);
+              serializeJson(config_doc, output_buffer);
             }
-            config_doc.clear();
-            serializeConfig(config_doc);
             xSemaphoreGive(config_mutex);
-
-            serializeJson(config_doc, output_buffer);
 
             xSemaphoreTake(serial_mutex, portMAX_DELAY);
             Serial.println(output_buffer);

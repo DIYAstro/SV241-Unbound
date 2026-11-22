@@ -2,7 +2,7 @@
 import { useDeviceStore } from '../../stores/device'
 import { useModalStore } from '../../stores/modal'
 import { storeToRefs } from 'pinia'
-import { ref, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import HelpTip from '../HelpTip.vue'
 
 const store = useDeviceStore()
@@ -14,10 +14,156 @@ const autoDryConfig = ref({})
 const hasChanges = ref(false)
 const autoDryHasChanges = ref(false)
 
+// --- Lens probes (DS18B20) ---
+// Rows: one per probe that is either found on the bus or assigned in the firmware config.
+// { id, found, t (raw temp or null), heater (-1/0/1), offset, wasAssigned }
+const probeRows = ref([])
+const probesChanged = ref(false)
+const scanning = ref(false)
+const offsetSuggested = ref(false)
+let lastFound = []          // last probe list reported by the firmware
+let probeTimer = null
+let probeRequestRunning = false
+// The old single-probe offset ("so.dt"): the firmware no longer applies it, but it is offered as a
+// starting value when a probe is assigned for the first time.
+const legacyOffset = computed(() => Number(config.value?.so?.dt) || 0)
+
+function heaterLabel(h) {
+    const name = config.value?.dh?.[h]?.n
+    return name ? `Dew Heater ${h + 1} (${name})` : `Dew Heater ${h + 1}`
+}
+
+// A heater already used by another probe is disabled in this probe's dropdown.
+function heaterTaken(row, h) {
+    return probeRows.value.some(r => r.id !== row.id && r.heater === h)
+}
+
+function mergeProbes() {
+    const byId = new Map(probeRows.value.map(r => [r.id, r]))
+    const out = []
+    for (const p of lastFound) {
+        let r = byId.get(p.id)
+        if (!r) r = { id: p.id, heater: -1, offset: 0, wasAssigned: false }
+        r.found = true
+        r.t = p.t
+        out.push(r)
+        byId.delete(p.id)
+    }
+    for (const r of byId.values()) {
+        r.found = false
+        r.t = null
+        out.push(r)
+    }
+    probeRows.value = out
+}
+
+function rebuildProbeRowsFromConfig(lp) {
+    probeRows.value = (lp || []).map(e => ({
+        id: e.id, heater: e.h, offset: e.o ?? 0, wasAssigned: e.h >= 0, found: false, t: null
+    }))
+    mergeProbes()
+}
+
+async function sendProbeCommand(cmd) {
+    const response = await fetch('/api/v1/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cmd)
+    })
+    if (!response.ok) throw new Error(response.statusText)
+    const data = await response.json()
+    if (data.error) throw new Error(data.error)
+    return data
+}
+
+async function fetchProbes() {
+    if (probeRequestRunning) return
+    probeRequestRunning = true
+    try {
+        const data = await sendProbeCommand({ get: 'probes' })
+        lastFound = data.probes || []
+        mergeProbes()
+    } catch (e) {
+        // Device busy or disconnected - keep the last known list, try again on the next poll.
+    } finally {
+        probeRequestRunning = false
+    }
+}
+
+async function rescanProbes() {
+    scanning.value = true
+    try {
+        // Wait for a running poll first so the two requests don't overlap on the serial line.
+        while (probeRequestRunning) await new Promise(r => setTimeout(r, 100))
+        probeRequestRunning = true
+        try {
+            const data = await sendProbeCommand({ command: 'rescan_probes' })
+            lastFound = data.probes || []
+            mergeProbes()
+        } finally {
+            probeRequestRunning = false
+        }
+    } catch (e) {
+        modal.error('Rescan failed: ' + e.message)
+    } finally {
+        scanning.value = false
+    }
+}
+
+function onProbesChange() {
+    probesChanged.value = true
+}
+
+// First assignment of a probe without an offset: offer the old single-probe offset.
+function onHeaterChange(row) {
+    if (row.heater >= 0 && !row.wasAssigned && !row.offset && legacyOffset.value) {
+        row.offset = legacyOffset.value
+        offsetSuggested.value = true
+    }
+    row.wasAssigned = row.heater >= 0
+    onProbesChange()
+}
+
+function removeProbe(row) {
+    probeRows.value = probeRows.value.filter(r => r.id !== row.id)
+    onProbesChange()
+}
+
+async function saveProbes() {
+    const lp = probeRows.value
+        .filter(r => r.heater >= 0 || (parseFloat(r.offset) || 0) !== 0)
+        .map(r => ({ id: r.id, o: parseFloat(r.offset) || 0, h: r.heater }))
+    try {
+        // store.saveConfig throws with the firmware's message if it rejects the assignment.
+        await store.saveConfig({ lp })
+        modal.success('Lens probe assignment saved.')
+        probesChanged.value = false
+        offsetSuggested.value = false
+        rebuildProbeRowsFromConfig(config.value.lp)
+    } catch (e) {
+        modal.error('Error saving lens probes: ' + e.message)
+    }
+}
+
+onMounted(() => {
+    fetchProbes()
+    probeTimer = setInterval(fetchProbes, 2000)
+})
+
+onUnmounted(() => {
+    if (probeTimer) clearInterval(probeTimer)
+})
+
+// Rebuild the probe table when the firmware config changes - but never while the user is editing.
+watch(() => config.value?.lp, (lp) => {
+    if (!probesChanged.value) rebuildProbeRowsFromConfig(lp)
+}, { immediate: true, deep: true })
+
 watch(() => config.value, (newConfig) => {
     if (newConfig && !hasChanges.value) {
         // Sensor Offsets (so)
-        // struct: st (SHT Temp), sh (SHT Hum), dt (DS Temp), iv (INA Volt), ic (INA Curr)
+        // struct: st (SHT Temp), sh (SHT Hum), dt (legacy, no longer applied - see the Lens Probes
+        // card), iv (INA Volt), ic (INA Curr)
         // Averaging counts ("ac") and update intervals ("ui") used to live here too, but were
         // removed - no legitimate reason to run them off their fixed firmware defaults, and
         // getting either wrong silently delays every reading (dew heater PID/current-limit
@@ -28,7 +174,6 @@ watch(() => config.value, (newConfig) => {
             // Offsets
             so_st: so.st ?? 0,
             so_sh: so.sh ?? 0,
-            so_dt: so.dt ?? 0,
             so_iv: so.iv ?? 0,
             so_ic: so.ic ?? 0,
         };
@@ -58,7 +203,6 @@ async function saveSensors() {
         so: {
             st: parseFloat(sensorConfig.value.so_st),
             sh: parseFloat(sensorConfig.value.so_sh),
-            dt: parseFloat(sensorConfig.value.so_dt),
             iv: parseFloat(sensorConfig.value.so_iv),
             ic: parseFloat(sensorConfig.value.so_ic)
         }
@@ -131,15 +275,61 @@ async function triggerDry() {
           </div>
       </div>
 
-      <!-- DS18B20 (Lens) -->
+      <!-- Lens Probes (DS18B20) - up to two probes on the shared 1-Wire bus, each assigned to one
+           dew heater by its unique ROM id. -->
       <div class="glass-panel settings-card">
-          <h4>DS18B20 (Lens)</h4>
-          <div class="card-grid">
-              <div class="form-group">
-                  <label>Temp Offset (°C)<HelpTip text="Added directly to the raw lens-temperature reading. If the sensor reads too high compared to a trusted reference thermometer, use a negative value." /></label>
-                  <input type="number" v-model.number="sensorConfig.so_dt" step="0.1" @input="onChange">
-              </div>
+          <h4>Lens Probes (DS18B20)</h4>
+          <p class="subtitle">
+              Each dew heater in PID or Minimum Temperature mode regulates on its own probe. A heater
+              without an assigned (and found) probe stays off.
+          </p>
+
+          <table class="probe-table" v-if="probeRows.length">
+              <thead>
+                  <tr><th>Probe ID</th><th>Temp (°C)</th><th>Heater</th><th>Offset (°C)</th><th></th></tr>
+              </thead>
+              <tbody>
+                  <tr v-for="row in probeRows" :key="row.id" :class="{ missing: !row.found }">
+                      <td class="mono">{{ row.id }}</td>
+                      <td>
+                          <span v-if="!row.found" class="missing-label">not found</span>
+                          <span v-else>{{ row.t != null ? row.t.toFixed(1) : '--' }}</span>
+                      </td>
+                      <td>
+                          <select v-model.number="row.heater" @change="onHeaterChange(row)">
+                              <option :value="-1">none</option>
+                              <option v-for="h in [0, 1]" :key="h" :value="h" :disabled="heaterTaken(row, h)">
+                                  {{ heaterLabel(h) }}
+                              </option>
+                          </select>
+                      </td>
+                      <td>
+                          <input type="number" v-model.number="row.offset" step="0.1" class="offset-input" @input="onProbesChange">
+                      </td>
+                      <td>
+                          <button v-if="!row.found" class="btn-secondary" @click="removeProbe(row)" title="Remove this assignment">Remove</button>
+                      </td>
+                  </tr>
+              </tbody>
+          </table>
+          <p v-else class="subtitle">No probe found on the 1-Wire bus.</p>
+
+          <small v-if="offsetSuggested" class="hint">
+              The offset was pre-filled with the old single-probe offset ({{ legacyOffset }} °C) - check it and
+              adjust if needed.
+          </small>
+
+          <div class="button-row">
+              <button @click="saveProbes" class="btn-primary" :disabled="!probesChanged">Save Lens Probes</button>
+              <button @click="rescanProbes" class="btn-secondary" :disabled="scanning">{{ scanning ? 'Scanning...' : 'Rescan' }}</button>
           </div>
+
+          <small class="hint">
+              Which probe is which? Warm one probe between your fingers and watch its live temperature
+              rise, then assign it to the heater of that lens. Offset is added to the raw reading of
+              that probe (negative if it reads too high against a trusted thermometer). A second probe
+              connects to the Lens port with a Y-cable; click Rescan after plugging it in.
+          </small>
       </div>
 
       <!-- INA219 (Power) -->
@@ -207,5 +397,36 @@ async function triggerDry() {
     display: flex;
     gap: 1rem;
     margin-top: 1rem;
+}
+
+.probe-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.5rem 0;
+}
+
+.probe-table th,
+.probe-table td {
+    text-align: left;
+    padding: 0.4rem 0.5rem;
+    font-size: 0.85rem;
+}
+
+.probe-table tr.missing td {
+    color: var(--danger-color, #e04040);
+}
+
+.mono {
+    font-family: monospace;
+}
+
+.offset-input {
+    width: 6rem;
+}
+
+.hint {
+    display: block;
+    margin-top: 0.5rem;
+    color: var(--text-muted);
 }
 </style>

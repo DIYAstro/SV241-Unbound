@@ -65,10 +65,17 @@ func SyncFirmwareConfig() {
 	}
 
 	// Lens Temperature (ID dynamic)
-	// Show if at least one heater needs it (Mode 1 or 4) OR if forced by config
-	if h1Mode == 1 || h1Mode == 4 || h2Mode == 1 || h2Mode == 4 || config.Get().AlwaysShowLensTemp {
+	// Each heater has its own lens probe: the sensor is shown if its heater uses it (Mode 1 or 4)
+	// OR if forced by config.
+	alwaysLens := config.Get().AlwaysShowLensTemp
+	if h1Mode == 1 || h1Mode == 4 || alwaysLens {
 		newIDMap[currentID] = config.SensorLensTempKey
 		newShortKeyByID[currentID] = config.SensorLensTempKey
+		currentID++
+	}
+	if h2Mode == 1 || h2Mode == 4 || alwaysLens {
+		newIDMap[currentID] = config.SensorLensTemp2Key
+		newShortKeyByID[currentID] = config.SensorLensTemp2Key
 		currentID++
 	}
 

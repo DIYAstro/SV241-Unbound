@@ -21,7 +21,7 @@ digging into the firmware source or debugging at the hardware level.
 | 19 | USB-C 1/2 | USB-C Ports |
 | 21 | I2C SDA | Data Line (Sensors) |
 | 22 | I2C SCL | Clock Line (Sensors) |
-| 23 | OneWire | DS18B20 Lens Sensor |
+| 23 | OneWire | DS18B20 Lens Sensor(s) - a 1-Wire bus: a second probe can share it via a Y-cable (see [Lens Probes](WEB_INTERFACE.md#lens-probes-ds18b20)) |
 | 25 | Adj. Voltage | PWM for Southchip SC8903 (Adjustable Output) |
 | 26 | DC5 | 12V Switched Output |
 | 27 | DC4 | 12V Switched Output |

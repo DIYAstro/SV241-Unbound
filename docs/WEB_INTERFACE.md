@@ -32,7 +32,8 @@ The top panel displays real-time sensor readings from the SV241 device:
 | **Amb Temp** | Ambient temperature from SHT40 sensor (°C) |
 | **Humidity** | Relative humidity (%) |
 | **Dew Point** | Calculated dew point temperature (°C) |
-| **Lens Temp** | Objective/lens temperature from DS18B20 sensor (°C) |
+| **Lens Temp** | Objective/lens temperature from the DS18B20 probe assigned to dew heater 1 (°C), `--` if none is assigned/found |
+| **Lens Temp 2** | Same for the probe assigned to dew heater 2 |
 | **PWM 1/2** | Current dew heater power levels (%) |
 
 > [!TIP]
@@ -65,7 +66,7 @@ Configure the two PWM dew heater outputs:
 *   **Enable on Startup:** Automatically enable the heater when the device boots.
 *   **Mode:** Select the control strategy:
     - *Manual:* Fixed power percentage.
-    - *PID (Lens Sensor):* Automatic control using the DS18B20 lens temperature sensor.
+    - *PID (Lens Sensor):* Automatic control using the DS18B20 lens probe assigned to this heater (see [Lens Probes](#lens-probes-ds18b20)).
     - *Ambient Tracking:* Power scales based on proximity to dew point.
     - *PID-Sync (Follower):* Follows another heater's output (useful for dual-heater setups).
     - *Minimum Temperature:* Maintains a minimum lens temperature.
@@ -83,11 +84,23 @@ Live Telemetry panel; a Windows notification fires once when it engages and once
 value ("Current Limit Active") for reviewing after the fact whether a heater was being throttled
 at a given time.
 
+#### Lens Probes (DS18B20)
+
+Each heater in PID or Minimum Temperature mode regulates on **its own** DS18B20 lens probe. Probes are assigned under **Sensors Tab > Lens Probes (DS18B20)**; the probe's offset is stored with the probe.
+
+*   **Second probe:** all probes share the 1-Wire bus on the **TEMP** (Lens) port (GPIO 23), so a second probe is connected with a Y-cable at that port. Click **Rescan** afterwards. The SV241's pull-up resistor is shared by both probes; with long cables or parasite-powered probes read errors can occur - a probe that cannot be read counts as missing.
+*   **Which probe is which (hand test):** warm one probe between your fingers - its live temperature in the table rises. Pick the heater of that lens in the *Heater* dropdown. A heater that is already used by another probe is disabled in the dropdown, so every heater has at most one probe and every probe at most one heater.
+*   **Missing probes:** an assigned probe that is not found is listed as *not found* (with a Remove button). The heater stays off in PID/Min-Temp mode and the UI warns (*Heater stays off until a lens probe is assigned*), while the other heater keeps regulating.
+*   **Counterfeit sensors:** DS18B20 clones that share the same ROM id show up on the bus as a single probe - this cannot be fixed in software.
+
+> [!WARNING]
+> **Breaking change when updating from a version with a single lens sensor:** there is no automatic assignment. After the update, heaters in PID and Minimum Temperature mode stay **off until a probe is assigned** - and heater 1 is in PID mode by default. Open the Sensors tab, assign the probe(s) and check the offset (the old single offset is only suggested as a starting value, it is no longer applied). Do this before an observing night, otherwise the optics will dew up. With two heaters in PID mode the ASCOM switch IDs after the sensor switches shift by one (a second *Lens Temperature 2* sensor switch appears), so NINA and other clients may need to reload the switch list.
+
 #### How PID Mode Works
 
 In **PID Mode**, the controller automatically adjusts heater power to maintain the lens temperature at a safe level above the dew point:
 
-*   **Lens Temp:** The current temperature of the lens, measured by an external sensor.
+*   **Lens Temp:** The current temperature of the lens, measured by the external probe assigned to this heater.
 *   **Target Temp / Minimum Temp:** The desired temperature offset above the ambient dew point (Recommended: 2.0°C - 5.0°C).
 
 The controller calculates the dew point from ambient temperature and humidity, adds the target offset, and adjusts heater power to maintain that temperature.
