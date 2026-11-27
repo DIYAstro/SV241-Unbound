@@ -78,6 +78,12 @@ func HandlePostSettings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid Network Port", http.StatusBadRequest)
 		return
 	}
+	// 0 means "not provided" (a caller built against an older proxy_config shape), which keeps
+	// the current port rather than being rejected.
+	if newConfig.DiscoveryPort < 0 || newConfig.DiscoveryPort > 65535 {
+		http.Error(w, "Invalid Discovery Port", http.StatusBadRequest)
+		return
+	}
 	if net.ParseIP(newConfig.ListenAddress) == nil && newConfig.ListenAddress != "0.0.0.0" {
 		http.Error(w, "Invalid Listen Address", http.StatusBadRequest)
 		return
@@ -111,6 +117,9 @@ func HandlePostSettings(w http.ResponseWriter, r *http.Request) {
 	conf.TelemetryInterval = newConfig.TelemetryInterval
 	conf.EnableAlpacaVoltageControl = newConfig.EnableAlpacaVoltageControl
 	conf.EnableAlpacaDiscovery = newConfig.EnableAlpacaDiscovery
+	if newConfig.DiscoveryPort != 0 {
+		conf.DiscoveryPort = newConfig.DiscoveryPort
+	}
 	conf.EnableMasterPower = newConfig.EnableMasterPower
 	conf.ReportPendingOffAsOff = newConfig.ReportPendingOffAsOff
 	conf.AlwaysShowLensTemp = newConfig.AlwaysShowLensTemp

@@ -10,6 +10,10 @@ import (
 	"sync"
 )
 
+// DefaultDiscoveryPort is the Alpaca discovery port every client broadcasts to unless told
+// otherwise (ASCOM Alpaca API Reference 5.8.1).
+const DefaultDiscoveryPort = 32227
+
 // defaultListenAddress returns the platform-specific default listen address.
 // On Linux (typically headless servers/Astro-Pi), we default to 0.0.0.0 for network access.
 // On Windows, we default to 127.0.0.1 (localhost only) for security.
@@ -71,6 +75,7 @@ type ProxyConfig struct {
 	TelemetryInterval          int    `json:"telemetryInterval"`          // Seconds
 	EnableAlpacaVoltageControl bool   `json:"enableAlpacaVoltageControl"` // Allow voltage control via Alpaca
 	EnableAlpacaDiscovery      bool   `json:"enableAlpacaDiscovery"`      // Respond to Alpaca UDP discovery packets
+	DiscoveryPort              int    `json:"discoveryPort"`              // UDP port for Alpaca discovery (default 32227, user-configurable per Alpaca API Reference 5.8.1)
 	EnableMasterPower          bool   `json:"enableMasterPower"`          // Show Master Power switch
 	ReportPendingOffAsOff      bool   `json:"reportPendingOffAsOff"`      // Answer ASCOM clients "off" while a delayed switch-off is still counting down (default: report the actual state)
 	AlwaysShowLensTemp         bool   `json:"alwaysShowLensTemp"`         // Always expose Lens Temp switch regardless of PID mode
@@ -610,7 +615,8 @@ func doLoad() error {
 				HistoryRetentionNights:   10,   // Default to 10 nights
 				TelemetryInterval:        10,   // Default to 10 seconds
 				EnableAlpacaDiscovery:    true, // Default to discovery enabled
-				WeatherInterval:          5,    // Default to 5 minutes
+				DiscoveryPort:            DefaultDiscoveryPort,
+				WeatherInterval:          5, // Default to 5 minutes
 				WeatherModel:             "best_match",
 				WeatherSourcePriority:    make(map[string]string),
 				EnableAutoBackup:         true, // Default to automatic backups enabled
@@ -666,6 +672,9 @@ func doLoad() error {
 	// --- Validate and set defaults for missing fields ---
 	if proxyConfig.NetworkPort == 0 {
 		proxyConfig.NetworkPort = 32241
+	}
+	if proxyConfig.DiscoveryPort <= 0 || proxyConfig.DiscoveryPort > 65535 {
+		proxyConfig.DiscoveryPort = DefaultDiscoveryPort
 	}
 	if proxyConfig.ListenAddress == "" {
 		defAddr := defaultListenAddress()

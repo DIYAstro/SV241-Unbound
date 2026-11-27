@@ -46,6 +46,7 @@ function onChange() {
 async function save() {
     // Ensure numeric types
     localConfig.value.networkPort = parseInt(localConfig.value.networkPort);
+    localConfig.value.discoveryPort = parseInt(localConfig.value.discoveryPort) || 32227;
     localConfig.value.historyRetentionNights = parseInt(localConfig.value.historyRetentionNights);
 
     try {
@@ -105,12 +106,19 @@ async function save() {
                       <label>Network Port<HelpTip text="TCP port the web server and ASCOM Alpaca API listen on. Change this if 32241 conflicts with something else on your network." /></label>
                       <input type="number" v-model.number="localConfig.networkPort" @input="onChange" placeholder="32241">
                   </div>
-                  <div class="form-group">
-                      <label>Discovery Service<HelpTip text="Respond to ASCOM Alpaca UDP discovery broadcasts, so clients like N.I.N.A. can find this proxy automatically instead of needing its address entered manually." /></label>
-                      <select v-model="localConfig.enableAlpacaDiscovery" @change="onChange">
-                          <option :value="true">Enabled</option>
-                          <option :value="false">Disabled</option>
-                      </select>
+                  <div class="card-content">
+                      <div class="form-group">
+                          <label>Discovery Service<HelpTip text="Respond to ASCOM Alpaca UDP discovery broadcasts, so clients like N.I.N.A. can find this proxy automatically instead of needing its address entered manually." /></label>
+                          <select v-model="localConfig.enableAlpacaDiscovery" @change="onChange">
+                              <option :value="true">Enabled</option>
+                              <option :value="false">Disabled</option>
+                          </select>
+                      </div>
+                      <div class="form-group">
+                          <label>Discovery Port<HelpTip text="UDP port ASCOM Alpaca clients broadcast discovery requests to. Leave at 32227 unless another application needs it or you run separate discovery networks - clients must use the same port. Takes effect after a restart." /></label>
+                          <input type="number" v-model.number="localConfig.discoveryPort" @input="onChange" placeholder="32227" min="1" max="65535"
+                                 :disabled="!localConfig.enableAlpacaDiscovery">
+                      </div>
                   </div>
               </div>
           </div>
@@ -240,6 +248,11 @@ async function save() {
 .form-group label {
     font-size: 0.85rem;
     color: var(--text-secondary);
+}
+
+.form-group input:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
 }
 
 /* .checkbox-label (global) already handles the flex/gap/color/cursor look for the checkbox

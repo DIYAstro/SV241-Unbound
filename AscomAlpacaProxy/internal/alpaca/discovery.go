@@ -3,12 +3,13 @@ package alpaca
 import (
 	"fmt"
 	"net"
+	"strconv"
 	"sv241pro-alpaca-proxy/internal/config"
 	"sv241pro-alpaca-proxy/internal/logger"
 )
 
-// RespondToDiscovery listens for Alpaca discovery packets on UDP port 32227
-// and responds with the server's listening port.
+// RespondToDiscovery listens for Alpaca discovery packets on the configured discovery port
+// (config DiscoveryPort, default 32227) and responds with the server's listening port.
 func RespondToDiscovery() {
 	if !config.Get().EnableAlpacaDiscovery {
 		logger.Info("Alpaca Discovery Responder disabled via config.")
@@ -16,7 +17,7 @@ func RespondToDiscovery() {
 	}
 
 	listenAddr := config.Get().ListenAddress
-	udpAddress := fmt.Sprintf("%s:32227", listenAddr)
+	udpAddress := net.JoinHostPort(listenAddr, strconv.Itoa(config.Get().DiscoveryPort))
 
 	addr, err := net.ResolveUDPAddr("udp4", udpAddress)
 	if err != nil {
