@@ -46,6 +46,7 @@ function onChange() {
 async function save() {
     // Ensure numeric types
     localConfig.value.networkPort = parseInt(localConfig.value.networkPort);
+    localConfig.value.discoveryPort = parseInt(localConfig.value.discoveryPort) || 32227;
     localConfig.value.historyRetentionNights = parseInt(localConfig.value.historyRetentionNights);
 
     try {
@@ -111,6 +112,11 @@ async function save() {
                           <option :value="true">Enabled</option>
                           <option :value="false">Disabled</option>
                       </select>
+                  </div>
+                  <div class="form-group">
+                      <label>Discovery Port<HelpTip text="UDP port ASCOM Alpaca clients broadcast discovery requests to. Leave at 32227 unless another application needs it or you run separate discovery networks - clients must use the same port. Takes effect after a restart." /></label>
+                      <input type="number" v-model.number="localConfig.discoveryPort" @input="onChange" placeholder="32227" min="1" max="65535"
+                             :disabled="!localConfig.enableAlpacaDiscovery">
                   </div>
               </div>
           </div>

@@ -848,6 +848,10 @@ func applyBackupRestore(w http.ResponseWriter, backupData config.CombinedConfig,
 	// Restore Proxy Config
 	conf := config.Get()
 	conf.NetworkPort = backupData.ProxyConfig.NetworkPort
+	// Backups made before discoveryPort existed carry 0 - keep the current port then.
+	if backupData.ProxyConfig.DiscoveryPort > 0 && backupData.ProxyConfig.DiscoveryPort <= 65535 {
+		conf.DiscoveryPort = backupData.ProxyConfig.DiscoveryPort
+	}
 	conf.ListenAddress = backupData.ProxyConfig.ListenAddress
 	conf.LogLevel = backupData.ProxyConfig.LogLevel
 	// See ProxyConfigMutex's doc comment (internal/config/config.go) - these are maps read
