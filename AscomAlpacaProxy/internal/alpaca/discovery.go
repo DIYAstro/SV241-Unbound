@@ -1,6 +1,7 @@
 package alpaca
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"sv241pro-alpaca-proxy/internal/config"
@@ -18,18 +19,15 @@ func RespondToDiscovery() {
 	listenAddr := config.Get().ListenAddress
 	udpAddress := fmt.Sprintf("%s:32227", listenAddr)
 
-	addr, err := net.ResolveUDPAddr("udp4", udpAddress)
-	if err != nil {
-		logger.Error("Discovery: Could not resolve UDP address '%s': %v", udpAddress, err)
-		return
-	}
-
-	conn, err := net.ListenUDP("udp4", addr)
+	// ASCOM Alpaca API 5.8.2: the discovery port must be shareable (SO_REUSEADDR / SO_REUSEPORT).
+	lc := net.ListenConfig{Control: setReuseSockopts}
+	pc, err := lc.ListenPacket(context.Background(), "udp4", udpAddress)
 	if err != nil {
 		logger.Error("Discovery: Could not listen on UDP address '%s': %v", udpAddress, err)
 		logger.Info("HINT: This may be caused by another Alpaca application running, or a permissions issue.")
 		return
 	}
+	conn := pc.(*net.UDPConn)
 	defer conn.Close()
 	logger.Info("Alpaca discovery responder started on UDP address '%s'.", udpAddress)
 
