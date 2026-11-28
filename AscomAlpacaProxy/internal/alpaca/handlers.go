@@ -50,12 +50,31 @@ func NewAPI(appVersion string) *API {
 	}
 }
 
+// genericLocation is what the description reports as Location when no named SV241 box is connected.
+const genericLocation = "My Observatory"
+
+// descriptionLocation picks the description's Location: the connected box's rig name (System
+// tab > Connected Box), so clients such as N.I.N.A. can tell several SV241 boxes apart, or
+// genericLocation when no box is connected or it has no name.
+// connected must come from serial.IsConnected() - config.GetActiveRigName() alone isn't enough,
+// since the active device is never cleared on disconnect and would keep naming an unplugged box.
+func descriptionLocation(connected bool, rigName string) string {
+	if connected {
+		if name := strings.TrimSpace(rigName); name != "" {
+			return name
+		}
+	}
+	return genericLocation
+}
+
 func (a *API) HandleManagementDescription(w http.ResponseWriter, r *http.Request) {
+	// Built on every request, so connects, disconnects and rig renames show up without a restart.
+	location := descriptionLocation(serial.IsConnected(), config.GetActiveRigName())
 	description := AlpacaDescription{
 		ServerName:          "SV241 Alpaca Proxy",
 		Manufacturer:        "User-Made",
 		ManufacturerVersion: a.appVersion,
-		Location:            "My Observatory",
+		Location:            location,
 	}
 	ManagementValueResponse(w, r, description)
 }
