@@ -121,6 +121,8 @@ func setupRoutes(frontendFS fs.FS, appVersion string) {
 	http.HandleFunc("/api/v1/flash/info", handleFlashInfo)
 	http.HandleFunc("/api/v1/flash/start", handleFlashStart)
 	http.HandleFunc("/api/v1/flash/status", handleFlashStatus)
+	http.HandleFunc("/api/v1/alpaca/ids", handlers.HandleGetAlpacaIDs)
+	http.HandleFunc("/api/v1/alpaca/regenerate-ids", handlers.HandleRegenerateAlpacaIDs)
 
 	// New settings endpoint combines getting and setting proxy config
 	http.HandleFunc("/api/v1/settings", func(w http.ResponseWriter, r *http.Request) {
