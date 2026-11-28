@@ -6,8 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sv241pro-alpaca-proxy/internal/logger"
 	"sync"
+
+	"github.com/google/uuid"
 )
 
 // defaultListenAddress returns the platform-specific default listen address.
@@ -107,6 +110,50 @@ type ProxyConfig struct {
 	// no reflash needed. An empty list, or one where nothing has IncludeInSafetyMonitor set,
 	// disables ASCOM exposure entirely.
 	SafetyMonitorConditions []SafetyCondition `json:"safetyMonitorConditions"`
+
+	// AlpacaUniqueIDs is the ASCOM UniqueID advertised for each hosted Alpaca device through
+	// /management/v1/configureddevices. It identifies this install, not a setting: HandlePostSettings
+	// and applyBackupRestore deliberately never copy it, so restoring a backup onto another machine
+	// doesn't clone this box's identity. Use GetAlpacaUniqueIDs/RegenerateAlpacaUniqueIDs rather than
+	// touching it directly.
+	AlpacaUniqueIDs AlpacaDeviceIDs `json:"alpacaUniqueIds"`
+}
+
+// AlpacaDeviceIDs holds the ASCOM UniqueID of each Alpaca device type the proxy hosts.
+type AlpacaDeviceIDs struct {
+	Switch              string `json:"switch"`
+	ObservingConditions string `json:"observingConditions"`
+	SafetyMonitor       string `json:"safetyMonitor"`
+}
+
+// legacyAlpacaUniqueIDs are the IDs that were hard-coded in internal/alpaca before they became
+// configurable. Any config written before the alpacaUniqueIds key existed is seeded with these, so
+// ASCOM clients (N.I.N.A. etc.) that already know this proxy keep seeing the same devices. The
+// ObservingConditions value isn't a valid GUID (it contains 'g'), but is kept verbatim for that
+// same reason - ASCOM's UniqueID is an opaque string. Every SV241 install shares these, which is
+// why the Proxy tab offers RegenerateAlpacaUniqueIDs for networks with more than one box.
+var legacyAlpacaUniqueIDs = AlpacaDeviceIDs{
+	Switch:              "a7f5a59c-f5d3-47f5-a59c-f5d347f5a59c",
+	ObservingConditions: "b8g6b69d-g6e4-58g6-b69d-g6e458g6b69d",
+	SafetyMonitor:       "c9a1d3e5-1234-4a5b-9c8d-7e6f5a4b3c2d",
+}
+
+// IsLegacy reports whether ids are exactly the IDs shared by every pre-upgrade SV241 install.
+func (ids AlpacaDeviceIDs) IsLegacy() bool {
+	return ids == legacyAlpacaUniqueIDs
+}
+
+// ensureAlpacaUniqueIDs fills any blank ID with a fresh UUID v4, leaving existing values alone.
+// Reports whether anything changed (so the caller knows to save).
+func ensureAlpacaUniqueIDs(ids *AlpacaDeviceIDs) bool {
+	changed := false
+	for _, id := range []*string{&ids.Switch, &ids.ObservingConditions, &ids.SafetyMonitor} {
+		if strings.TrimSpace(*id) == "" {
+			*id = uuid.NewString()
+			changed = true
+		}
+	}
+	return changed
 }
 
 // CombinedConfig defines the structure for a full backup file.
@@ -627,6 +674,10 @@ func doLoad() error {
 			for _, internalName := range SwitchIDMap {
 				proxyConfig.SwitchNames[internalName] = internalName
 			}
+			// A brand new install gets its own random Alpaca IDs - only upgraded configs keep the
+			// legacy shared ones (see below).
+			ensureAlpacaUniqueIDs(&proxyConfig.AlpacaUniqueIDs)
+			logger.Info("Generated new ASCOM Alpaca UniqueIDs for this install.")
 			// Attempt to save the initial default config
 			return Save() // File not found is not an error, just means defaults apply
 		}
@@ -640,9 +691,22 @@ func doLoad() error {
 		return fmt.Errorf("failed to unmarshal proxy config: %w", err)
 	}
 
+	// needsSave is set when loading migrates or fills in something that must be persisted straight
+	// away (rather than only on the next settings save) - currently just the Alpaca UniqueIDs,
+	// which have to stay stable across restarts from the very first run.
+	needsSave := false
+
 	// Unmarshal into a map to check for missing boolean keys (which default to false)
 	var rawMap map[string]interface{}
 	if err := json.Unmarshal(file, &rawMap); err == nil {
+		// A config without the key predates configurable Alpaca IDs: keep advertising the IDs that
+		// install has always advertised. An existing key with a blank entry is filled with a fresh
+		// GUID by ensureAlpacaUniqueIDs below instead.
+		if _, exists := rawMap["alpacaUniqueIds"]; !exists {
+			logger.Info("Configuration key 'alpacaUniqueIds' not found, keeping the legacy ASCOM Alpaca UniqueIDs.")
+			tempConfig.AlpacaUniqueIDs = legacyAlpacaUniqueIDs
+			needsSave = true
+		}
 		if _, exists := rawMap["enableAlpacaDiscovery"]; !exists {
 			logger.Info("Configuration key 'enableAlpacaDiscovery' not found, defaulting to true.")
 			tempConfig.EnableAlpacaDiscovery = true
@@ -662,6 +726,11 @@ func doLoad() error {
 	}
 
 	proxyConfig = &tempConfig
+
+	if ensureAlpacaUniqueIDs(&proxyConfig.AlpacaUniqueIDs) {
+		logger.Info("Generated new ASCOM Alpaca UniqueID(s) for blank 'alpacaUniqueIds' entries.")
+		needsSave = true
+	}
 
 	// --- Validate and set defaults for missing fields ---
 	if proxyConfig.NetworkPort == 0 {
@@ -726,6 +795,14 @@ func doLoad() error {
 	// Apply the loaded log level immediately.
 	logger.SetLevelFromString(proxyConfig.LogLevel)
 	logger.Info("Loaded proxy config from '%s'", proxyConfigFile)
+
+	if needsSave {
+		// Not fatal: the in-memory IDs are still correct for this run, and the next Load() will
+		// migrate the same way and retry the save.
+		if err := Save(); err != nil {
+			logger.Warn("Failed to persist migrated proxy config: %v", err)
+		}
+	}
 	return nil
 }
 
@@ -759,6 +836,38 @@ func (c *ProxyConfig) HasAlpacaSafetyCondition() bool {
 		}
 	}
 	return false
+}
+
+// GetAlpacaUniqueIDs returns the ASCOM UniqueIDs this install advertises, thread-safely.
+func GetAlpacaUniqueIDs() AlpacaDeviceIDs {
+	ProxyConfigMutex.RLock()
+	defer ProxyConfigMutex.RUnlock()
+	return Get().AlpacaUniqueIDs
+}
+
+// RegenerateAlpacaUniqueIDs replaces all of this install's ASCOM UniqueIDs with fresh GUIDs and
+// saves the config. ASCOM clients will see the devices as new ones afterwards. Intended for sites
+// running more than one SV241 box, which otherwise all advertise legacyAlpacaUniqueIDs.
+func RegenerateAlpacaUniqueIDs() (AlpacaDeviceIDs, error) {
+	ProxyConfigMutex.Lock()
+	conf := Get()
+	previous := conf.AlpacaUniqueIDs
+	conf.AlpacaUniqueIDs = AlpacaDeviceIDs{}
+	ensureAlpacaUniqueIDs(&conf.AlpacaUniqueIDs)
+	ids := conf.AlpacaUniqueIDs
+	err := Save()
+	if err != nil {
+		// Keep memory and disk in agreement - otherwise this run would advertise IDs that revert
+		// on the next restart.
+		conf.AlpacaUniqueIDs = previous
+	}
+	ProxyConfigMutex.Unlock()
+	if err != nil {
+		return previous, err
+	}
+	logger.Info("Regenerated ASCOM Alpaca UniqueIDs: switch=%s observingConditions=%s safetyMonitor=%s",
+		ids.Switch, ids.ObservingConditions, ids.SafetyMonitor)
+	return ids, nil
 }
 
 // Get returns a pointer to the singleton ProxyConfig instance.

@@ -3,7 +3,7 @@ import { useDeviceStore } from '../../stores/device'
 import { useModalStore } from '../../stores/modal'
 import { useThemeStore } from '../../stores/theme'
 import { storeToRefs } from 'pinia'
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onMounted } from 'vue'
 import HelpTip from '../HelpTip.vue'
 
 const store = useDeviceStore()
@@ -56,6 +56,65 @@ async function save() {
         modal.error('Error saving: ' + e.message);
     }
 }
+// --- ASCOM Device IDs ---
+// The UniqueIDs this proxy advertises in the Alpaca Management API's configureddevices response
+// (ASCOM Alpaca API Reference section 5.7). Upgraded installs keep the IDs every SV241 used to
+// share (legacy=true) so existing client setups keep working; a site with more than one SV241
+// proxy on the same network regenerates them so clients can tell the instances apart. Not part of
+// localConfig/save() above: the backend never takes these from a settings POST, and regenerating
+// saves immediately. Fetched once on mount - they only change when the button below is pressed.
+const alpacaIds = ref(null)
+const alpacaIdsLegacy = ref(false)
+const regeneratingAlpacaIds = ref(false)
+const alpacaIdRows = [
+    { key: 'switch', label: 'Switch' },
+    { key: 'observingConditions', label: 'ObservingConditions' },
+    { key: 'safetyMonitor', label: 'SafetyMonitor' },
+]
+
+async function fetchAlpacaIds() {
+    try {
+        const response = await fetch('/api/v1/alpaca/ids')
+        if (!response.ok) throw new Error(await response.text())
+        const data = await response.json()
+        alpacaIds.value = data.ids
+        alpacaIdsLegacy.value = data.legacy
+    } catch (e) {
+        console.error('Failed to load ASCOM device IDs:', e)
+    }
+}
+
+function confirmRegenerateAlpacaIds() {
+    modal.confirm(
+        'This gives the Switch, ObservingConditions and SafetyMonitor devices new, randomly generated ASCOM UniqueIDs. ' +
+        'ASCOM clients such as N.I.N.A. will see them as new devices, so you will need to re-select ' +
+        'them in your equipment profiles. Only needed when more than one SV241 proxy is on the same network. Continue?',
+        {
+            title: 'Generate New ASCOM IDs',
+            confirmText: 'Generate',
+            cancelText: 'Cancel',
+            onConfirm: regenerateAlpacaIds
+        }
+    )
+}
+
+async function regenerateAlpacaIds() {
+    regeneratingAlpacaIds.value = true
+    try {
+        const response = await fetch('/api/v1/alpaca/regenerate-ids', { method: 'POST' })
+        if (!response.ok) throw new Error(await response.text())
+        const data = await response.json()
+        alpacaIds.value = data.ids
+        alpacaIdsLegacy.value = data.legacy
+        modal.success('New ASCOM device IDs generated and saved. Re-select the SV241 devices in your ASCOM clients.', 'IDs Generated')
+    } catch (e) {
+        modal.error('Error generating new ASCOM IDs: ' + e.message)
+    } finally {
+        regeneratingAlpacaIds.value = false
+    }
+}
+
+onMounted(fetchAlpacaIds)
 </script>
 
 <template>
@@ -215,6 +274,35 @@ async function save() {
       </div>
       
       <button @click="save" class="btn-primary full-width-btn" :disabled="!hasChanges">Save Proxy Settings</button>
+
+      <!-- ASCOM Device IDs Card - acts immediately via its own endpoint, independent of the
+           Save Proxy Settings button above. -->
+      <div class="settings-card glass-panel">
+          <h4>ASCOM Device IDs</h4>
+          <div class="card-content">
+              <p class="card-description">
+                  The UniqueIDs ASCOM clients (e.g. N.I.N.A.) use to recognise this proxy's devices.
+                  Every SV241 proxy on the same network must have its own IDs.
+              </p>
+              <div v-if="alpacaIds" class="alpaca-id-list">
+                  <div v-for="row in alpacaIdRows" :key="row.key" class="alpaca-id-row">
+                      <span>{{ row.label }}</span>
+                      <code>{{ alpacaIds[row.key] }}</code>
+                  </div>
+              </div>
+              <p v-else class="card-description">Loading…</p>
+              <small v-if="alpacaIdsLegacy" class="hint alpaca-id-legacy">
+                  Using the default IDs shared by all SV241 proxies installed before IDs were configurable.
+                  Generate new IDs if another SV241 proxy is on this network.
+              </small>
+              <div class="alpaca-id-actions">
+                  <button @click="confirmRegenerateAlpacaIds" class="btn-secondary" :disabled="regeneratingAlpacaIds || !alpacaIds">
+                      {{ regeneratingAlpacaIds ? 'Generating…' : 'Generate New ASCOM IDs' }}
+                  </button>
+                  <HelpTip text="Replaces all three IDs with new random GUIDs and saves them immediately. Clients will see these as new devices afterwards - re-select them in your equipment profiles." />
+              </div>
+          </div>
+      </div>
   </div>
 </template>
 
@@ -264,6 +352,39 @@ async function save() {
     border: none;
     border-top: 1px solid rgba(255, 255, 255, 0.1);
     margin: 0.5rem 0;
+}
+.alpaca-id-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.alpaca-id-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.75rem;
+    padding: 0.3rem 0.6rem;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.04);
+    font-size: 0.85rem;
+}
+
+.alpaca-id-row code {
+    font-size: 0.8rem;
+    overflow-wrap: anywhere;
+}
+
+.alpaca-id-legacy {
+    margin-top: 0;
+    color: var(--warning-color);
+}
+
+.alpaca-id-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
 }
 </style>
 

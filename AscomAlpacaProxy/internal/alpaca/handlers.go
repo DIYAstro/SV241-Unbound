@@ -62,18 +62,21 @@ func (a *API) HandleManagementDescription(w http.ResponseWriter, r *http.Request
 
 // HandleManagementConfiguredDevices is static and doesn't need the API struct receiver.
 func HandleManagementConfiguredDevices(w http.ResponseWriter, r *http.Request) {
+	// Read on every request (not cached) so IDs regenerated from the Proxy tab take effect
+	// immediately, without a restart.
+	ids := config.GetAlpacaUniqueIDs()
 	devices := []AlpacaConfiguredDevice{
 		{
 			DeviceName:   "SV241 Power Switch",
 			DeviceType:   "Switch",
 			DeviceNumber: 0,
-			UniqueID:     "a7f5a59c-f5d3-47f5-a59c-f5d347f5a59c", // Static GUID
+			UniqueID:     ids.Switch,
 		},
 		{
 			DeviceName:   "SV241 Environment",
 			DeviceType:   "ObservingConditions",
 			DeviceNumber: 0,
-			UniqueID:     "b8g6b69d-g6e4-58g6-b69d-g6e458g6b69d", // Static GUID
+			UniqueID:     ids.ObservingConditions,
 		},
 	}
 	// Exposing the SafetyMonitor is an explicit opt-in (at least one condition marked
@@ -85,7 +88,7 @@ func HandleManagementConfiguredDevices(w http.ResponseWriter, r *http.Request) {
 			DeviceName:   "SV241 Safety Monitor",
 			DeviceType:   "SafetyMonitor",
 			DeviceNumber: 0,
-			UniqueID:     "c9a1d3e5-1234-4a5b-9c8d-7e6f5a4b3c2d", // Static GUID
+			UniqueID:     ids.SafetyMonitor,
 		})
 	}
 	ManagementValueResponse(w, r, devices)
